@@ -20,7 +20,9 @@ def arg(k, d=None, f=str):
 
 THEME = arg('--theme', 'light')
 PRINT = arg('--print', 1.0, float)
-C = lib.Ctx(THEME, W, H, arg('--samples', 256, int))
+SCALE = arg('--scale', 1, int)          # 2 = a 3840 x 2160 render of the same 1920 x 1080 layout
+C = lib.Ctx(THEME, W * SCALE, H * SCALE, arg('--samples', 256, int))
+C.sc.camera.data.ortho_scale = W / 100
 T = C.T
 C.studio()
 sc = C.sc
@@ -34,7 +36,7 @@ DOWN = '--down' in argv
 INK, INKD, INKS = C.INK, C.INKD, C.INKS
 
 # ───────────────────────────── chassis and its recesses
-chassis = C.rbox('chassis', 0, 0, W, H, -0.4, 0.0, 14, 0, C.CHALK)
+chassis = C.rbox('chassis', -2, -2, W + 2, H + 2, -0.4, 0.0, 0 if '--app' in argv else 14, 0, C.CHALK)
 
 
 def recess(name, x0, y0, x1, y1, r, depth, floor=True):
@@ -382,10 +384,38 @@ C.text('TAVSIF', 1442, 62, 19, DELA, INKD, 0.161, spacing=1.12)
 C.text('THERMAL PRINTER · KR-P1', 1442, 82, 10, MI, INKS, 0.161, spacing=1.1)
 C.cyl('pledb', 1866, 50, 7.5, 0.15, 0.17, C.BEZEL, segs=32)
 C.dome('pled', 1866, 50, 5.4, 0.17, (C.LED_DIM if APP and not DOWN else C.mat('ledg2', hexc('#7dffbf'), 0.15, coat=1, emit=hexc('#3ee08f'), estr=3)))
+WIN_KEYS = [('min', 1592), ('max', 1628), ('close', 1664)]
+for nm, cx in WIN_KEYS:
+    pressed = APP and DOWN
+    C.cyl('wkw_' + nm, cx, 58, 16, 0.12, 0.161, C.BEZEL if DARK else C.mat('wkwl', hexc('#c9cdd5'), 0.5), segs=48)
+    top = 0.17 if pressed else 0.19
+    C.cyl('wk_' + nm, cx, 58, 13, 0.12, top, C.KEY if not DARK else C.mat('wkd', hexc('#3a3d44'), 0.4, coat=0.3), bev=3, segs=48)
+    ink = C.RED if nm == 'close' else (C.INK if not DARK else C.mat('wki', hexc('#c9cdd4'), 0.5))
+    z = top + 0.001
+    if nm == 'min':
+        C.rbox('wi', cx - 6, 57, cx + 6, 59.6, z, z + 0.004, 1, 0, ink)
+    elif nm == 'max':
+        for a_, b_, c_, d_ in ((cx - 6, 52, cx + 6, 54.2), (cx - 6, 61.8, cx + 6, 64), (cx - 6, 52, cx - 3.8, 64), (cx + 3.8, 52, cx + 6, 64)):
+            C.rbox('wi', a_, b_, c_, d_, z, z + 0.004, 0.5, 0, ink)
+    else:
+        for ang in (45, -45):
+            o = C.rbox('wi', cx - 7, 57, cx + 7, 59.4, z, z + 0.004, 1, 0, ink)
+            px_, py_ = P(cx, 58.2)
+            o.data.transform(__import__('mathutils').Matrix.Translation((-px_, -py_, 0)))
+            o.location = (px_, py_, 0)
+            o.rotation_euler = (0, 0, math.radians(ang))
+    if pressed and nm == 'close':
+        C.dome('wkled', cx, 58, 3, top + 0.002, C.LED_HOT, h=0.3) if False else None
 C.rbox('qframe', 1700, 40, 1846, 76, 0.155, 0.17, 8, 1, C.LCDFRAME)
 C.rbox('qlcd', 1703, 43, 1843, 73, 0.155, 0.172, 6, 0, C.LCD)
 QTXT = C.text('QATOR 01/31', 1773, 66, 18, VT, C.LCDINK, 0.1725, align='CENTER')
 C.rbox('slot', 1458, 98, 1856, 106, 0.14, 0.165, 3, 0, C.WELL)
+VENTM = C.mat('ventm', hexc('#08090a'), 0.95, spec=0.05)
+for vx in (1426, 1446, 1852, 1872):
+    for k in range(9):
+        vy = 150 + k * 38
+        C.rbox('vent', vx, vy, vx + 10, vy + 28, PZ + 0.0004, PZ + 0.0016, 3, 0, VENTM)
+        C.rbox('ventlip', vx + 1, vy + 28, vx + 9, vy + 29.2, PZ + 0.0004, PZ + 0.0018, 0, 0, C.mat('ventl', hexc('#ffffff') if not DARK else hexc('#44474e'), 0.5))
 C.rbox('lip', 1452, 106, 1862, 110, 0.15, 0.17, 2, 0.5, C.CHROME)
 RY = 536
 for nm, rad, ln, m in (('roller', 15, 3.96, C.CHROME), ('rub', 16, 3.64, C.mat('rubr', hexc('#1a1b1e'), 0.7))):

@@ -27,6 +27,7 @@ const S = {
 function fit() {
   const s = Math.min(innerWidth / 1920, innerHeight / 1080);
   stage.style.transform = `translate(${(innerWidth - 1920 * s) / 2}px, ${(innerHeight - 1080 * s) / 2}px) scale(${s})`;
+  stage.dataset.scale = s;
 }
 addEventListener('resize', fit);
 fit();
@@ -59,7 +60,7 @@ const on = (el, v) => el && el.classList.toggle('on', !!v);
 
 // a soft mechanical click
 let actx;
-function click() {
+let click = function () {
   try {
     actx = actx || new AudioContext();
     const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
@@ -67,7 +68,7 @@ function click() {
     g.gain.setValueAtTime(0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
     o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.05);
   } catch {}
-}
+};
 
 // nav
 const NAV = ['ASOSIY', 'QIDIRUV', 'CHAT', 'KUTUBXONA', 'PROFIL'];
@@ -107,7 +108,6 @@ const ring = Array.from({ length: 21 }, (_, i) => {
 const printerLed = led('pled', 1866, 50, 9);
 
 /* ───────────── window keys and dragging by the chassis */
-document.querySelectorAll('#winkeys i').forEach((k) => k.addEventListener('click', () => { click(); invoke('window_action', { action: k.dataset.win }); }));
 stage.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const t = e.target;
@@ -208,7 +208,7 @@ setInterval(() => {
 }, 1000);
 
 /* ───────────── a new song: cover, LCD, lyrics, receipt, like */
-function onTrack(t) {
+let onTrack = function onTrack(t) {
   trivision(url(t.coverArt));
   $('#lyTitle').textContent = t.title;
   $('#lyArtist').textContent = t.artist;
@@ -300,7 +300,7 @@ function renderLyrics(force) {
   const L = activeLines();
   const t = audio.currentTime || 0;
   if (!L.length) {
-    if (force || lastIdx !== -1) box.innerHTML = '<div class="none">Bu qo\'shiq uchun matn hali yo\'q</div>';
+    if (force || lastIdx !== -1) box.innerHTML = cur ? '<div class="none">♪ MATNSIZ · SPEKTR</div>' : '';
     lastIdx = -1;
     $('#lyRail').innerHTML = '';
     return;
@@ -348,9 +348,9 @@ function waveOf(id) {
   return Array.from({ length: 180 }, (_, i) => Math.min(54, 8 + Math.abs(Math.sin(i * 0.43 + rnd()) * 30 + Math.sin(i * 0.13) * 16 + rnd() * 10)));
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-function drawLcd() {
+let drawLcd = function drawLcd() {
   const c = lcd, W = 1254, H = 152;
-  c.clearRect(0, 0, W, H);
+  c.clearRect(0, 0, W * 4, H * 4);
   const ink = '#232b1b', ghost = 'rgba(35,43,27,.18)';
   c.fillStyle = ink;
   const t = cur ? cur.track : null;
@@ -384,7 +384,7 @@ let drumA = 0, drumKick = 0;
 function tick(n) { drumKick += n; }
 function drawDrum(dt) {
   const c = drum, W = 500, H = 92, R = 242;
-  c.clearRect(0, 0, W, H);
+  c.clearRect(0, 0, W * 4, H * 4);
   drumA += dt * (S.playing ? 0.08 : 0) + drumKick * 0.02;
   drumKick *= 0.9;
   const ink = S.theme === 'light' ? 'rgba(55,65,81,' : 'rgba(225,228,234,';
@@ -402,7 +402,7 @@ function drawDrum(dt) {
 }
 
 /* ───────────── volume knob: wheel or drag; the LED ring and the red dot follow */
-function setVolume(v) {
+let setVolume = function setVolume(v) {
   S.volume = Math.max(0, Math.min(1, v));
   audio.volume = S.volume;
   store.set('volume', S.volume);
@@ -434,7 +434,7 @@ function ensureAnalyser() {
   } catch (e) { console.warn('analyser', e); }
 }
 let level = 0;
-function drawMeter() {
+let drawMeter = function drawMeter() {
   let v = 0;
   if (analyser && S.playing) {
     analyser.getFloatTimeDomainData(abuf);
@@ -448,7 +448,7 @@ function drawMeter() {
 
 /* ───────────── the receipt: printed song info, wound like a scroll */
 let paperOut = 0, paperScroll = 0, paperVel = 0, printing = null;
-function buildReceipt(t, animate) {
+let buildReceipt = function buildReceipt(t, animate) {
   const info = t.info || {};
   const d = new Date();
   const energy = Math.round((t.energy || 0) / 100 * 12);
@@ -514,7 +514,7 @@ function avatarUrl(a) {
   if (a.startsWith('u:')) { const p = a.split(':'); return `${API}/files/avatars/${p[1]}.jpg?v=${p[2]}`; }
   return null;
 }
-function msgHtml(m) {
+let msgHtml = function msgHtml(m) {
   const av = avatarUrl(m.avatar);
   const time = new Date(m.ts).toTimeString().slice(0, 5);
   let body;
@@ -585,16 +585,18 @@ function openScreen(i) {
   on(gearKey, false);
   const p = $('#panel');
   if (i === 0 || i === 2) {
-    if (!p.hidden) { p.classList.add('closing'); setTimeout(() => { p.hidden = true; p.classList.remove('closing'); }, 280); }
-    if (i === 2) { $('#chMsgs').scrollTop = 1e9; toast("CHAT · O'NG TOMONDA"); }
+    if (!p.hidden) shutter(() => { p.hidden = true; });
+    if (i === 2) { $('#chMsgs').scrollTop = 1e9; const c = $('#chat'); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
     return;
   }
-  p.hidden = false; p.classList.remove('closing');
-  p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
+  shutter(() => fillScreen(i));
+}
+function fillScreen(i) {
+  const p = $('#panel');
+  p.hidden = false;
   const list = $('#pList');
-  list.style.animation = 'none'; void list.offsetWidth; list.style.animation = '';
   $('#pSearch').hidden = i !== 1;
-  if (i === 1) { $('#pTitle').textContent = 'QIDIRUV'; $('#pSub').textContent = `${tracks.size} ta qo'shiq efirda`; search($('#pInput').value || ''); setTimeout(() => $('#pInput').focus(), 300); }
+  if (i === 1) { $('#pTitle').textContent = 'QIDIRUV'; $('#pSub').textContent = `${tracks.size} ta qo'shiq efirda`; search($('#pInput').value || ''); setTimeout(() => $('#pInput').focus(), 500); }
   if (i === 3) { $('#pTitle').textContent = 'KUTUBXONA'; $('#pSub').textContent = `${S.liked.size} ta sevimli qo'shiq`; rows([...S.liked].map((id) => tracks.get(id)).filter(Boolean), "Hali sevimli qo'shiq yo'q — yurakchani bosing."); }
   if (i === 4) {
     $('#pTitle').textContent = 'PROFIL'; $('#pSub').textContent = 'KR-01 DESK';
@@ -637,9 +639,10 @@ function openSettings() {
   screen = 5;
   navKeys.forEach((k) => on(k, false));
   on(gearKey, true);
-  const p = $('#panel');
-  p.hidden = false; p.classList.remove('closing');
-  p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
+  shutter(() => fillSettings());
+}
+function fillSettings() {
+  $('#panel').hidden = false;
   $('#pSearch').hidden = true;
   $('#pTitle').textContent = 'SOZLAMALAR'; $('#pSub').textContent = 'KR-01 DESK · v' + VERSION;
   const seg = (name, items, val) => `<div class="seg" data-set="${name}">${items.map(([k, l]) => `<i data-v="${k}" class="${k === val ? 'on' : ''}">${l}</i>`).join('')}</div>`;
@@ -658,7 +661,294 @@ $('#pList').addEventListener('click', (e) => {
   if (name === 'lang') { S.lang = v; store.set('lang', v); langUi(); renderLyrics(true); }
   if (name === 'station') tuneStation(v);
   if (name === 'full') invoke('window_action', { action: 'fullscreen' });
-  if (name !== 'full') openSettings();
+  if (name !== 'full') fillSettings();
+});
+
+
+/* ───────────── polish pass: sharp canvases, window keys, shutter transitions */
+function sharpen() {
+  const k = Math.min(3, (parseFloat(stage.dataset.scale) || 1) * (devicePixelRatio || 1));
+  for (const [cv, w, h] of [[$('#lcd'), 1254, 152], [$('#drum'), 500, 92]]) {
+    const W = Math.round(w * k), H = Math.round(h * k);
+    if (cv.width !== W) { cv.width = W; cv.height = H; cv.getContext('2d').setTransform(k, 0, 0, k, 0, 0); }
+  }
+}
+addEventListener('resize', () => setTimeout(sharpen, 30));
+sharpen();
+
+const WIN = [['minimize', 1592], ['maximize', 1628], ['close', 1664]];
+WIN.forEach(([a, cx]) => ctl('win_' + a, cx - 16, 42, cx + 16, 74, { cls: 'round win' + (a === 'close' ? ' close' : ''), title: { minimize: "Yig'ish", maximize: 'Kattalashtirish', close: 'Yopish' }[a],
+  click: () => invoke('window_action', { action: a }) }));
+
+// the shutter: down (old content goes dark), swap, up (new content powers on with a scan line)
+let shutterBusy = Promise.resolve();
+let shutter = function shutter(swap) {
+  shutterBusy = shutterBusy.then(async () => {
+    const sh = $('#shutter'), scan = $('#scan');
+    await sh.animate([{ transform: 'translateY(-104%)' }, { transform: 'translateY(0)' }], { duration: 300, easing: 'cubic-bezier(.55,0,.75,.35)', fill: 'forwards' }).finished;
+    await sh.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-1.5%)' }, { transform: 'translateY(0)' }], { duration: 120, easing: 'ease-out', fill: 'forwards' }).finished;
+    click();
+    swap();
+    await new Promise((r) => setTimeout(r, 70));
+    sh.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-104%)' }], { duration: 420, easing: 'cubic-bezier(.3,1.25,.4,1)', fill: 'forwards' });
+    scan.animate([{ top: '194px', opacity: 0 }, { opacity: 1, offset: 0.1 }, { top: '628px', opacity: 0.9 }, { top: '628px', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.4,0,.2,1)' });
+    const target = $('#panel').hidden ? $('#lyr') : $('#panel');
+    target.animate([{ opacity: 0, filter: 'brightness(2)' }, { opacity: 0.6, offset: 0.25 }, { opacity: 0.15, offset: 0.4 }, { opacity: 1, filter: 'brightness(1)' }], { duration: 520, easing: 'steps(6, end)' });
+    await new Promise((r) => setTimeout(r, 420));
+  });
+  return shutterBusy;
+}
+
+
+/* ───────────── feel pass */
+// sounds: a short body thump + a bright tick, from filtered noise — no samples needed
+function noiseBuf() {
+  if (noiseBuf.b) return noiseBuf.b;
+  const b = actx.createBuffer(1, actx.sampleRate * 0.4, actx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return (noiseBuf.b = b);
+}
+function sfx(kind) {
+  try {
+    actx = actx || new AudioContext();
+    const t = actx.currentTime, out = actx.createGain();
+    out.gain.value = 0.55;
+    out.connect(actx.destination);
+    const burst = (f, q, dur, gain, delay = 0) => {
+      const s = actx.createBufferSource(); s.buffer = noiseBuf();
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+      const g = actx.createGain(); g.gain.setValueAtTime(gain, t + delay); g.gain.exponentialRampToValueAtTime(0.0001, t + delay + dur);
+      s.connect(bp).connect(g).connect(out); s.start(t + delay); s.stop(t + delay + dur + 0.02);
+    };
+    const thump = (f, dur, gain) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.5, t + dur);
+      g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(out); o.start(t); o.stop(t + dur + 0.02);
+    };
+    if (kind === 'down') { thump(150, 0.05, 0.22); burst(2600, 2.5, 0.025, 0.35); }
+    else if (kind === 'up') { burst(4200, 3, 0.018, 0.22); }
+    else if (kind === 'tick') { burst(5200, 6, 0.012, 0.18); }
+    else if (kind === 'shutter') { burst(900, 0.8, 0.32, 0.12); burst(1800, 1.5, 0.28, 0.06, 0.02); thump(70, 0.12, 0.15); }
+    else if (kind === 'latch') { thump(95, 0.07, 0.28); burst(3000, 2, 0.03, 0.3); }
+    else if (kind === 'print') {
+      // the thermal head: a buzzing hum stepping with the paper feed
+      const o = actx.createOscillator(), g = actx.createGain(), lp = actx.createBiquadFilter();
+      o.type = 'sawtooth'; o.frequency.value = 118; lp.type = 'bandpass'; lp.frequency.value = 1400; lp.Q.value = 1.2;
+      g.gain.setValueAtTime(0, t);
+      const dur = kindArg || 1.2;
+      for (let k = 0; k < dur * 30; k++) { g.gain.setValueAtTime(0.06, t + k / 30); g.gain.setValueAtTime(0.012, t + k / 30 + 0.02); }
+      g.gain.setValueAtTime(0, t + dur);
+      o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+    }
+    else if (kind === 'tear') { burst(2400, 0.6, 0.22, 0.25); burst(5000, 1, 0.12, 0.12, 0.05); }
+  } catch {}
+}
+let kindArg = 0;
+click = () => sfx('up');
+
+// physical keys: sink on press, spring back with a small overshoot on release
+document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
+  k.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || k.id === 'knob') return;
+    k.classList.add('press');
+    sfx('down');
+  });
+  const release = () => {
+    if (!k.classList.contains('press')) return;
+    k.classList.remove('press');
+    k.animate([{ transform: 'translateY(1.4px) scale(.992)' }, { transform: 'translateY(-.7px) scale(1.003)' }, { transform: 'translateY(.25px)' }, { transform: 'none' }],
+      { duration: 280, easing: 'cubic-bezier(.2,.8,.3,1)' });
+  };
+  k.addEventListener('pointerup', release);
+  k.addEventListener('pointerleave', release);
+  k.addEventListener('pointermove', (e) => {
+    const r = k.getBoundingClientRect();
+    k.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+    k.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+  });
+});
+
+// LED colours: every lens blooms in its own light
+meter.forEach((m, j) => m.style.setProperty('--g', j < 9 ? 'rgba(255,70,40,.7)' : 'rgba(255,170,64,.65)'));
+ring.forEach((r, i) => r.style.setProperty('--g', i >= 18 ? 'rgba(255,70,40,.7)' : 'rgba(255,175,70,.6)'));
+onAir.style.setProperty('--g', 'rgba(255,60,40,.85)');
+printerLed.style.setProperty('--g', 'rgba(80,240,160,.75)');
+
+// volume ticks sound like a detented knob
+const _setVol = setVolume;
+let lastStep = Math.round(S.volume * 20);
+setVolume = (v) => { _setVol(v); const st = Math.round(S.volume * 20); if (st !== lastStep) { lastStep = st; sfx('tick'); } };
+
+// glass follows the pointer a little (parallax of the reflections)
+stage.addEventListener('pointermove', (e) => {
+  const r = stage.getBoundingClientRect();
+  stage.style.setProperty('--gx', (((e.clientX - r.left) / r.width) * 2 - 1).toFixed(3));
+  stage.style.setProperty('--gy', (((e.clientY - r.top) / r.height) * 2 - 1).toFixed(3));
+});
+
+// the cover's colour: a vivid average, used for the light around the window
+function coverColor(src) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 24;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, 24, 24);
+      const d = g.getImageData(0, 0, 24, 24).data;
+      let r = 0, gg = 0, b = 0, w = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+        const sat = mx ? (mx - mn) / mx : 0, k = sat * sat * (mx / 255) + 0.02;
+        r += d[i] * k; gg += d[i + 1] * k; b += d[i + 2] * k; w += k;
+      }
+      r /= w; gg /= w; b /= w;
+      const mx = Math.max(r, gg, b, 1), f = 255 / mx;
+      stage.style.setProperty('--cv', `rgba(${Math.round(r * f)},${Math.round(gg * f)},${Math.round(b * f)},.42)`);
+    } catch {}
+  };
+  img.src = src;
+}
+const _onTrack = onTrack;
+onTrack = (t) => { _onTrack(t); coverColor(url(t.coverArt)); };
+
+// shutter and its sounds
+const _shutter = shutter;
+shutter = (swap) => { sfx('shutter'); return _shutter(() => { sfx('latch'); swap(); }); };
+
+// printing: buzz, jitter, the head LED blinks; double click tears the receipt off
+const _build = buildReceipt;
+buildReceipt = (t, animate) => {
+  $('#paper').classList.remove('tear');
+  $('#paperEmpty').hidden = true;
+  _build(t, animate);
+  if (animate) {
+    const p = $('#paper');
+    const dur = Math.min(4, p.scrollHeight / 210);
+    kindArg = dur; sfx('print');
+    p.classList.add('printing');
+    let blink = setInterval(() => on(printerLed, !printerLed.classList.contains('on')), 120);
+    setTimeout(() => { p.classList.remove('printing'); clearInterval(blink); on(printerLed, true); setTimeout(() => on(printerLed, false), 600); }, dur * 1000);
+  }
+};
+$('#paperWin').addEventListener('dblclick', () => {
+  const p = $('#paper');
+  if (p.classList.contains('tear') || !p.innerHTML) return;
+  sfx('tear');
+  p.classList.add('tear');
+  setTimeout(() => { p.innerHTML = ''; p.classList.remove('tear'); $('#paperEmpty').hidden = false; $('#qator').textContent = 'QATOR --/--'; }, 700);
+});
+
+// guests without a picture: a coloured disc with their initial
+const GLYPH = ['#cdbbff', '#b5efd3', '#ffcfa6', '#ff9aa8', '#a6d8ff', '#ffe08a'];
+const _msgHtml = msgHtml;
+msgHtml = (m) => {
+  let h = _msgHtml(m);
+  if (!avatarUrl(m.avatar)) {
+    const n = parseInt((m.avatar || 'p:0').slice(2)) || 0;
+    h = h.replace('<div class="av" style="">', `<div class="av g" style="background:${GLYPH[n % GLYPH.length]}">${esc((m.name || '?').trim()[0] || '?').toUpperCase()}</div>`);
+  }
+  return h;
+};
+
+// power-on: dark, then the lights come up while the LCD boots
+let bootUntil = performance.now() + 1700;
+$('#power').classList.add('boot');
+const _drawLcd = drawLcd;
+drawLcd = () => {
+  const now = performance.now();
+  if (now < bootUntil) {
+    const c = lcd, k = 1 - (bootUntil - now) / 1700;
+    c.clearRect(0, 0, 5000, 1000);
+    c.fillStyle = '#232b1b';
+    c.font = '46px VT'; c.fillText('KR-01 DESK', 28, 70);
+    c.font = '22px VT'; c.fillText('KAWAII RADIO · ISHGA TUSHMOQDA', 30, 104);
+    const n = 40;
+    for (let i = 0; i < n; i++) { c.fillStyle = i / n < k ? '#232b1b' : 'rgba(35,43,27,.16)'; c.fillRect(30 + i * 30, 120, 24, 10); }
+    return;
+  }
+  _drawLcd();
+};
+const _drawMeter = drawMeter;
+drawMeter = () => {
+  const now = performance.now();
+  if (now < bootUntil) {
+    const k = 1 - (bootUntil - now) / 1700, n = Math.round(Math.sin(k * Math.PI) * 18);
+    meter.forEach((m, j) => on(m, 17 - j < n));
+    ring.forEach((r, i) => on(r, i < Math.round(Math.sin(k * Math.PI) * 21)));
+    return;
+  }
+  if (!drawMeter.booted) { drawMeter.booted = true; setVolume(S.volume); }
+  _drawMeter();
+};
+
+/* ───────────── no lyrics: the display becomes a dot-matrix spectrum of the real signal */
+const viz = $('#viz').getContext('2d');
+let fbuf, peaks = new Float32Array(48);
+function drawViz() {
+  const show = cur && !activeLines().length;
+  $('#viz').style.opacity = show ? 1 : 0;
+  if (!show) return;
+  const k = Math.min(3, (parseFloat(stage.dataset.scale) || 1) * (devicePixelRatio || 1));
+  const cv = $('#viz');
+  if (cv.width !== Math.round(700 * k)) { cv.width = Math.round(700 * k); cv.height = Math.round(300 * k); viz.setTransform(k, 0, 0, k, 0, 0); }
+  viz.clearRect(0, 0, 700, 300);
+  const cols = 48, rows = 22, cw = 700 / cols, rh = 300 / rows;
+  let bins = null;
+  if (analyser && S.playing) { fbuf = fbuf || new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(fbuf); bins = fbuf; }
+  for (let c = 0; c < cols; c++) {
+    let v = 0;
+    if (bins) {
+      const a = Math.floor(Math.pow(c / cols, 1.8) * 300) + 1, b = Math.floor(Math.pow((c + 1) / cols, 1.8) * 300) + 2;
+      for (let i = a; i < b; i++) v = Math.max(v, bins[i]);
+      v /= 255;
+    } else v = 0.08 + 0.05 * Math.sin(performance.now() / 600 + c * 0.4);
+    const h = Math.round(v * rows);
+    peaks[c] = Math.max(peaks[c] - 0.25, h);
+    for (let r = 0; r < rows; r++) {
+      const lit = r < h, pk = r === Math.round(peaks[c]);
+      viz.fillStyle = lit ? (r > rows * 0.8 ? '#e6ff9a' : '#a8c060') : pk ? 'rgba(196,224,120,.7)' : 'rgba(120,140,70,.10)';
+      viz.fillRect(c * cw + 2, 300 - (r + 1) * rh + 2, cw - 4, rh - 4);
+    }
+  }
+}
+
+
+/* ───────────── LCD segment shadow, retune glitch, shortcuts */
+let retuneUntil = 0;
+const _drawLcd2 = drawLcd;
+drawLcd = () => {
+  const c = lcd;
+  c.save();
+  c.shadowColor = 'rgba(35,43,27,.22)'; c.shadowOffsetX = 1.6; c.shadowOffsetY = 1.6; c.shadowBlur = 0;
+  _drawLcd2();
+  c.restore();
+  const now = performance.now();
+  if (now < retuneUntil) {
+    // static while the tuner finds the new station
+    const k = (retuneUntil - now) / 450;
+    for (let i = 0; i < 260 * k; i++) {
+      c.fillStyle = `rgba(35,43,27,${(Math.random() * 0.5).toFixed(2)})`;
+      c.fillRect(Math.random() * 1254, Math.random() * 152, 2 + Math.random() * 10, 2);
+    }
+    c.fillStyle = `rgba(207,216,170,${(0.5 * k).toFixed(2)})`;
+    c.fillRect(0, (now / 3) % 152, 1254, 6);
+  }
+};
+const _onTrack2 = onTrack;
+onTrack = (t) => { if (tv.dataset.ready) { retuneUntil = performance.now() + 450; tick(40); } _onTrack2(t); };
+
+addEventListener('keydown', (e) => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyF') { e.preventDefault(); openScreen(1); }
+  else if (e.code === 'Digit1') tuneStation('jpop');
+  else if (e.code === 'Digit2') tuneStation('ost');
+  else if (e.code === 'Digit3') tuneStation('riot');
+  else if (e.code === 'ArrowUp') { e.preventDefault(); setVolume(S.volume + 0.05); }
+  else if (e.code === 'ArrowDown') { e.preventDefault(); setVolume(S.volume - 0.05); }
+  else if (e.code === 'KeyL') toggleLike();
+  else if (e.code === 'KeyT') printReceipt();
+  else if (e.code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? 'OVOZ O\'CHIQ' : 'OVOZ YONIQ'); }
 });
 
 /* ───────────── frame loop */
@@ -670,6 +960,7 @@ function frame(now) {
   drawDrum(dt);
   drawMeter();
   renderLyrics(false);
+  drawViz();
   stepPaper(dt);
   on(onAir, S.playing && Math.floor(now / 800) % 2 === 0);
   requestAnimationFrame(frame);

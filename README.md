@@ -55,6 +55,32 @@ cd app && cargo build --release      # → app/target/release/kawaii-radio.exe (
 Rust — `x86_64-pc-windows-gnu`, linker va `windres` — WinLibs MinGW (`.tools/mingw64`).
 Fon render'larini yangilash: `blender -b -P design/blend/main.py -- --theme dark --app [--down] --out app/ui/assets/dark-up.png` → WebP.
 
+### Ishga tushirish
+`dist/KawaiiRadio-0.1-windows.zip` ni oching va `Kawaii Radio.exe` ni ishga tushiring (yonida `WebView2Loader.dll` turishi shart).
+WebView2 Windows 10/11 da bor.
+
+### Tugmalar
+| Tugma | Nima |
+|---|---|
+| Probel | Ijro / pauza |
+| 1 / 2 / 3 | J-POP / OST / RIOT stansiyasi |
+| ↑ / ↓ yoki murvat ustida g'ildirak | Ovoz |
+| L | Sevimli |
+| T | TAVSIF chekini chop etish (chekni ikki marta bosish — yirtib olish) |
+| M | Ovozni o'chirish |
+| Ctrl+F | Qidiruv |
+| F11 | To'liq ekran, Esc — modulni yopish |
+
+### Hissiyot (v0.2)
+- 4K render (3840×2160) fon, oyna 16:9 nisbatini saqlaydi, Windows 11 yumaloq burchaklari va soyasi.
+- Oyna tugmalari — printer boshidagi haqiqiy (render) tugmalar.
+- Tugmalar bosilganda botadi va prujina bilan qaytadi, bosish/qo'yib yuborish tovushi (WebAudio, namunasiz).
+- LED'lar yonadi va atrofiga nur sochadi; muqova rangi panelni yoritadi; oynalarda sichqonchaga ergashuvchi aks.
+- Ishga tushish: korpus qorong'idan yonadi, LCD yuklanadi, LED'lar o'tib chiqadi.
+- Modullar metall jalyuzi orqali almashadi (tovushi bilan), ekran skan chizig'i bilan yonadi.
+- Trek almashganda LCD'da shovqin (sozlash), baraban siltanadi; matnsiz qo'shiqlarda — haqiqiy signal spektri.
+- Termoqog'oz: tola teksturasi, chop etish g'uvillashi va titrashi, chekni yirtib olish.
+
 ### Keyingi qadamlar
 - Kawaii ID bilan kirish (kompyuter uchun: brauzer → bulut → ilova so'rovi), chatda yozish, LEVEL/RANK.
 - O'Z TANLOVIM (Kawaii Pass), yuklab olish (SAQLASH).

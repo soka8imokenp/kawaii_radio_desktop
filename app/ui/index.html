@@ -10,13 +10,13 @@
   <div id="stage" class="dark">
     <!-- everything below sits on the rendered device (assets/<theme>-up.webp) in its 1920 x 1080 coordinates -->
 
-    <!-- window keys on the printer head -->
-    <div id="winkeys"><i data-win="minimize" title="Yig'ish"></i><i data-win="maximize" title="Kattalashtirish"></i><i data-win="close" title="Yopish"></i></div>
 
     <!-- live text on the bay -->
     <div id="listeners" class="silk">— TINGLOVCHI</div>
     <div id="stationFreq" class="silk"></div>
 
+    <!-- light of the cover spilling over the bay -->
+    <div id="spill"></div>
     <!-- trivision cover window -->
     <div id="tv"></div>
     <div id="tvShade"></div>
@@ -26,6 +26,7 @@
       <div class="lh"><i class="dotled"></i><b id="lyTitle">—</b><span id="lyArtist"></span></div>
       <div id="lyLines"></div>
       <div id="lyRail"></div>
+      <canvas id="viz" width="700" height="300"></canvas>
     </div>
 
     <!-- a module that slides over the lyrics display: search, library, profile -->
@@ -34,6 +35,10 @@
       <div id="pSearch"><input id="pInput" placeholder="QO'SHIQ YOKI IJROCHI" spellcheck="false"></div>
       <div id="pList"></div>
     </div>
+
+    <!-- the metal shutter that rolls down over the display while modules change -->
+    <div id="shutWin"><div id="shutter"><i class="grip"></i><i class="stripe"></i></div></div>
+    <div id="scan"></div>
 
     <!-- the big LCD -->
     <canvas id="lcd" width="1254" height="152"></canvas>
@@ -45,6 +50,7 @@
     <!-- printer: line counter and the receipt -->
     <div id="qator">QATOR 01/01</div>
     <div id="paperWin"><div id="paper"></div></div>
+    <div id="paperEmpty" hidden>TAVSIF TUGMASINI BOSING</div>
 
     <!-- chat -->
     <div id="chat">
@@ -57,6 +63,10 @@
     <!-- hit areas and lit overlays for every control (filled in by app.js) -->
     <div id="controls"></div>
 
+    <!-- glass: speculars that slide a little with the pointer -->
+    <div class="glass" id="gTv"></div><div class="glass" id="gLyr"></div><div class="glass" id="gLcd"></div><div class="glass" id="gDrum"></div>
+    <div id="power"></div>
+    <div id="edge"></div>
     <!-- a little LCD toast for things that are not here yet -->
     <div id="toast"></div>
   </div>

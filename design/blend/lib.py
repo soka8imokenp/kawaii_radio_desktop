@@ -162,6 +162,26 @@ class Ctx:
             nt.links.new(bp.outputs['Normal'], b.inputs['Normal'])
         return m
 
+    def flake(self, m, scale=2600, amount=0.18, metal=0.0):
+        """Sparkle in the plastic: tiny cells with their own roughness (and a little metal), like painted hardware."""
+        nt = m.node_tree
+        b = nt.nodes['Principled BSDF']
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        v = nt.nodes.new('ShaderNodeTexVoronoi'); v.inputs['Scale'].default_value = scale
+        nt.links.new(tc.outputs['Object'], v.inputs['Vector'])
+        mr = nt.nodes.new('ShaderNodeMapRange')
+        mr.inputs['To Min'].default_value = b.inputs['Roughness'].default_value - amount
+        mr.inputs['To Max'].default_value = b.inputs['Roughness'].default_value + amount * 0.3
+        nt.links.new(v.outputs['Color'] if 'Color' in v.outputs else v.outputs[1], mr.inputs['Value'])
+        nt.links.new(mr.outputs['Result'], b.inputs['Roughness'])
+        if metal:
+            mm = nt.nodes.new('ShaderNodeMath'); mm.operation = 'MULTIPLY'; mm.inputs[1].default_value = metal
+            sep = nt.nodes.new('ShaderNodeSeparateColor')
+            nt.links.new(v.outputs['Color'], sep.inputs['Color'])
+            nt.links.new(sep.outputs[0], mm.inputs[0])
+            nt.links.new(mm.outputs[0], b.inputs['Metallic'])
+        return m
+
     def dotted(self, m, pitch, dot, ink):
         nt = m.node_tree
         b = nt.nodes['Principled BSDF']
@@ -243,11 +263,11 @@ class Ctx:
     def _mats(self):
         T = self.T
         c = hexc
-        self.CHALK = self.dotted(self.mat('chalk', c(T['chassis']), 0.8, bump=(520, 0.14), spec=0.2), 0.13, 0.012, c(T['dots']))
-        self.TRAY = self.dotted(self.mat('tray', c(T['tray']), 0.82, bump=(520, 0.14), spec=0.18), 0.13, 0.012, c(T['trayDots']))
-        self.GRAPH = self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(1100, 0.08), spec=0.4), 0.08, 0.009, c(T['bayDots']))
+        self.CHALK = self.flake(self.dotted(self.mat('chalk', c(T['chassis']), 0.78, bump=(420, 0.2), spec=0.22), 0.13, 0.012, c(T['dots'])), 2400, 0.14, 0.25 if self.theme == 'dark' else 0.0)
+        self.TRAY = self.flake(self.dotted(self.mat('tray', c(T['tray']), 0.82, bump=(420, 0.2), spec=0.18), 0.13, 0.012, c(T['trayDots'])), 2400, 0.12, 0.15 if self.theme == 'dark' else 0.0)
+        self.GRAPH = self.flake(self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(900, 0.1), spec=0.4), 0.08, 0.009, c(T['bayDots'])), 3000, 0.2, 0.35)
         self.WELL = self.mat('well', c(T['well']), 0.35, bump=(1200, 0.03))
-        self.KEY = self.mat('key', c(T['key']), 0.42, coat=0.18, bump=(1400, 0.035), spec=0.3)
+        self.KEY = self.flake(self.mat('key', c(T['key']), 0.42, coat=0.18, bump=(1400, 0.035), spec=0.3), 3200, 0.1, 0.2 if self.theme == 'dark' else 0.0)
         self.KEYS = self.mat('keys', c(T['keyStation']), 0.42, coat=0.3, bump=(1400, 0.04))
         self.INK = self.mat('ink', c(T['ink']), 0.6)
         self.INKD = self.mat('inkd', c(T['inkD']), 0.6)
