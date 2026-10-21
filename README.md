@@ -50,7 +50,7 @@ Jonli efir: `GET /radio?station=jpop|ost|riot` jadvali bo'yicha, hamma bilan bir
 ```bash
 export RUSTUP_HOME=/d/kawaii_radio_exe/.tools/rustup CARGO_HOME=/d/kawaii_radio_exe/.tools/cargo
 export PATH="/d/kawaii_radio_exe/.tools/cargo/bin:/d/kawaii_radio_exe/.tools/mingw64/bin:$PATH"
-cd app && cargo build --release      # → app/target/release/kawaii-radio.exe (~10 MB)
+cd app && cargo build --release      # → app/target/release/kawaii-radio.exe (~10 MB) + WebView2Loader.dll (yonma-yon turishi shart)
 ```
 Rust — `x86_64-pc-windows-gnu`, linker va `windres` — WinLibs MinGW (`.tools/mingw64`).
 Fon render'larini yangilash: `blender -b -P design/blend/main.py -- --theme dark --app [--down] --out app/ui/assets/dark-up.png` → WebP.
