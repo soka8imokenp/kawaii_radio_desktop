@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Kawaii Radio — KR-01 DESK</title>
+<style>
+@font-face{font-family:Galmuri;src:url(fonts/galmuri11.ttf)}
+@font-face{font-family:Dot;src:url(fonts/dotgothic16.ttf)}
+@font-face{font-family:VT;src:url(fonts/vt323.ttf)}
+@font-face{font-family:Pixelify;src:url(fonts/pixelify_600.ttf);font-weight:600}
+@font-face{font-family:Pixelify;src:url(fonts/pixelify_500.ttf);font-weight:500}
+@font-face{font-family:Inter;src:url(fonts/inter_400.ttf);font-weight:400}
+@font-face{font-family:Inter;src:url(fonts/inter_600.ttf);font-weight:600}
+@font-face{font-family:Inter;src:url(fonts/inter_700.ttf);font-weight:700}
+@font-face{font-family:Inter;src:url(fonts/inter_800.ttf);font-weight:800}
+:root{
+  /* chalk, from the phone's Theme.kt */
+  --page:#dfe1e6;--base:#ebecef;--base2:#eff1f5;--raised:#fafafc;--tray:#e3e5ea;
+  --ink:#374151;--soft:#6b7280;--ctl:#4b5563;--shade:#b8bdcb;--shadeSoft:rgba(184,189,203,.55);--shadeDeep:rgba(140,146,163,.5);
+  --lcdA:#cfd8aa;--lcdB:#aab68a;--lcdInk:#262e1e;--ghost:rgba(38,46,30,.1);--lcdBorder:#3a4131;
+  --pTop:#2c2e33;--pMid:#232428;--pBot:#1f2023;--well:#18191c;
+  --lyric:#c4e078;--red:#ef4444;--gold:#f5b93b;
+  --glow:#d8455f; /* picked from the cover */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1600px;height:1000px;overflow:hidden;font-family:Dot,sans-serif;color:var(--ink);background:var(--page)}
+/* the faint dot grid of the phone's background */
+.page{position:absolute;inset:0;background:radial-gradient(circle,rgba(55,65,81,.11) 1px,transparent 1.3px) 0 0/14px 14px,linear-gradient(180deg,#e6e8ec,#dcdee3)}
+
+/* ── surfaces (Surfaces.kt, 1:1) */
+.raised{background:linear-gradient(180deg,var(--raised),var(--base2));
+  box-shadow:0 6px 12px -5px var(--shadeDeep),0 2px 0 var(--shadeSoft),0 0 0 1px var(--shadeSoft),inset 0 1px 0 #fff}
+.down{background:linear-gradient(180deg,var(--tray),var(--base2));
+  box-shadow:0 1px 0 #fff,0 0 0 1px var(--shadeSoft),inset 0 -1px 0 #fff,inset 0 2px 4px var(--shade)}
+.tray{background:var(--tray);box-shadow:0 1px 0 #fff,inset 0 -1px 0 #fff,inset 0 2px 5px var(--shade)}
+.lcd{position:relative;color:var(--lcdInk);border:3px solid var(--lcdBorder);
+  background:linear-gradient(rgba(38,46,30,.05) 1px,transparent 1px) 0 0/6px 6px,linear-gradient(90deg,rgba(38,46,30,.05) 1px,transparent 1px) 0 0/6px 6px,
+    radial-gradient(120% 90% at 30% 20%,var(--lcdA),var(--lcdB));
+  box-shadow:inset 0 8px 18px rgba(30,40,20,.3),inset 0 2px 0 rgba(0,0,0,.2),0 0 0 1px rgba(255,255,255,.6)}
+/* the PC extra: a soft backlight bleeding out of the glass */
+.lcd.lit::after{content:"";position:absolute;inset:-3px;border-radius:inherit;pointer-events:none;box-shadow:0 0 34px rgba(196,224,120,.28)}
+.dwell{background:var(--well);box-shadow:0 1px 0 rgba(255,255,255,.05),inset 0 1px 3px rgba(0,0,0,.7)}
+.px{display:inline-block;image-rendering:pixelated}
+.lab{font:11px Galmuri;letter-spacing:.14em;color:var(--soft);text-transform:uppercase}
+
+/* ── window */
+.win{position:absolute;inset:0;display:grid;grid-template-columns:112px 1fr 430px;gap:0}
+
+/* nav rail: the phone's bottom bar, standing up */
+.rail{padding:18px 0 18px 18px;display:flex;flex-direction:column}
+.rail .t{flex:1;border-radius:30px;padding:12px 10px;display:flex;flex-direction:column;gap:10px}
+.logo{height:74px;border-radius:20px;display:grid;place-items:center;background:linear-gradient(180deg,#2f3136,#1f2023);box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 6px 12px -4px rgba(0,0,0,.5);margin-bottom:6px;position:relative;overflow:hidden}
+.logo img{width:34px;filter:drop-shadow(0 0 10px rgba(255,255,255,.35))}
+.logo i{position:absolute;left:12px;right:12px;bottom:9px;height:3px;display:flex;gap:2px}
+.logo i b{flex:1;background:#3ad07a;box-shadow:0 0 6px #3ad07a;border-radius:1px}
+.nk{height:76px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font:10px Galmuri;letter-spacing:.06em;color:var(--ctl)}
+.nk.down{color:var(--ink)}
+.nk .dot{position:absolute}
+.rail .sp{flex:1}
+
+/* ── centre */
+.mid{padding:18px 16px 18px 18px;display:flex;flex-direction:column;gap:16px;min-width:0}
+/* the dark top panel, now a wide glass bay */
+.bay{position:relative;height:596px;border-radius:34px;overflow:hidden;color:#e6e8ec;
+  background:radial-gradient(circle,rgba(255,255,255,.035) 1px,transparent 1.4px) 0 0/8px 8px,linear-gradient(180deg,var(--pTop),var(--pMid) 55%,var(--pBot));
+  box-shadow:0 30px 60px -20px rgba(40,44,54,.55),0 10px 20px -10px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.08),inset 0 -1px 0 rgba(0,0,0,.6)}
+/* the cover's colour lighting the panel from behind the carousel */
+.bay::before{content:"";position:absolute;left:50%;top:150px;width:760px;height:420px;margin-left:-380px;border-radius:50%;
+  background:radial-gradient(closest-side,color-mix(in srgb,var(--glow) 55%,transparent),transparent);filter:blur(30px);opacity:.55;animation:breathe 6s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.75;transform:scale(1.05)}}
+.bh{position:relative;display:flex;align-items:center;gap:14px;padding:22px 26px 0}
+.bh img{width:30px}
+.bh b{font:800 22px Inter;letter-spacing:-.01em;color:#f2f3f5}
+.bh small{display:block;font:12px Galmuri;letter-spacing:.06em;color:#8a909b;margin-top:3px}
+.bh .sp{flex:1}
+.mode{width:520px;height:66px;border-radius:20px;padding:5px;display:grid;grid-template-columns:1fr 1fr;position:relative}
+.mode .k{border-radius:15px;display:flex;align-items:center;padding:0 18px;gap:12px}
+.mode .k.on{background:linear-gradient(180deg,#fdfdfe,#eceef2);color:#2b2f37;box-shadow:0 6px 14px rgba(0,0,0,.45),inset 0 1px 0 #fff}
+.mode .k b{display:block;font:14px Galmuri;letter-spacing:.08em;color:#2b2f37}
+.mode .k small{font:12px Dot;color:#7b818c}
+.mode .grip{margin-left:auto;display:flex;gap:3px}.mode .grip i{width:2px;height:20px;background:#c7cbd3;box-shadow:1px 0 0 #fff}
+.mode .k.off{color:#8a909b;justify-content:center;font:14px Galmuri;letter-spacing:.08em}
+.win-k{display:flex;gap:6px;margin-left:8px}
+.win-k i{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font:12px Galmuri;color:#8a909b;background:linear-gradient(180deg,#34363c,#26282c);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 3px 6px rgba(0,0,0,.5)}
+.row2{position:relative;display:flex;align-items:center;gap:16px;padding:16px 26px 0}
+.tabs{width:520px;height:46px;border-radius:15px;padding:4px;display:grid;grid-template-columns:repeat(4,1fr)}
+.tabs span{display:grid;place-items:center;font:15px Dot;color:#8a909b;border-radius:11px}
+.tabs span.on{color:#f2f3f5;background:linear-gradient(180deg,#45484f,#34363c);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 8px rgba(0,0,0,.5)}
+.onair{margin-left:auto;display:flex;align-items:center;gap:12px;font:12px Galmuri;letter-spacing:.1em;color:#a7adb7}
+.onair .led{width:9px;height:9px;border-radius:50%;background:#ff4b4b;box-shadow:0 0 10px #ff4b4b,0 0 2px #fff inset;animation:blink 1.6s steps(1) infinite}
+@keyframes blink{50%{opacity:.35}}
+.ppl{display:flex}.ppl span{width:28px;height:28px;border-radius:50%;margin-left:-8px;border:2px solid #26282c;background:center/cover}
+/* 3D cover flow */
+.flow{position:relative;height:270px;perspective:1300px;margin-top:4px}
+.cv{position:absolute;top:18px;left:50%;width:222px;height:222px;margin-left:-111px;border-radius:24px;background:center/cover;
+  -webkit-box-reflect:below 10px linear-gradient(transparent 62%,rgba(255,255,255,.16));transition:.6s}
+.cv.c{z-index:5;box-shadow:0 0 0 5px #f3f4f6,0 0 0 6px rgba(0,0,0,.2),0 34px 60px rgba(0,0,0,.55),0 0 90px color-mix(in srgb,var(--glow) 45%,transparent);animation:float 5s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-6px)}}
+.cv.c::before{content:"";position:absolute;inset:0;border-radius:24px;background:linear-gradient(125deg,rgba(255,255,255,.35),transparent 30%)}
+.cv.c .ok{position:absolute;left:14px;top:14px;width:36px;height:36px;border-radius:50%;background:#fff;display:grid;place-items:center;box-shadow:0 4px 10px rgba(0,0,0,.35)}
+.cv.s1{z-index:4;transform:translateX(-215px) translateZ(-120px) rotateY(48deg);box-shadow:0 0 0 4px #c8cbd2,0 20px 40px rgba(0,0,0,.5);filter:brightness(.82)}
+.cv.s2{z-index:3;transform:translateX(-370px) translateZ(-260px) rotateY(56deg);box-shadow:0 0 0 4px #9da1a9,0 20px 40px rgba(0,0,0,.5);filter:brightness(.6)}
+.cv.s3{z-index:2;transform:translateX(-500px) translateZ(-400px) rotateY(60deg);filter:brightness(.4)}
+.cv.r1{z-index:4;transform:translateX(215px) translateZ(-120px) rotateY(-48deg);box-shadow:0 0 0 4px #c8cbd2,0 20px 40px rgba(0,0,0,.5);filter:brightness(.82)}
+.cv.r2{z-index:3;transform:translateX(370px) translateZ(-260px) rotateY(-56deg);box-shadow:0 0 0 4px #9da1a9,0 20px 40px rgba(0,0,0,.5);filter:brightness(.6)}
+.cv.r3{z-index:2;transform:translateX(500px) translateZ(-400px) rotateY(-60deg);filter:brightness(.4)}
+/* lyrics well */
+.ly{position:absolute;left:22px;right:22px;bottom:22px;height:140px;border-radius:22px;padding:16px 22px;overflow:hidden}
+.ly .h{display:flex;align-items:center;gap:10px;font:15px Dot}
+.ly .h i{width:7px;height:7px;border-radius:50%;background:#6b7280}
+.ly .h b{font-weight:400;color:#f2f3f5}.ly .h span{color:#8a909b}
+.ly .h em{margin-left:auto;font:12px Galmuri;font-style:normal;letter-spacing:.08em;color:#6f7580}
+.ly .l{font:36px/1.08 VT;letter-spacing:.03em;margin-top:10px;color:var(--lyric);text-shadow:0 0 14px rgba(196,224,120,.45)}
+.ly .l .done{color:#f4ffd6;text-shadow:0 0 18px rgba(196,224,120,.8)}
+.ly .n{font:24px VT;letter-spacing:.03em;color:#566048;margin-top:4px}
+.ly .tr{position:absolute;right:22px;bottom:16px;font:13px Dot;color:#7b818c}
+
+/* the chalk deck */
+.deck{flex:1;border-radius:34px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.wave-lcd{border-radius:20px;height:146px;padding:12px 18px 10px;display:flex;flex-direction:column}
+.wl1{display:flex;align-items:center;gap:10px;font:16px Dot}
+.wl1 .t{margin-left:auto;font:26px VT;letter-spacing:.04em}
+.wl1 .t s{text-decoration:none;color:var(--ghost)}
+.wl1 .t small{font:18px VT;opacity:.4;margin-left:6px}
+.wv{flex:1;display:flex;align-items:center;gap:2px;margin:6px 0 4px;position:relative}
+.wv i{flex:1;background:var(--lcdInk);border-radius:1px}
+.wv i.f{opacity:.28}
+.wv .head{position:absolute;top:2px;bottom:2px;width:3px;background:var(--lcdInk);box-shadow:0 0 0 2px rgba(207,216,170,.7)}
+.wl3{display:flex;align-items:center;gap:16px;font:17px VT;letter-spacing:.06em;border-top:1px solid rgba(38,46,30,.18);padding-top:5px}
+.wl3 .o{display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--lcdInk);vertical-align:0;margin-left:4px}
+.wl3 .o.f{background:var(--lcdInk)}
+.wl3 .g{opacity:.35}
+.wl3 .air{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ctl{display:grid;grid-template-columns:78px 1fr 78px 200px 200px;gap:14px;align-items:center}
+.rk{height:78px;border-radius:50%;display:grid;place-items:center}
+/* the tuner drum: lit like a cylinder */
+.tun{height:78px;border-radius:24px;padding:6px;position:relative}
+.drum{height:100%;border-radius:18px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#c9ccd3 0%,#f4f5f7 22%,#ffffff 46%,#eef0f3 64%,#c3c7cf 100%);box-shadow:inset 0 1px 2px rgba(0,0,0,.25),inset 0 -1px 2px rgba(0,0,0,.15)}
+.drum .ticks{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 30px,rgba(55,65,81,.28) 30px 32px),repeating-linear-gradient(90deg,transparent 0 6px,rgba(55,65,81,.12) 6px 7px);
+  mask:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent),linear-gradient(0deg,transparent 18%,#000 18% 82%,transparent 82%);-webkit-mask-composite:source-in;mask-composite:intersect;animation:spin 3s linear infinite}
+@keyframes spin{to{background-position:32px 0,7px 0}}
+.drum .needle{position:absolute;left:50%;top:12px;bottom:12px;width:10px;margin-left:-5px;border-radius:6px;background:linear-gradient(180deg,#ff8a8a,var(--red) 50%,#b91c1c);box-shadow:0 0 14px rgba(239,68,68,.8),0 0 0 2px rgba(255,255,255,.7)}
+.drum .scale{position:absolute;left:0;right:0;top:4px;display:flex;justify-content:space-around;font:13px VT;color:rgba(55,65,81,.5)}
+.wk{height:62px;border-radius:20px;display:flex;align-items:center;justify-content:center;gap:12px;font:14px Galmuri;letter-spacing:.1em;color:var(--ctl)}
+
+/* queue strip */
+.q{flex:1;display:grid;grid-template-columns:96px repeat(5,1fr);gap:10px;align-items:stretch}
+.q .lb{display:flex;flex-direction:column;justify-content:center;gap:4px;padding-left:6px;font:11px Galmuri;letter-spacing:.12em;color:var(--soft)}
+.q .lb b{font:26px VT;color:var(--ink);letter-spacing:.04em;font-weight:400}
+.qi{border-radius:18px;display:flex;align-items:center;gap:10px;padding:8px}
+.qi span{width:46px;height:46px;flex:none;border-radius:11px;background:center/cover;box-shadow:0 0 0 2px #fff,0 3px 8px rgba(0,0,0,.18)}
+.qi b{display:block;font:14px Dot;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qi small{font:12px Dot;color:var(--soft)}
+.qi div{min-width:0}
+/* ── right column */
+.rc{padding:18px 18px 18px 0;display:flex;flex-direction:column;gap:16px;min-height:0}
+.prof{border-radius:30px;padding:16px}
+.pr1{display:flex;gap:14px;align-items:center}
+.av{width:86px;height:86px;border-radius:50%;padding:5px;position:relative}
+.av span{display:block;width:100%;height:100%;border-radius:50%;background:url(https://radio.kawaii.uz/files/covers/ado-kira-mv84h2ww.jpg) center/cover}
+.pn b{font:600 26px Inter;color:#1f2937;letter-spacing:-.01em}
+.pn small{display:block;font:13px Dot;color:var(--soft);margin-top:2px}
+.kp{display:inline-block;margin-top:8px;font:600 11px Pixelify;letter-spacing:.1em;color:#d9a21b;padding:4px 10px;border-radius:9px}
+.gear{margin-left:auto;align-self:flex-start;width:44px;height:44px;border-radius:50%;display:grid;place-items:center}
+.pr2{display:flex;gap:12px;margin-top:14px}
+.rank{width:84px;height:92px;flex:none;border-radius:18px;position:relative;display:grid;place-items:center;border:2px solid rgba(59,111,224,.55);box-shadow:0 0 22px rgba(59,111,224,.4),0 1px 0 #fff,inset 0 2px 5px var(--shade);background:var(--tray)}
+.rank img{width:64px;filter:drop-shadow(0 4px 6px rgba(20,35,80,.3))}
+.rank .id{position:absolute;right:-4px;bottom:-4px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font:600 10px Pixelify;color:var(--ctl)}
+.lvl{flex:1;border-radius:14px;padding:9px 13px}
+.lvl .a{display:flex;align-items:flex-end;gap:6px;font:13px Dot;opacity:.9}
+.lvl .a b{font:400 30px/24px VT;font-weight:400}
+.lvl .a span{margin-left:auto;font:14px Dot}
+.seg{display:flex;gap:2px;height:11px;margin:8px 0 6px}
+.seg i{flex:1;background:var(--ghost)}.seg i.on{background:var(--lcdInk)}
+.lvl small{font:12px Dot;opacity:.6;letter-spacing:.04em}
+.chat{flex:1;border-radius:30px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+.ch{display:flex;align-items:center}
+.ch b{font:26px Galmuri;letter-spacing:.06em;color:#1f2937}
+.ch small{display:block;font:13px Dot;color:var(--soft)}
+.ch .np{margin-left:auto;display:flex;align-items:center;gap:8px;padding:5px 10px 5px 5px;border-radius:14px}
+.ch .np span{width:34px;height:34px;border-radius:8px;background:url(https://radio.kawaii.uz/files/covers/jpop-kenshi-yonezu-kick-back-3kheep-mvdvifuv.jpg) center/cover}
+.ch .np b{font:13px Dot;letter-spacing:0;display:block}.ch .np small{font:11px Dot}
+.pin{border-radius:16px;padding:9px 12px;display:flex;gap:10px;align-items:center;font:13px Dot}
+.pin i{width:3px;align-self:stretch;border-radius:2px;background:var(--gold)}
+.pin small{display:block;font:10px Galmuri;letter-spacing:.1em;color:var(--soft)}
+.msgs{flex:1;display:flex;flex-direction:column;gap:12px;justify-content:flex-end;min-height:0}
+.m{display:flex;gap:10px;align-items:flex-end}
+.m .a{width:34px;height:34px;flex:none;border-radius:50%;background:center/cover}
+.bub{border-radius:20px;padding:10px 14px;max-width:290px}
+.bub .n{font:13px Dot;display:flex;align-items:center;gap:6px}
+.bub .n em{font:10px Pixelify;font-weight:600;font-style:normal;letter-spacing:.08em;padding:1px 6px;border-radius:6px}
+.bub p{font:15px/1.35 Dot;color:#1f2937;margin-top:2px}
+.bub .song{display:flex;gap:10px;align-items:center;margin-top:6px}
+.bub .song span{width:58px;height:58px;border-radius:12px;background:center/cover;box-shadow:0 0 0 3px #fff,0 4px 10px rgba(0,0,0,.2)}
+.bub .song b{font:15px Dot;font-weight:400;display:block}.bub .song small{font:12px Dot;color:var(--soft)}
+.bub .tm{font:11px Dot;color:var(--soft);text-align:right;margin-top:4px}
+.re{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:12px;font:12px Dot;margin-top:6px}
+.cmp{display:grid;grid-template-columns:52px 1fr 52px;gap:8px;padding:6px;border-radius:22px}
+.cmp .k{height:52px;border-radius:16px;display:grid;place-items:center}
+.cmp .in{height:52px;border-radius:14px;display:flex;align-items:center;padding:0 14px;font:18px VT;letter-spacing:.08em;color:rgba(38,46,30,.45)}
+.cmp .in i{width:2px;height:22px;background:var(--lcdInk);margin-left:2px;animation:blink 1s steps(1) infinite}
+/* graphite finish, from Theme.kt */
+body.dark{--page:#0e0f11;--base:#1a1c20;--base2:#1f2125;--raised:#2b2e34;--tray:#15171a;--ink:#e6e8ec;--soft:#9198a3;--ctl:#d3d7de;
+  --shade:#040506;--shadeSoft:rgba(0,0,0,.55);--shadeDeep:rgba(0,0,0,.7);--lcdA:#b9c68e;--lcdB:#8b9866;--lcdInk:#1e2517;--ghost:rgba(30,37,23,.12);--lcdBorder:#2b3124;
+  --pTop:#1c1d21;--pMid:#16171a;--pBot:#121315}
+body.dark .page{background:radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1.3px) 0 0/14px 14px,linear-gradient(180deg,#121316,#0c0d0f)}
+body.dark .raised{box-shadow:0 6px 12px -5px var(--shadeDeep),0 2px 0 var(--shadeSoft),0 0 0 1px var(--shadeSoft),inset 0 1px 0 rgba(255,255,255,.08)}
+body.dark .tray{box-shadow:0 1px 0 rgba(255,255,255,.04),inset 0 -1px 0 rgba(255,255,255,.03),inset 0 2px 5px var(--shade)}
+body.dark .down{box-shadow:0 1px 0 rgba(255,255,255,.05),0 0 0 1px var(--shadeSoft),inset 0 2px 4px var(--shade)}
+body.dark .lcd{box-shadow:inset 0 8px 18px rgba(30,40,20,.3),inset 0 2px 0 rgba(0,0,0,.2),0 0 0 1px rgba(255,255,255,.04)}
+body.dark .lcd.lit::after{box-shadow:0 0 44px rgba(196,224,120,.22)}
+body.dark .pn b,body.dark .ch b,body.dark .bub p{color:#eef0f3}
+body.dark .drum{background:linear-gradient(180deg,#1b1d21 0%,#33363d 24%,#41454d 46%,#2e3137 66%,#16171a 100%)}
+body.dark .drum .ticks{background:repeating-linear-gradient(90deg,transparent 0 30px,rgba(230,232,236,.35) 30px 32px),repeating-linear-gradient(90deg,transparent 0 6px,rgba(230,232,236,.12) 6px 7px)}
+body.dark .drum .scale{color:rgba(230,232,236,.4)}
+body.dark .qi span,body.dark .bub .song span{box-shadow:0 0 0 2px #2b2e34,0 3px 8px rgba(0,0,0,.5)}
+body.dark .rank{box-shadow:0 0 26px rgba(59,111,224,.45),inset 0 2px 5px #000}
+</style>
+</head>
+<body>
+<div class="page"></div>
+<div class="win">
+
+  <!-- nav: the phone's five keys, standing up -->
+  <nav class="rail"><div class="t tray">
+    <div class="logo"><img src="logo.svg"><i><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></i></div>
+    <div class="nk down"><svg data-px="RADIO" data-c="#374151" data-s="2.2"></svg>ASOSIY</div>
+    <div class="nk raised"><svg data-px="SEARCH" data-c="#4b5563" data-s="2.2"></svg>QIDIRUV</div>
+    <div class="nk raised"><svg data-px="CHAT" data-c="#4b5563" data-s="2.2"></svg>CHAT</div>
+    <div class="nk raised"><svg data-px="LIBRARY" data-c="#4b5563" data-s="2.2"></svg>KUTUBXONA</div>
+    <div class="nk raised"><svg data-px="USER" data-c="#4b5563" data-s="2.2"></svg>PROFIL</div>
+    <div class="sp"></div>
+    <div class="nk raised" style="height:62px"><svg data-px="GEAR" data-c="#4b5563" data-s="2"></svg></div>
+  </div></nav>
+
+  <!-- centre: the glass bay and the chalk deck -->
+  <div class="mid">
+    <section class="bay">
+      <div class="bh">
+        <img src="logo.svg">
+        <div><b>Kawaii Radio</b><small>KR-01 · J-POP FM</small></div>
+        <div class="sp"></div>
+        <div class="mode dwell">
+          <div class="k on"><div><b>RADIO</b><small>jonli efir</small></div><span class="grip"><i></i><i></i><i></i></span></div>
+          <div class="k off">››› O'Z TANLOVIM</div>
+        </div>
+        <div class="win-k"><i>–</i><i>▢</i><i>✕</i></div>
+      </div>
+      <div class="row2">
+        <div class="tabs dwell"><span class="on">J-Pop</span><span>OST</span><span>Anime</span><span>Riot Music</span></div>
+        <div class="onair"><span class="led"></span>EFIRDA · 214 TINGLOVCHI
+          <div class="ppl"><span style="background-image:url(https://radio.kawaii.uz/files/covers/eve-underdog-mv84in6q.jpg)"></span><span style="background-image:url(https://radio.kawaii.uz/files/covers/ado-odo-mv84hade.jpg)"></span><span style="background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-iris-out-mv84ixgy.jpg)"></span><span style="background-image:url(https://radio.kawaii.uz/files/covers/fujii-kaze-kirari-mv8di3zv.jpg)"></span></div>
+        </div>
+      </div>
+      <div class="flow">
+        <div class="cv s3" style="background-image:url(https://radio.kawaii.uz/files/covers/eve-tokyo-ghetto-mv8di1fh.jpg)"></div>
+        <div class="cv s2" style="background-image:url(https://radio.kawaii.uz/files/covers/fujii-kaze-matsuri-mv84iqkb.jpg)"></div>
+        <div class="cv s1" style="background-image:url(https://radio.kawaii.uz/files/covers/jpop-yoasobi-yoru-ni-kake-ru-3dptxh-mvdsi3h0.jpg)"></div>
+        <div class="cv r3" style="background-image:url(https://radio.kawaii.uz/files/covers/yoasobi-mv8ditp6-mv8ditp6.jpg)"></div>
+        <div class="cv r2" style="background-image:url(https://radio.kawaii.uz/files/covers/creepy-nuts-bling-bang-bang-born-mv84iew9.jpg)"></div>
+        <div class="cv r1" style="background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-lemon-mv84iyp8.jpg)"></div>
+        <div class="cv c" style="background-image:url(https://radio.kawaii.uz/files/covers/jpop-kenshi-yonezu-kick-back-3kheep-mvdvifuv.jpg)"><span class="ok"><svg data-px="CHECK" data-c="#1f2937" data-s="1.7"></svg></span></div>
+      </div>
+      <div class="ly dwell">
+        <div class="h"><i></i><b>KICK BACK</b><span>Kenshi Yonezu</span><em>ROM ⇄</em></div>
+        <div class="l"><span class="done">Qo'shiq matni shu yerda</span> qator-qator yonadi</div>
+        <div class="n">keyingi qator xira bo'lib kutib turadi</div>
+        <div class="tr">O'zbekcha tarjima · ROM · 日本</div>
+      </div>
+    </section>
+
+    <section class="deck tray">
+      <div class="wave-lcd lcd lit">
+        <div class="wl1"><svg data-px="NOTE" data-c="#262e1e" data-s="1.5"></svg>KICK BACK · Kenshi Yonezu<span class="t"><s>8</s>1:42<small>/ 3:13 SEC</small></span></div>
+        <div class="wv" id="wv"><span class="head" style="left:53%"></span></div>
+        <div class="wl3"><span class="g">UZ<span class="o"></span></span><span>ROM<span class="o f"></span></span><span class="g">JP<span class="o"></span></span><span class="g" style="margin-left:18px">J-POP · 172 BPM · ENERGIYA 92%</span><span class="air">ON AIR<span class="o f" style="background:#262e1e;animation:blink 1.6s steps(1) infinite"></span></span></div>
+      </div>
+      <div class="ctl">
+        <div class="rk raised"><svg data-px="PLAY" data-c="#374151" data-s="3"></svg></div>
+        <div class="tun tray"><div class="drum"><div class="ticks"></div><div class="scale"><span>88</span><span>92</span><span>96</span><span>100</span><span>104</span><span>108</span></div><div class="needle"></div></div></div>
+        <div class="rk raised"><svg data-px="HEART" data-c="#374151" data-s="2.8"></svg></div>
+        <div class="wk raised"><svg data-px="INFO" data-c="#4b5563" data-s="2"></svg>TAVSIF</div>
+        <div class="wk raised"><svg data-px="SAVE" data-c="#4b5563" data-s="2"></svg>SAQLASH</div>
+      </div>
+      <div class="q">
+        <div class="lb">KEYINGI<b>05</b></div>
+        <div class="qi raised"><span style="background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-lemon-mv84iyp8.jpg)"></span><div><b>Lemon</b><small>Kenshi Yonezu</small></div></div>
+        <div class="qi raised"><span style="background-image:url(https://radio.kawaii.uz/files/covers/creepy-nuts-bling-bang-bang-born-mv84iew9.jpg)"></span><div><b>Bling-Bang-Bang-Born</b><small>Creepy Nuts</small></div></div>
+        <div class="qi raised"><span style="background-image:url(https://radio.kawaii.uz/files/covers/yoasobi-mv8ditp6-mv8ditp6.jpg)"></span><div><b>アイドル</b><small>YOASOBI</small></div></div>
+        <div class="qi raised"><span style="background-image:url(https://radio.kawaii.uz/files/covers/fujii-kaze-matsuri-mv84iqkb.jpg)"></span><div><b>Matsuri</b><small>Fujii Kaze</small></div></div>
+        <div class="qi raised"><span style="background-image:url(https://radio.kawaii.uz/files/covers/eve-tokyo-ghetto-mv8di1fh.jpg)"></span><div><b>Tokyo Ghetto</b><small>Eve</small></div></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- right: profile card and the chat -->
+  <aside class="rc">
+    <section class="prof tray">
+      <div class="pr1">
+        <div class="av raised"><span></span></div>
+        <div class="pn"><b>soka</b><small>@soka8imokenp · Kawaii ID</small><span class="kp down">★ KAWAII PASS</span></div>
+        <div class="gear raised"><svg data-px="GEAR" data-c="#4b5563" data-s="1.7"></svg></div>
+      </div>
+      <div class="pr2">
+        <div class="rank"><img src="https://id.kawaii.uz/static/img/ranks/patrol.webp"><span class="id raised">ID</span></div>
+        <div class="lvl lcd lit"><div class="a">LEVEL<b>3</b><span>13 / 160 XP</span></div><div class="seg" id="seg"></div><small>PATROL · 243 / 300 SEZON XP</small></div>
+      </div>
+    </section>
+    <section class="chat tray">
+      <div class="ch"><div><b>CHAT</b><small>214 onlayn · 31 radioda</small></div>
+        <div class="np raised"><span></span><div><b>KICK BACK</b><small>Kenshi Yonezu</small></div></div></div>
+      <div class="pin raised"><i></i><div><small>QADALGAN · SYNTX</small>‼ Ilovada yangimisiz?</div></div>
+      <div class="msgs">
+        <div class="m"><span class="a" style="background-image:url(https://radio.kawaii.uz/files/covers/fujii-kaze-kirari-mv8di3zv.jpg)"></span>
+          <div class="bub raised"><div class="n">sakura</div><p>salom hammaga ✿ bugun nima eshitamiz?</p><div class="tm">20:41</div></div></div>
+        <div class="m"><span class="a" style="background-image:url(https://radio.kawaii.uz/files/covers/eve-underdog-mv84in6q.jpg)"></span>
+          <div class="bub raised"><div class="n" style="color:#d9a21b">syntx <em style="background:#3b6fe0;color:#fff">PATROL</em></div>
+            <div class="song"><span style="background-image:url(https://radio.kawaii.uz/files/covers/eve-tokyo-ghetto-mv8di1fh.jpg)"></span><div><b>♪ Tokyo Ghetto</b><small>Eve</small></div></div>
+            <span class="re down">❤ 2</span><div class="tm">20:55</div></div></div>
+        <div class="m"><span class="a" style="background-image:url(https://radio.kawaii.uz/files/covers/ado-odo-mv84hade.jpg)"></span>
+          <div class="bub raised"><div class="n">Last veRum <em style="background:#e8b931;color:#3a2a05">GOLD II</em></div><p>wassup qoravoyla &lt;3</p><div class="tm">21:10</div></div></div>
+        <div class="m"><span class="a" style="background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-iris-out-mv84ixgy.jpg)"></span>
+          <div class="bub raised"><div class="n">z.ortiqov <em style="background:#34c08f;color:#0c2a1e">EMERALD</em></div><p>KICK BACK efirda 🔥 ovozni balandroq!</p><div class="tm">21:34</div></div></div>
+      </div>
+      <div class="cmp raised">
+        <div class="k raised"><svg data-px="RADIO" data-c="#4b5563" data-s="1.8"></svg></div>
+        <div class="in lcd">XABAR YOZING<i></i></div>
+        <div class="k raised" style="font-size:22px;color:#4b5563">☺</div>
+      </div>
+    </section>
+  </aside>
+</div>
+<script>
+if(location.search.includes('dark'))document.body.classList.add('dark');
+document.querySelectorAll('svg[data-c]').forEach(s=>{if(document.body.classList.contains('dark')&&/#(374151|4b5563)/.test(s.dataset.c))s.dataset.c='#d3d7de'});
+// the phone's pixel glyphs (ui/kit/Icons.kt)
+const G={
+ RADIO:[".........##.",".......##...",".....##.....","############","#..........#","#.####..##.#","#.####.#..##","#.####.#..##","#.####..##.#","#..........#","############"],
+ SEARCH:["..#####.....",".##...##....","##.....##...","#.......#...","#.......#...","#.......#...","##.....##...",".##...###...","..#####.##..",".........##.","..........##","...........#"],
+ CHAT:[".##########.","############","##........##","##.##.##.###","##........##","############",".##########.","..###.......","..##........","..#........."],
+ LIBRARY:["##.##..##...","##.##..###..","##.##...##..","##.##...###.","##.##....##.","##.##....###","##.##.....##","##.##.....##","############"],
+ USER:["....####....","...######...","...######...","...######...","....####....","............","..########..",".##########.","############","############"],
+ GEAR:[".....##.....","..#..##..#..",".##########.","..########..","..###..###..","####....####","####....####","..###..###..","..########..",".##########.","..#..##..#..",".....##....."],
+ PLAY:["##......","####....","######..","########","########","######..","####....","##......"],
+ HEART:[".###...###.","#...#.#...#","#....#....#","#.........#",".#.......#.","..#.....#..","...#...#...","....#.#....",".....#....."],
+ INFO:[".##########.","#..........#","#....##....#","#..........#","#...###....#","#....##....#","#....##....#","#....##....#","#...####...#","#..........#",".##########."],
+ SAVE:["##########..","#..#####.##.","#..#####..##","#..##.##...#","#..#####...#","#..........#","#.########.#","#.#......#.#","#.########.#","#.#......#.#","############"],
+ CHECK:[".........##","........##.",".......##..","##....##...",".##..##....","..####.....","...##......"],
+ NOTE:["...#######","...#######","...#.....#","...#.....#","...#.....#","...#.....#",".###...###","####..####","####..####",".##....##."],
+};
+document.querySelectorAll('svg[data-px]').forEach(s=>{const m=G[s.dataset.px],k=+s.dataset.s,c=s.dataset.c;const w=m[0].length,h=m.length;
+ s.setAttribute('width',w*k);s.setAttribute('height',h*k);s.setAttribute('viewBox',`0 0 ${w} ${h}`);s.setAttribute('shape-rendering','crispEdges');
+ let r='';m.forEach((row,y)=>[...row].forEach((ch,x)=>{if(ch=='#')r+=`<rect x="${x}" y="${y}" width="1" height="1"/>`}));s.innerHTML=`<g fill="${c}">${r}</g>`});
+// waveform, like the phone's LCD
+const wv=document.getElementById('wv');for(let i=0;i<150;i++){const b=document.createElement('i');const h=10+Math.abs(Math.sin(i*.43)*34+Math.sin(i*.13)*20+((i*13)%7)*3);b.style.height=Math.min(h,64)+'px';if(i>79)b.className='f';wv.append(b)}
+const sg=document.getElementById('seg');for(let i=0;i<28;i++){const b=document.createElement('i');if(i<2)b.className='on';sg.append(b)}
+</script>
+</body>
+</html>

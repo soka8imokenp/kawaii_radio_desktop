@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Kawaii Radio — B · Chalk Hi-Fi</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=VT323&family=Pixelify+Sans:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--page:#dfe1e6;--base:#ebecef;--raised:#fafafc;--tray:#e3e5ea;--ink:#2b3240;--soft:#6b7280;--dim:#9aa0ab;
+  --shade:#b8bdcb;--lcdA:#cfd8aa;--lcdB:#aab68a;--lcdInk:#262e1e;--led:#16c47f;--tick:#ff5b3a;--acc:#ff4f7b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1600px;height:1000px;overflow:hidden;font-family:Inter,sans-serif;color:var(--ink);
+  background:radial-gradient(1200px 700px at 75% -10%,#f6e4ea,transparent 60%),radial-gradient(900px 600px at 0% 100%,#dfe8f4,transparent 60%),var(--page)}
+.win{position:absolute;inset:14px;border-radius:30px;background:var(--base);display:grid;grid-template-columns:96px 1fr;overflow:hidden;
+  box-shadow:0 1px 0 #fff inset,0 40px 80px rgba(80,90,110,.35),0 6px 16px rgba(80,90,110,.2)}
+/* slim rail of physical keys */
+.rail{display:flex;flex-direction:column;align-items:center;gap:14px;padding:22px 0;background:linear-gradient(180deg,#f1f2f5,#e6e8ec);box-shadow:inset -1px 0 0 #d5d8df}
+.logo{width:52px;height:52px;border-radius:16px;background:#2b2e34;display:grid;place-items:center;box-shadow:0 8px 16px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.12)}
+.logo i{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#7dffbf,var(--led));box-shadow:0 0 14px var(--led)}
+.rk{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;color:var(--soft);
+  background:linear-gradient(180deg,#fff,#eef0f3);box-shadow:inset 0 1px 0 #fff,0 6px 12px rgba(150,158,175,.45),0 1px 2px rgba(150,158,175,.6)}
+.rk.on{background:var(--tray);color:var(--ink);box-shadow:inset 0 3px 6px rgba(150,158,175,.65),inset 0 -1px 0 #fff}
+.rk svg{width:22px;height:22px}
+.rail .sp{flex:1}
+.main{position:relative;overflow:hidden;display:grid;grid-template-rows:1fr 120px}
+.scroll{padding:30px 40px 0;overflow:hidden}
+/* artist header */
+.head{position:relative;height:330px;border-radius:28px;overflow:hidden;display:flex;align-items:flex-end;padding:34px 38px;color:#fff;
+  background:url(https://radio.kawaii.uz/files/covers/fujii-kaze-matsuri-mv84iqkb.jpg) 70% 42%/cover;box-shadow:0 30px 50px rgba(60,40,50,.35)}
+.head::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(20,14,18,.85),rgba(20,14,18,.25) 60%,transparent),linear-gradient(0deg,rgba(0,0,0,.45),transparent 50%)}
+.head>*{position:relative}
+.ver{display:inline-flex;align-items:center;gap:8px;font:600 12px Inter;letter-spacing:.14em;background:rgba(255,255,255,.14);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22);padding:6px 12px;border-radius:30px}
+.head h1{font:900 96px/.9 Inter;letter-spacing:-.05em;margin:16px 0 10px}
+.head p{font:500 15px Inter;opacity:.85}
+.hbtn{display:flex;gap:12px;margin-top:22px;align-items:center}
+.pl{height:54px;padding:0 26px 0 20px;border-radius:30px;display:flex;align-items:center;gap:10px;font:800 15px Inter;color:#14161a;
+  background:linear-gradient(180deg,#fff,#e9ebef);box-shadow:0 10px 24px rgba(0,0,0,.35),inset 0 -2px 0 rgba(0,0,0,.08)}
+.pl i{width:30px;height:30px;border-radius:50%;background:var(--acc);display:grid;place-items:center;box-shadow:0 0 16px rgba(255,79,123,.6)}
+.gh{height:54px;width:54px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.25);font-size:20px}
+.stats{position:absolute;right:38px;bottom:34px;display:flex;gap:10px}
+.stat{background:rgba(255,255,255,.12);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:12px 18px;min-width:120px}
+.stat b{font:400 38px/1 VT323}.stat small{display:block;font:600 10.5px Inter;letter-spacing:.14em;opacity:.75}
+.cols{display:grid;grid-template-columns:1.35fr 1fr;gap:28px;margin-top:28px}
+h3{font:800 21px Inter;letter-spacing:-.02em;margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline}
+h3 small{font:600 12px Inter;color:var(--dim);letter-spacing:.08em}
+.tray{background:var(--tray);border-radius:22px;padding:8px;box-shadow:inset 0 2px 5px rgba(150,158,175,.55),inset 0 -1px 0 #fff}
+.row{display:grid;grid-template-columns:28px 46px 1fr 70px 50px;align-items:center;gap:14px;padding:8px 12px;border-radius:15px}
+.row .n{font:400 22px VT323;color:var(--dim);text-align:center}
+.row img{width:46px;height:46px;border-radius:10px;object-fit:cover;box-shadow:0 4px 10px rgba(0,0,0,.18)}
+.row b{font:700 14.5px Inter;display:block}.row small{font:500 12.5px Inter;color:var(--soft)}
+.row .d{font:400 20px VT323;color:var(--soft);text-align:right}
+.row .h{color:var(--dim);text-align:center}
+.row.on{background:linear-gradient(180deg,#fff,#f4f5f8);box-shadow:0 8px 18px rgba(150,158,175,.45),inset 0 1px 0 #fff}
+.row.on b{color:var(--acc)}
+.row.on .n{color:var(--acc)}
+.eq{display:inline-flex;gap:2px;align-items:flex-end;height:16px}.eq i{width:3px;background:var(--acc);border-radius:1px}
+.albums{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.alb{border-radius:20px;padding:10px;background:linear-gradient(180deg,#fff,#f3f4f7);box-shadow:0 10px 22px rgba(150,158,175,.45),inset 0 1px 0 #fff}
+.alb .c{aspect-ratio:1.25;border-radius:14px;background-size:cover;background-position:center}
+.alb b{display:block;font:700 14px Inter;margin:10px 4px 0}.alb small{font:500 12px Inter;color:var(--soft);margin-left:4px}
+/* the deck at the bottom: a chalk console with the LCD */
+.deck{margin:0 24px 18px;border-radius:26px;display:grid;grid-template-columns:330px 1fr 330px;gap:22px;align-items:center;padding:0 18px;
+  background:linear-gradient(180deg,#f7f8fa,#e8eaee);box-shadow:inset 0 1px 0 #fff,0 14px 30px rgba(150,158,175,.6),0 2px 4px rgba(150,158,175,.6)}
+.lcd{height:76px;border-radius:14px;padding:9px 14px;display:flex;gap:12px;align-items:center;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,var(--lcdA),var(--lcdB));color:var(--lcdInk);box-shadow:0 0 0 3px #3a4131,inset 0 2px 6px rgba(0,0,0,.3)}
+.lcd::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.05) 0 1px,transparent 1px 3px)}
+.lcd img{width:56px;height:56px;border-radius:8px;filter:grayscale(1) contrast(1.3) sepia(.5) hue-rotate(40deg);mix-blend-mode:multiply;opacity:.9}
+.lcd b{display:block;font:400 26px/1 VT323}.lcd small{font:400 18px VT323;opacity:.7}
+.mid{display:flex;flex-direction:column;align-items:center;gap:10px}
+.keys{display:flex;gap:14px;align-items:center}
+.k{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;color:var(--soft);font-size:16px;
+  background:linear-gradient(180deg,#fff,#eef0f3);box-shadow:inset 0 1px 0 #fff,0 6px 12px rgba(150,158,175,.55),0 1px 2px rgba(150,158,175,.6)}
+.k.big{width:64px;height:64px;border-radius:22px;background:linear-gradient(180deg,#34373e,#202227);color:#fff;box-shadow:0 12px 24px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.15)}
+.tuner{width:100%;height:24px;border-radius:12px;background:var(--tray);box-shadow:inset 0 2px 4px rgba(150,158,175,.6);position:relative;overflow:hidden}
+.tuner::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(55,65,81,.35) 0 1px,transparent 1px 8px),repeating-linear-gradient(90deg,rgba(55,65,81,.55) 0 2px,transparent 2px 40px);mask:linear-gradient(0deg,transparent 30%,#000 30% 70%,transparent 70%)}
+.tuner i{position:absolute;left:43%;top:2px;bottom:2px;width:3px;border-radius:2px;background:var(--tick);box-shadow:0 0 8px var(--tick)}
+.tuner span{position:absolute;left:0;top:0;bottom:0;width:43%;background:linear-gradient(90deg,transparent,rgba(255,91,58,.12))}
+.rt{display:flex;gap:14px;justify-content:flex-end;align-items:center}
+.sl{width:140px;height:10px;border-radius:5px;background:var(--tray);box-shadow:inset 0 2px 3px rgba(150,158,175,.7);position:relative}
+.sl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:70%;border-radius:5px;background:linear-gradient(90deg,#9be7c4,var(--led))}
+.sl::after{content:"";position:absolute;left:calc(70% - 12px);top:-7px;width:24px;height:24px;border-radius:50%;background:linear-gradient(180deg,#fff,#e9ebef);box-shadow:0 4px 8px rgba(150,158,175,.8),inset 0 1px 0 #fff}
+.titlebar{position:absolute;right:22px;top:16px;display:flex;gap:8px;z-index:3}
+.titlebar i{width:13px;height:13px;border-radius:50%;background:#d4d7de;box-shadow:inset 0 1px 2px rgba(0,0,0,.2)}
+</style>
+</head>
+<body>
+<div class="win">
+  <nav class="rail">
+    <div class="logo"><i></i></div>
+    <div class="rk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4"/></svg></div>
+    <div class="rk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+    <div class="rk on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M9 19V5M14 19l-2-14M18 19l3-14"/></svg></div>
+    <div class="rk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></div>
+    <div class="sp"></div>
+    <div class="rk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 10h.1a2 2 0 1 1 0 4z"/></svg></div>
+  </nav>
+  <div class="main">
+    <div class="titlebar"><i></i><i></i><i></i></div>
+    <div class="scroll">
+      <section class="head">
+        <div>
+          <span class="ver">● IJROCHI · J-POP</span>
+          <h1>Fujii Kaze</h1>
+          <p>18 qo'shiq · oyiga 3 240 tinglash · Okayama, Yaponiya</p>
+          <div class="hbtn"><span class="pl"><i><svg width="12" height="12" viewBox="0 0 24 24"><path d="M7 4v16l13-8z" fill="#fff"/></svg></i>Tinglash</span><span class="gh">♡</span><span class="gh">⤨</span></div>
+        </div>
+        <div class="stats"><div class="stat"><b>18</b><small>QO'SHIQ</small></div><div class="stat"><b>1:04</b><small>SOAT</small></div><div class="stat"><b>#4</b><small>REYTING</small></div></div>
+      </section>
+      <div class="cols">
+        <div>
+          <h3>Mashhur qo'shiqlar<small>HAMMASI ›</small></h3>
+          <div class="tray">
+            <div class="row on"><span class="n"><span class="eq"><i style="height:9px"></i><i style="height:15px"></i><i style="height:6px"></i><i style="height:12px"></i></span></span><img src="https://radio.kawaii.uz/files/covers/fujii-kaze-shinunoga-e-wa-mv84irsq.jpg"><div><b>Shinunoga E-Wa</b><small>Fujii Kaze</small></div><span class="d">3:05</span><span class="h" style="color:var(--acc)">♥</span></div>
+            <div class="row"><span class="n">2</span><img src="https://radio.kawaii.uz/files/covers/fujii-kaze-matsuri-mv84iqkb.jpg"><div><b>Matsuri</b><small>Fujii Kaze</small></div><span class="d">4:12</span><span class="h">♡</span></div>
+            <div class="row"><span class="n">3</span><img src="https://radio.kawaii.uz/files/covers/fujii-kaze-kirari-mv8di3zv.jpg"><div><b>Kirari</b><small>Fujii Kaze</small></div><span class="d">3:25</span><span class="h">♡</span></div>
+            <div class="row"><span class="n">4</span><img src="https://radio.kawaii.uz/files/covers/jpop-fujii-kaze-hana-5riqu2-mvduua3x.jpg"><div><b>花</b><small>Fujii Kaze</small></div><span class="d">3:48</span><span class="h">♡</span></div>
+            <div class="row"><span class="n">5</span><img src="https://radio.kawaii.uz/files/covers/jpop-fujii-kaze-tabiji-7usljc-mvdutcpc.jpg"><div><b>旅路</b><small>Fujii Kaze</small></div><span class="d">4:31</span><span class="h">♡</span></div>
+          </div>
+        </div>
+        <div>
+          <h3>Sizga yoqishi mumkin<small>KUNLIK MIKS</small></h3>
+          <div class="albums">
+            <div class="alb"><div class="c" style="background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-lemon-mv84iyp8.jpg)"></div><b>Kenshi Yonezu</b><small>Ijrochi · 29</small></div>
+            <div class="alb"><div class="c" style="background-image:url(https://radio.kawaii.uz/files/covers/jpop-aimer-haruka-6at8fg-mvdu5y5w.jpg)"></div><b>Aimer</b><small>Ijrochi · 12</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="deck">
+      <div class="lcd"><img src="https://radio.kawaii.uz/files/covers/fujii-kaze-shinunoga-e-wa-mv84irsq.jpg"><div style="position:relative;z-index:1"><b>SHINUNOGA E-WA</b><small>FUJII KAZE · 01:12/03:05</small></div></div>
+      <div class="mid">
+        <div class="keys"><span class="k">⤨</span><span class="k">⏮</span><span class="k big"><svg width="22" height="22" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="#fff"/><rect x="14" y="5" width="4" height="14" rx="1" fill="#fff"/></svg></span><span class="k">⏭</span><span class="k">↻</span></div>
+        <div class="tuner"><span></span><i></i></div>
+      </div>
+      <div class="rt"><span class="k" style="width:40px;height:40px">≡</span><span class="k" style="width:40px;height:40px">🔈</span><div class="sl"></div></div>
+    </footer>
+  </div>
+</div>
+</body>
+</html>

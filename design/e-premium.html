@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Kawaii Radio — KR-01 DESK · Premium</title>
+<style>
+@font-face{font-family:Galmuri;src:url(fonts/galmuri11.ttf)}
+@font-face{font-family:Dot;src:url(fonts/dotgothic16.ttf)}
+@font-face{font-family:VT;src:url(fonts/vt323.ttf)}
+@font-face{font-family:Pixelify;src:url(fonts/pixelify_600.ttf);font-weight:600}
+@font-face{font-family:Inter;src:url(fonts/inter_400.ttf);font-weight:400}
+@font-face{font-family:Inter;src:url(fonts/inter_600.ttf);font-weight:600}
+@font-face{font-family:Inter;src:url(fonts/inter_700.ttf);font-weight:700}
+@font-face{font-family:Inter;src:url(fonts/inter_800.ttf);font-weight:800}
+:root{
+  --page:#d7dae0;--base:#e9ebef;--base2:#eff1f5;--raised:#fbfbfd;--tray:#e1e4e9;
+  --ink:#2f3744;--soft:#6b7280;--ctl:#4b5563;--shade:#b3b9c7;--shadeSoft:rgba(170,176,192,.55);--shadeDeep:rgba(120,128,148,.55);
+  --lcdA:#d3dcae;--lcdB:#a8b585;--lcdInk:#232b1b;--ghost:rgba(35,43,27,.09);--lcdBorder:#363d2e;
+  --led:#3ee08f;--red:#ff4a3d;--gold:#f5b93b;--amber:#ffb04a;
+  --glow:#e0313f;--glow2:#ff7a3d; /* sampled from the cover */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1600px;height:1000px;overflow:hidden;font-family:Dot,sans-serif;color:var(--ink);background:#0b0c0e}
+/* soft-touch chalk with a printed dot grid and fine grain */
+.chalk{background:
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+  radial-gradient(circle,rgba(55,65,81,.10) 1px,transparent 1.3px) 0 0/12px 12px,
+  linear-gradient(170deg,#f1f2f5,#e2e5ea 60%,#d9dce2)}
+.grain::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:.5;mix-blend-mode:overlay;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+.raised{background:linear-gradient(180deg,var(--raised),var(--base2));
+  box-shadow:0 10px 18px -8px var(--shadeDeep),0 2px 0 var(--shadeSoft),0 0 0 1px var(--shadeSoft),inset 0 1px 0 #fff,inset 0 -2px 0 rgba(160,166,180,.25)}
+.down{background:linear-gradient(180deg,var(--tray),var(--base2));box-shadow:0 1px 0 #fff,0 0 0 1px var(--shadeSoft),inset 0 -1px 0 #fff,inset 0 3px 6px var(--shade)}
+.tray{background:linear-gradient(180deg,#dcdfe5,#e6e8ec);box-shadow:0 1px 0 #fff,inset 0 -1px 0 #fff,inset 0 3px 8px var(--shade),inset 0 0 0 1px rgba(160,166,180,.25)}
+.silk{font:9px Galmuri;letter-spacing:.2em;color:rgba(55,65,81,.55);text-transform:uppercase}
+.silkd{font:9px Galmuri;letter-spacing:.2em;color:rgba(230,232,236,.38);text-transform:uppercase}
+.screw{position:absolute;width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#c3c8d1 40%,#8b919c);box-shadow:inset 0 -1px 1px rgba(0,0,0,.3),0 1px 0 #fff,0 0 0 2px rgba(150,156,170,.25)}
+.screw::after{content:"";position:absolute;left:2px;right:2px;top:5px;height:1.4px;background:rgba(60,66,78,.7);transform:rotate(var(--r,35deg));box-shadow:0 0 0 .3px rgba(255,255,255,.4)}
+.screw.d{background:radial-gradient(circle at 35% 30%,#6a6f79,#30333a 60%,#1d1f23);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 1px 1px rgba(0,0,0,.7)}
+.screw.d::after{background:#0d0e10}
+
+.win{position:absolute;inset:0;display:grid;grid-template-columns:104px 1fr 408px;grid-template-rows:38px 1fr;border-radius:0}
+/* ── machined title strip */
+.title{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 14px 0 22px;background:linear-gradient(180deg,#26282d,#1b1c20);box-shadow:inset 0 -1px 0 rgba(255,255,255,.05),0 1px 0 #000;position:relative;z-index:3}
+.title .sn{font:10px Galmuri;letter-spacing:.24em;color:#6d737e}
+.title .sn b{color:#c9cdd4;font-weight:400}
+.title .sp{flex:1}
+.title .meter{display:flex;gap:3px;align-items:center}
+.title .meter i{width:4px;height:10px;border-radius:1px;background:#2c2f35}
+.title .meter i.on{background:var(--led);box-shadow:0 0 6px var(--led)}
+.title .meter i.y{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.tg{display:flex;gap:10px}
+.tg span{width:30px;height:16px;border-radius:9px;background:#0e0f11;box-shadow:inset 0 1px 3px #000,0 1px 0 rgba(255,255,255,.06);position:relative}
+.tg span::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 40% 30%,#f2f3f5,#9aa0aa);box-shadow:0 1px 2px #000}
+.tg span.x::after{left:auto;right:2px;background:radial-gradient(circle at 40% 30%,#ff8b80,var(--red));box-shadow:0 0 8px rgba(255,74,61,.7)}
+
+/* ── nav: keycaps with light pipes */
+.nav{grid-row:2;position:relative;padding:18px 0 18px 16px}
+.navt{height:100%;border-radius:30px;padding:12px 10px;display:flex;flex-direction:column;gap:10px;position:relative}
+.cap{position:relative;height:80px;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font:10px Galmuri;letter-spacing:.06em;color:var(--ctl)}
+.cap .lp{position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:#c8ccd4;box-shadow:inset 0 1px 1px rgba(0,0,0,.25)}
+.cap.on .lp{background:var(--led);box-shadow:0 0 8px var(--led),0 0 18px rgba(62,224,143,.6)}
+.cap.on{color:var(--ink)}
+.nav .sp{flex:1}
+.spk{height:120px;border-radius:20px;position:relative;overflow:hidden}
+.spk::before{content:"";position:absolute;inset:8px;border-radius:14px;background:radial-gradient(circle,rgba(30,34,40,.75) 1.6px,transparent 2px) 0 0/8px 8px;}
+.spk::after{content:"";position:absolute;inset:8px;border-radius:14px;background:radial-gradient(circle at 50% 60%,color-mix(in srgb,var(--glow) 70%,transparent),transparent 70%);mix-blend-mode:screen;opacity:.0;animation:thump .52s ease-out infinite}
+
+/* ── centre */
+.mid{grid-row:2;padding:18px 16px 18px 16px;display:flex;flex-direction:column;gap:16px;min-width:0}
+
+/* smoked glass bay */
+.bay{position:relative;height:500px;border-radius:34px;overflow:hidden;color:#e6e8ec;isolation:isolate;
+  background:
+    radial-gradient(circle,rgba(255,255,255,.03) 1px,transparent 1.4px) 0 0/7px 7px,
+    radial-gradient(900px 500px at 25% 55%,color-mix(in srgb,var(--glow) 22%,transparent),transparent 70%),
+    linear-gradient(180deg,#2a2c31,#1d1e22 50%,#151619);
+  box-shadow:0 40px 70px -24px rgba(30,34,44,.7),0 14px 26px -12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.1),inset 0 0 0 1px rgba(255,255,255,.03),inset 0 -2px 0 rgba(0,0,0,.6)}
+.bay .glare{position:absolute;inset:0;pointer-events:none;z-index:9;border-radius:34px;
+  background:linear-gradient(115deg,rgba(255,255,255,.07),transparent 28%,transparent 70%,rgba(255,255,255,.03) 84%,transparent 90%)}
+.bayhead{position:absolute;left:30px;top:24px;right:30px;display:flex;align-items:center;gap:14px;z-index:5}
+.bayhead img{width:28px;filter:drop-shadow(0 0 12px rgba(255,255,255,.35))}
+.bayhead b{font:800 21px Inter;letter-spacing:-.01em}
+.bayhead small{display:block;font:11px Galmuri;letter-spacing:.14em;color:#80868f;margin-top:3px}
+.bayhead .sp{flex:1}
+.modes{display:flex;height:48px;border-radius:16px;padding:4px;gap:4px;background:#0f1012;box-shadow:inset 0 2px 5px #000,0 1px 0 rgba(255,255,255,.06)}
+.modes span{display:flex;align-items:center;gap:9px;padding:0 16px;border-radius:12px;font:12px Galmuri;letter-spacing:.12em;color:#7d838d}
+.modes span.on{color:#23262b;background:linear-gradient(180deg,#fdfdfe,#e4e7eb);box-shadow:0 6px 14px rgba(0,0,0,.55),inset 0 1px 0 #fff,inset 0 -2px 0 rgba(0,0,0,.08)}
+.modes span.on i{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+
+/* the turntable */
+.tt{position:absolute;left:24px;top:92px;width:384px;height:384px}
+.plinth{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,#0d0e10 62%,#1a1b1f 66%,#0b0c0d 70%);box-shadow:0 30px 50px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04)}
+.platter{position:absolute;inset:6px;border-radius:50%;background:conic-gradient(from 0deg,#8d929b,#e6e9ee 12%,#7f848d 25%,#d4d8de 40%,#7a7f88 55%,#eef0f3 70%,#80858e 85%,#8d929b);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.4),0 4px 10px rgba(0,0,0,.5)}
+.strobe{position:absolute;inset:6px;border-radius:50%}
+.vinyl{position:absolute;inset:22px;border-radius:50%;animation:rot 1.8s linear infinite;
+  background:repeating-radial-gradient(circle,#0c0c0e 0 1px,#17171a 1px 2px,#101012 2px 3.2px);box-shadow:0 0 0 2px #050506,0 6px 14px rgba(0,0,0,.6)}
+@keyframes rot{to{transform:rotate(360deg)}}
+.vinyl .lab{position:absolute;inset:118px;border-radius:50%;background:url(https://radio.kawaii.uz/files/covers/jpop-kenshi-yonezu-kick-back-3kheep-mvdvifuv.jpg) center/cover;box-shadow:0 0 0 3px #0b0b0c,inset 0 0 0 1px rgba(255,255,255,.2)}
+.vinyl .lab::after{content:"KR-01 · 33⅓";position:absolute;left:0;right:0;bottom:16px;text-align:center;font:7px Galmuri;letter-spacing:.2em;color:#fff;text-shadow:0 1px 2px #000}
+.sheen{position:absolute;inset:22px;border-radius:50%;pointer-events:none;
+  background:conic-gradient(from 25deg,transparent 0 6%,rgba(255,255,255,.16) 10%,transparent 15% 50%,rgba(255,255,255,.11) 56%,transparent 62%),
+    radial-gradient(circle,transparent 31%,rgba(255,255,255,.045) 31.5%,transparent 33%,transparent 60%,rgba(255,255,255,.04) 60.5%,transparent 62%);
+  mask:radial-gradient(circle,transparent 30%,#000 31%)}
+.spindle{position:absolute;left:50%;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#9aa0aa 60%,#5b616b);box-shadow:0 2px 3px rgba(0,0,0,.6);z-index:2}
+.lamp{position:absolute;left:-6px;bottom:28px;width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#ffb0a8,var(--red) 55%,#7d0e08);box-shadow:0 0 0 4px #121316,0 0 26px rgba(255,74,61,.9),0 0 60px rgba(255,74,61,.4)}
+.arm{position:absolute;left:270px;top:-10px;width:170px;height:400px;z-index:4;overflow:visible}
+
+/* backlit LCD glass */
+.glass{position:absolute;left:452px;right:30px;top:96px;height:378px;border-radius:26px;padding:7px;z-index:5;
+  background:linear-gradient(180deg,#0e0f11,#08090a);box-shadow:inset 0 2px 6px #000,0 1px 0 rgba(255,255,255,.07)}
+.lcd{position:relative;height:100%;border-radius:20px;color:var(--lcdInk);overflow:hidden;padding:16px 20px;
+  background:linear-gradient(rgba(35,43,27,.055) 1px,transparent 1px) 0 0/5px 5px,linear-gradient(90deg,rgba(35,43,27,.055) 1px,transparent 1px) 0 0/5px 5px,
+    radial-gradient(120% 90% at 30% 15%,#e2ebbb,var(--lcdA) 35%,var(--lcdB));
+  box-shadow:inset 0 10px 26px rgba(30,40,20,.35),inset 0 0 0 3px var(--lcdBorder),0 0 50px rgba(196,224,120,.28),0 0 120px rgba(196,224,120,.12)}
+.lcd::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(122deg,rgba(255,255,255,.38),rgba(255,255,255,.08) 22%,transparent 23%),radial-gradient(60% 30% at 70% 0%,rgba(255,255,255,.18),transparent)}
+.lr1{display:flex;align-items:center;gap:12px;font:15px VT;letter-spacing:.14em;opacity:.75}
+.lr1 .air{margin-left:auto;display:flex;align-items:center;gap:6px}
+.lr1 .air i{width:8px;height:8px;border-radius:50%;background:var(--lcdInk);animation:blink 1.4s steps(1) infinite}
+@keyframes blink{50%{opacity:.2}}
+.lt{display:flex;align-items:baseline;gap:16px;margin-top:10px}
+.lt b{font:400 54px/0.95 Dot;letter-spacing:.01em;text-shadow:2px 2px 0 rgba(35,43,27,.16)}
+.lt span{font:20px Dot;opacity:.75}
+.lyr{margin-top:12px;font:30px/1.1 VT;letter-spacing:.03em}
+.lyr .on{text-shadow:2px 2px 0 rgba(35,43,27,.18)}
+.lyr .off{opacity:.3}
+.dots{position:absolute;left:20px;right:20px;bottom:58px;height:104px;display:grid;grid-template-columns:repeat(48,1fr);gap:3px;align-items:end}
+.dots .col{display:flex;flex-direction:column-reverse;gap:3px}
+.dots .col i{height:5px;border-radius:1px;background:var(--ghost)}
+.dots .col i.on{background:var(--lcdInk);box-shadow:1px 1px 0 rgba(35,43,27,.15)}
+.dots .col i.pk{background:var(--lcdInk);opacity:.55}
+.lfoot{position:absolute;left:20px;right:20px;bottom:14px;display:flex;align-items:center;gap:16px;font:19px VT;letter-spacing:.06em;border-top:1px dashed rgba(35,43,27,.3);padding-top:8px}
+.lfoot .t{margin-left:auto;font:30px/0.8 VT}
+.lfoot .t s{text-decoration:none;color:var(--ghost)}
+.o{display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--lcdInk);margin-left:5px}
+.o.f{background:var(--lcdInk)}
+.g{opacity:.35}
+
+/* chalk deck */
+.deck{flex:1;position:relative;border-radius:34px;padding:20px 22px;display:grid;grid-template-columns:250px 1fr 250px;grid-template-rows:1fr 84px;gap:16px 22px}
+/* analog VU */
+.vu{position:relative;border-radius:22px;padding:8px}
+.vuf{position:relative;height:100%;border-radius:16px;overflow:hidden;
+  background:radial-gradient(120% 100% at 50% 110%,#fff3d6,#f7deb0 45%,#e8c487);box-shadow:inset 0 4px 12px rgba(120,70,10,.35),inset 0 0 0 2px #2a2c30,0 0 30px rgba(255,190,90,.35)}
+.vuf::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.55),rgba(255,255,255,.1) 30%,transparent 31%)}
+.vuf svg{position:absolute;inset:0}
+.needle{transform-origin:125px 168px;animation:sway 1.3s ease-in-out infinite alternate}
+.needle.r{animation-duration:1.05s;animation-delay:-.4s}
+@keyframes sway{0%{transform:rotate(-38deg)}40%{transform:rotate(8deg)}55%{transform:rotate(-6deg)}100%{transform:rotate(18deg)}}
+.vul{position:absolute;left:0;right:0;bottom:-2px;text-align:center}
+/* knob */
+.kn{position:relative;display:grid;place-items:center}
+.ring{position:absolute;width:244px;height:244px}
+.knob{position:relative;width:196px;height:196px;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,#cfd3da 0 1.2deg,#9da3ad 1.2deg 2.4deg);
+  box-shadow:0 28px 40px -10px rgba(60,66,80,.6),0 8px 14px rgba(60,66,80,.35),0 0 0 1px rgba(90,96,108,.4)}
+.knob::before{content:"";position:absolute;inset:14px;border-radius:50%;
+  background:conic-gradient(from 210deg,#9aa0aa,#f7f8fa 18%,#a9aeb7 32%,#e9ecf0 50%,#9aa0aa 66%,#fafbfc 82%,#9aa0aa),
+    repeating-radial-gradient(circle,rgba(0,0,0,.035) 0 1px,transparent 1px 3px);
+  background-blend-mode:normal;box-shadow:inset 0 2px 1px rgba(255,255,255,.9),inset 0 -3px 6px rgba(0,0,0,.25),0 2px 4px rgba(0,0,0,.25)}
+.knob::after{content:"";position:absolute;inset:14px;border-radius:50%;background:repeating-radial-gradient(circle,rgba(255,255,255,.18) 0 1px,rgba(0,0,0,.04) 1px 2.5px);mix-blend-mode:overlay}
+.knob .dotk{position:absolute;left:50%;top:32px;width:14px;height:14px;margin-left:-7px;border-radius:50%;z-index:2;background:radial-gradient(circle at 40% 35%,#ffb4a9,var(--red));box-shadow:0 0 12px rgba(255,74,61,.9),inset 0 1px 1px rgba(255,255,255,.5);transform-origin:7px 66px;transform:rotate(58deg)}
+.kn .val{position:absolute;bottom:-10px;font:11px Galmuri;letter-spacing:.2em;color:var(--soft)}
+.kn .val b{font:24px VT;color:var(--ink);font-weight:400;margin-left:6px;letter-spacing:.04em}
+/* bottom row */
+.row{grid-column:1/-1;display:grid;grid-template-columns:84px 84px 108px 84px 84px 1fr 84px;gap:12px;align-items:stretch}
+.k{border-radius:22px;display:grid;place-items:center;position:relative}
+.k .led{position:absolute;top:10px;left:50%;margin-left:-9px;width:18px;height:4px;border-radius:2px;background:#c4c8d0;box-shadow:inset 0 1px 1px rgba(0,0,0,.2)}
+.k.on .led{background:var(--led);box-shadow:0 0 8px var(--led)}
+.k.big{border-radius:26px;background:linear-gradient(180deg,#34373d,#1f2125);box-shadow:0 14px 22px -8px rgba(0,0,0,.6),0 0 0 1px #111,inset 0 1px 0 rgba(255,255,255,.14),inset 0 -3px 0 rgba(0,0,0,.4)}
+.k.big .led{background:var(--red);box-shadow:0 0 10px var(--red)}
+.tun{border-radius:24px;padding:7px;position:relative}
+.drum{height:100%;border-radius:18px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#b9bdc6 0%,#eff1f4 20%,#ffffff 44%,#eceef2 62%,#b5bac3 100%);box-shadow:inset 0 1px 3px rgba(0,0,0,.3),inset 0 -1px 2px rgba(0,0,0,.2)}
+.drum .ticks{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 30px,rgba(47,55,68,.36) 30px 32px),repeating-linear-gradient(90deg,transparent 0 6px,rgba(47,55,68,.14) 6px 7px);
+  -webkit-mask:linear-gradient(90deg,transparent,#000 20%,#000 80%,transparent);animation:spin 2.6s linear infinite}
+@keyframes spin{to{background-position:32px 0,7px 0}}
+.drum .needle2{position:absolute;left:50%;top:10px;bottom:10px;width:10px;margin-left:-5px;border-radius:6px;background:linear-gradient(180deg,#ff9a90,var(--red) 50%,#b4140b);box-shadow:0 0 16px rgba(255,74,61,.85),0 0 0 2px rgba(255,255,255,.75)}
+.drum .scale{position:absolute;left:0;right:0;top:5px;display:flex;justify-content:space-around;font:13px VT;color:rgba(47,55,68,.5)}
+.drum .fade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(185,189,198,.9),transparent 18%,transparent 82%,rgba(185,189,198,.9))}
+
+/* ── right column */
+.rc{grid-row:2;padding:18px 18px 18px 0;display:flex;flex-direction:column;gap:16px;min-height:0}
+/* Kawaii Pass: a holographic member card */
+.card{position:relative;height:232px;border-radius:26px;overflow:hidden;padding:18px 20px;color:#fff;isolation:isolate;
+  background:linear-gradient(135deg,#1b1d24,#2b2140 55%,#1b1d24);box-shadow:0 30px 50px -20px rgba(40,30,70,.7),0 10px 20px -10px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08)}
+.card::before{content:"";position:absolute;inset:-40%;z-index:-1;opacity:.55;mix-blend-mode:color-dodge;
+  background:conic-gradient(from 0deg,#ff6ad5,#c774e8,#ad8cff,#8795e8,#94d0ff,#7cf7d4,#f6ff8a,#ffb86c,#ff6ad5);filter:blur(14px);animation:holo 8s linear infinite}
+@keyframes holo{to{transform:rotate(360deg)}}
+.card::after{content:"";position:absolute;inset:0;z-index:-1;background:repeating-linear-gradient(120deg,rgba(255,255,255,.07) 0 2px,transparent 2px 7px),radial-gradient(circle,rgba(255,255,255,.08) 1px,transparent 1.3px) 0 0/6px 6px}
+.ch1{display:flex;align-items:center;gap:10px;font:10px Galmuri;letter-spacing:.24em;color:rgba(255,255,255,.75)}
+.ch1 img{width:18px}
+.ch1 .chip{margin-left:auto;width:46px;height:34px;border-radius:7px;background:linear-gradient(135deg,#f9e3a3,#c99a3a 50%,#f7dc8f);box-shadow:inset 0 0 0 1px rgba(120,80,10,.4)}
+.ch1 .chip{background:linear-gradient(135deg,#f9e3a3,#c99a3a 50%,#f7dc8f),repeating-linear-gradient(90deg,transparent 0 10px,rgba(90,60,0,.35) 10px 11px);background-blend-mode:multiply}
+.cid{display:flex;align-items:center;gap:14px;margin-top:22px}
+.cid .av{width:70px;height:70px;border-radius:50%;background:url(https://radio.kawaii.uz/files/covers/ado-kira-mv84h2ww.jpg) center/cover;box-shadow:0 0 0 3px rgba(255,255,255,.85),0 0 0 6px rgba(59,111,224,.6),0 0 30px rgba(90,150,255,.6)}
+.cid b{font:700 26px Inter;letter-spacing:-.01em;text-shadow:0 2px 10px rgba(0,0,0,.4)}
+.cid small{display:block;font:12px Dot;color:rgba(255,255,255,.7)}
+.cid .rk{margin-left:auto;width:72px;filter:drop-shadow(0 0 16px rgba(90,150,255,.8)) drop-shadow(0 6px 6px rgba(0,0,0,.4))}
+.cxp{position:absolute;left:20px;right:20px;bottom:18px}
+.cxp .a{display:flex;justify-content:space-between;font:16px VT;letter-spacing:.1em;color:rgba(255,255,255,.85)}
+.cxp .bar{height:8px;border-radius:5px;background:rgba(0,0,0,.35);margin-top:6px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.cxp .bar i{display:block;height:100%;width:81%;border-radius:5px;background:linear-gradient(90deg,#7aa2ff,#c9d8ff);box-shadow:0 0 12px rgba(140,170,255,.9)}
+.cxp .idk{position:absolute;right:0;top:-46px;padding:6px 12px;border-radius:12px;font:600 11px Pixelify;letter-spacing:.14em;background:rgba(255,255,255,.14);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.25)}
+/* chat in a deep tray */
+.chat{position:relative;flex:1;border-radius:30px;padding:16px;display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden}
+.chh{display:flex;align-items:flex-end;gap:10px}
+.chh b{font:26px Galmuri;letter-spacing:.06em;color:#1f2937}
+.chh small{font:12px Dot;color:var(--soft);margin-bottom:4px}
+.chh .lv{margin-left:auto;display:flex;align-items:center;gap:6px;font:10px Galmuri;letter-spacing:.14em;color:#1f8a55;margin-bottom:5px}
+.chh .lv i{width:7px;height:7px;border-radius:50%;background:var(--led);box-shadow:0 0 8px var(--led)}
+.pin{border-radius:16px;padding:9px 12px;display:flex;gap:10px;align-items:center;font:13px Dot}
+.pin i{width:3px;align-self:stretch;border-radius:2px;background:var(--gold);box-shadow:0 0 6px var(--gold)}
+.pin small{display:block;font:9px Galmuri;letter-spacing:.14em;color:var(--soft)}
+.msgs{flex:1;display:flex;flex-direction:column;gap:12px;justify-content:flex-end;min-height:0}
+.m{display:flex;gap:10px;align-items:flex-end}
+.m .a{width:34px;height:34px;flex:none;border-radius:50%;background:center/cover;box-shadow:0 0 0 2px #fff,0 0 0 3.5px var(--fc,#cfd3da),0 3px 6px rgba(0,0,0,.2)}
+.bub{border-radius:20px 20px 20px 6px;padding:10px 14px;max-width:285px}
+.bub .n{font:13px Dot;display:flex;align-items:center;gap:6px}
+.bub .n em{font:600 9px Pixelify;font-style:normal;letter-spacing:.1em;padding:2px 6px;border-radius:6px}
+.bub p{font:15px/1.35 Dot;color:#1f2937;margin-top:2px}
+.bub .tm{font:11px Dot;color:var(--soft);text-align:right;margin-top:3px}
+.song{display:flex;gap:10px;align-items:center;margin-top:6px}
+.song span{width:56px;height:56px;border-radius:12px;background:center/cover;box-shadow:0 0 0 3px #fff,0 6px 12px rgba(0,0,0,.22)}
+.song b{font:15px Dot;font-weight:400;display:block}.song small{font:12px Dot;color:var(--soft)}
+.re{display:inline-flex;gap:5px;padding:3px 9px;border-radius:12px;font:12px Dot;margin-top:6px}
+.cmp{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;padding:6px;border-radius:22px}
+.cmp .k{height:50px;border-radius:16px}
+.cmp .in{height:50px;border-radius:14px;display:flex;align-items:center;padding:0 14px;font:18px VT;letter-spacing:.1em;color:rgba(35,43,27,.45);position:relative;overflow:hidden;
+  background:linear-gradient(rgba(35,43,27,.05) 1px,transparent 1px) 0 0/5px 5px,linear-gradient(90deg,rgba(35,43,27,.05) 1px,transparent 1px) 0 0/5px 5px,radial-gradient(120% 90% at 30% 20%,var(--lcdA),var(--lcdB));
+  box-shadow:inset 0 4px 10px rgba(30,40,20,.3),inset 0 0 0 2.5px var(--lcdBorder),0 0 20px rgba(196,224,120,.25)}
+.cmp .in i{width:2px;height:22px;background:var(--lcdInk);margin-left:2px;animation:blink 1s steps(1) infinite}
+@keyframes thump{0%{opacity:.9}100%{opacity:.15}}
+</style>
+</head>
+<body>
+<div class="win">
+  <header class="title">
+    <span class="sn">KAWAII RADIO · <b>KR-01 DESK</b> · S/N 0001-TAS · 48 kHz / 24 bit</span>
+    <span class="sp"></span>
+    <span class="meter" id="tm"></span>
+    <span class="sp"></span>
+    <span class="tg"><span></span><span></span><span class="x"></span></span>
+  </header>
+
+  <nav class="nav chalk">
+    <div class="navt tray">
+      <div class="cap on down"><span class="lp"></span><svg data-px="RADIO" data-c="#2f3744" data-s="2.2"></svg>ASOSIY</div>
+      <div class="cap raised"><span class="lp"></span><svg data-px="SEARCH" data-c="#4b5563" data-s="2.2"></svg>QIDIRUV</div>
+      <div class="cap raised"><span class="lp" style="background:var(--red);box-shadow:0 0 8px var(--red)"></span><svg data-px="CHAT" data-c="#4b5563" data-s="2.2"></svg>CHAT</div>
+      <div class="cap raised"><span class="lp"></span><svg data-px="LIBRARY" data-c="#4b5563" data-s="2.2"></svg>KUTUBXONA</div>
+      <div class="cap raised"><span class="lp"></span><svg data-px="USER" data-c="#4b5563" data-s="2.2"></svg>PROFIL</div>
+      <div class="sp"></div>
+      <div class="spk tray"></div>
+      <div class="cap raised" style="height:60px"><svg data-px="GEAR" data-c="#4b5563" data-s="2"></svg></div>
+    </div>
+  </nav>
+
+  <main class="mid chalk">
+    <section class="bay">
+      <i class="screw d" style="left:14px;top:14px"></i><i class="screw d" style="right:14px;top:14px;--r:80deg"></i><i class="screw d" style="left:14px;bottom:14px;--r:10deg"></i><i class="screw d" style="right:14px;bottom:14px;--r:120deg"></i>
+      <div class="bayhead">
+        <img src="logo.svg"><div><b>Kawaii Radio</b><small>KR-01 · J-POP FM · 105.7</small></div>
+        <div class="sp"></div>
+        <div class="modes"><span class="on"><i></i>RADIO · JONLI EFIR</span><span>O'Z TANLOVIM</span><span>J-POP</span><span>OST</span><span>RIOT</span></div>
+      </div>
+      <div class="tt">
+        <div class="plinth"></div><div class="platter"></div>
+        <svg class="strobe" viewBox="0 0 372 372" id="strobe"></svg>
+        <div class="vinyl"><div class="lab"></div></div><div class="sheen"></div><div class="spindle"></div>
+        <div class="lamp"></div>
+        <svg class="arm" viewBox="0 0 170 400">
+          <defs>
+            <radialGradient id="mb" cx=".35" cy=".3"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#b9bec7"/><stop offset="1" stop-color="#5d636d"/></radialGradient>
+            <linearGradient id="tube" x1="0" x2="1"><stop offset="0" stop-color="#7d838d"/><stop offset=".45" stop-color="#f3f5f8"/><stop offset="1" stop-color="#8a909a"/></linearGradient>
+          </defs>
+          <circle cx="110" cy="62" r="44" fill="#121316" stroke="rgba(255,255,255,.06)"/>
+          <circle cx="110" cy="62" r="32" fill="url(#mb)"/>
+          <circle cx="110" cy="62" r="12" fill="#25272b"/>
+          <rect x="99" y="2" width="22" height="34" rx="6" fill="url(#tube)"/>
+          <g transform="rotate(24 110 62)">
+            <rect x="106" y="62" width="8" height="250" rx="4" fill="url(#tube)"/>
+            <path d="M104 304 l-26 54 l22 10 l16 -58 z" fill="#2a2c31" stroke="#55595f"/>
+            <rect x="80" y="350" width="22" height="12" rx="3" fill="#ff4a3d" transform="rotate(22 91 356)"/>
+          </g>
+          <text x="150" y="132" fill="rgba(230,232,236,.35)" font-family="Galmuri" font-size="8" letter-spacing="2" transform="rotate(90 150 132)">33⅓ · 45 · 78</text>
+        </svg>
+      </div>
+      <div class="glass">
+        <div class="lcd">
+          <div class="lr1"><svg data-px="NOTE" data-c="#232b1b" data-s="1.5"></svg>JONLI EFIR · 214 TINGLOVCHI<span class="air">ON AIR <i></i></span></div>
+          <div class="lt"><b>KICK BACK</b><span>Kenshi Yonezu</span></div>
+          <div class="lyr"><span class="on">Qo'shiq matni shu yerda</span> <span class="off">qator-qator yonadi</span></div>
+          <div class="dots" id="dots"></div>
+          <div class="lfoot"><span class="g">UZ<span class="o"></span></span><span>ROM<span class="o f"></span></span><span class="g">JP<span class="o"></span></span><span class="g">J-POP · 172 BPM</span><span class="t"><s>8</s>1:42<span style="font-size:18px;opacity:.45"> / 3:13</span></span></div>
+        </div>
+      </div>
+      <div class="glare"></div>
+    </section>
+
+    <section class="deck tray grain">
+      <i class="screw" style="left:12px;top:12px"></i><i class="screw" style="right:12px;top:12px;--r:70deg"></i><i class="screw" style="left:12px;bottom:12px;--r:150deg"></i><i class="screw" style="right:12px;bottom:12px;--r:15deg"></i>
+      <div class="vu raised"><div class="vuf"><svg viewBox="0 0 234 236" preserveAspectRatio="xMidYMax slice" id="vuL"></svg></div></div>
+      <div class="kn">
+        <svg class="ring" viewBox="0 0 244 244" id="ring"></svg>
+        <div class="knob"><span class="dotk"></span></div>
+        <span class="val">OVOZ<b>72</b></span>
+      </div>
+      <div class="vu raised"><div class="vuf"><svg viewBox="0 0 234 236" preserveAspectRatio="xMidYMax slice" id="vuR"></svg></div></div>
+      <div class="row">
+        <div class="k raised"><span class="led"></span><svg data-px="SHUFFLE" data-c="#4b5563" data-s="2.2"></svg></div>
+        <div class="k raised"><span class="led"></span><svg data-px="PREV" data-c="#4b5563" data-s="2.6"></svg></div>
+        <div class="k big"><span class="led"></span><svg data-px="PAUSE" data-c="#f2f3f5" data-s="3.2"></svg></div>
+        <div class="k raised"><span class="led"></span><svg data-px="NEXT" data-c="#4b5563" data-s="2.6"></svg></div>
+        <div class="k raised on"><span class="led"></span><svg data-px="HEART_FULL" data-c="#ff4a3d" data-s="2.4"></svg></div>
+        <div class="tun tray"><div class="drum"><div class="ticks"></div><div class="scale"><span>88</span><span>92</span><span>96</span><span>100</span><span>104</span><span>108</span></div><div class="fade"></div><div class="needle2"></div></div></div>
+        <div class="k raised"><span class="led"></span><svg data-px="SAVE" data-c="#4b5563" data-s="2.2"></svg></div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="rc chalk">
+    <section class="card">
+      <div class="ch1"><img src="logo.svg">KAWAII PASS · MEMBER<span class="chip"></span></div>
+      <div class="cid"><div class="av"></div><div><b>soka</b><small>@soka8imokenp · Kawaii ID</small></div><img class="rk" src="https://id.kawaii.uz/static/img/ranks/patrol.webp"></div>
+      <div class="cxp"><span class="idk">ID ›</span><div class="a"><span>LEVEL 3 · PATROL</span><span>243 / 300 SEZON XP</span></div><div class="bar"><i></i></div></div>
+    </section>
+    <section class="chat tray grain">
+      <div class="chh"><b>CHAT</b><small>214 onlayn · 31 radioda</small><span class="lv"><i></i>LIVE</span></div>
+      <div class="pin raised"><i></i><div><small>QADALGAN · SYNTX</small>‼ Ilovada yangimisiz?</div></div>
+      <div class="msgs">
+        <div class="m"><span class="a" style="background-image:url(https://radio.kawaii.uz/files/covers/fujii-kaze-kirari-mv8di3zv.jpg)"></span>
+          <div class="bub raised"><div class="n">sakura</div><p>salom hammaga ✿ bugun nima eshitamiz?</p><div class="tm">20:41</div></div></div>
+        <div class="m"><span class="a" style="--fc:#3b6fe0;background-image:url(https://radio.kawaii.uz/files/covers/eve-underdog-mv84in6q.jpg)"></span>
+          <div class="bub raised"><div class="n" style="color:#c48a0e">syntx <em style="background:#3b6fe0;color:#fff">PATROL</em></div>
+            <div class="song"><span style="background-image:url(https://radio.kawaii.uz/files/covers/eve-tokyo-ghetto-mv8di1fh.jpg)"></span><div><b>♪ Tokyo Ghetto</b><small>Eve · ulashdi</small></div></div>
+            <span class="re down">❤ 2</span><div class="tm">20:55</div></div></div>
+        <div class="m"><span class="a" style="--fc:#e8b931;background-image:url(https://radio.kawaii.uz/files/covers/ado-odo-mv84hade.jpg)"></span>
+          <div class="bub raised"><div class="n">Last veRum <em style="background:#e8b931;color:#3a2a05">GOLD II</em></div><p>wassup qoravoyla &lt;3</p><div class="tm">21:10</div></div></div>
+        <div class="m"><span class="a" style="--fc:#34c08f;background-image:url(https://radio.kawaii.uz/files/covers/kenshi-yonezu-iris-out-mv84ixgy.jpg)"></span>
+          <div class="bub raised"><div class="n">z.ortiqov <em style="background:#34c08f;color:#0c2a1e">EMERALD</em></div><p>KICK BACK efirda 🔥 ovozni balandroq!</p><div class="tm">21:34</div></div></div>
+      </div>
+      <div class="cmp raised">
+        <div class="k raised"><svg data-px="RADIO" data-c="#4b5563" data-s="1.8"></svg></div>
+        <div class="in">XABAR YOZING<i></i></div>
+        <div class="k raised" style="font-size:22px;color:#4b5563">☺</div>
+      </div>
+    </section>
+  </aside>
+</div>
+<script>
+const G={
+ RADIO:[".........##.",".......##...",".....##.....","############","#..........#","#.####..##.#","#.####.#..##","#.####.#..##","#.####..##.#","#..........#","############"],
+ SEARCH:["..#####.....",".##...##....","##.....##...","#.......#...","#.......#...","#.......#...","##.....##...",".##...###...","..#####.##..",".........##.","..........##","...........#"],
+ CHAT:[".##########.","############","##........##","##.##.##.###","##........##","############",".##########.","..###.......","..##........","..#........."],
+ LIBRARY:["##.##..##...","##.##..###..","##.##...##..","##.##...###.","##.##....##.","##.##....###","##.##.....##","##.##.....##","############"],
+ USER:["....####....","...######...","...######...","...######...","....####....","............","..########..",".##########.","############","############"],
+ GEAR:[".....##.....","..#..##..#..",".##########.","..########..","..###..###..","####....####","####....####","..###..###..","..########..",".##########.","..#..##..#..",".....##....."],
+ NEXT:["#....#.#","##...#.#","###..#.#","####.#.#","####.#.#","###..#.#","##...#.#","#....#.#"],
+ PREV:["#.#....#","#.#...##","#.#..###","#.#.####","#.#.####","#.#..###","#.#...##","#.#....#"],
+ PAUSE:["###..###","###..###","###..###","###..###","###..###","###..###","###..###","###..###"],
+ SHUFFLE:["##.......###","..#.....#..#","...#...#....","....#.#.....",".....#......","....#.#.....","...#...#....","..#.....#..#","##.......###"],
+ HEART_FULL:[".###...###.","###########","###########","###########",".#########.","..#######..","...#####...","....###....",".....#....."],
+ SAVE:["##########..","#..#####.##.","#..#####..##","#..##.##...#","#..#####...#","#..........#","#.########.#","#.#......#.#","#.########.#","#.#......#.#","############"],
+ NOTE:["...#######","...#######","...#.....#","...#.....#","...#.....#","...#.....#",".###...###","####..####","####..####",".##....##."],
+};
+document.querySelectorAll('svg[data-px]').forEach(s=>{const m=G[s.dataset.px],k=+s.dataset.s,c=s.dataset.c;const w=m[0].length,h=m.length;
+ s.setAttribute('width',w*k);s.setAttribute('height',h*k);s.setAttribute('viewBox',`0 0 ${w} ${h}`);s.setAttribute('shape-rendering','crispEdges');
+ let r='';m.forEach((row,y)=>[...row].forEach((ch,x)=>{if(ch=='#')r+=`<rect x="${x}" y="${y}" width="1" height="1"/>`}));s.innerHTML=`<g fill="${c}">${r}</g>`});
+const NS='http://www.w3.org/2000/svg';
+// strobe dots on the platter rim (four rows, like a real deck)
+(()=>{const s=document.getElementById('strobe');let h='';[[178,180],[171,180],[164,180],[157,180]].forEach(([r,n],row)=>{for(let i=0;i<n;i++){const a=i/n*Math.PI*2;h+=`<rect x="${186+Math.cos(a)*r-1.4}" y="${186+Math.sin(a)*r-1.4}" width="2.8" height="2.8" fill="rgba(30,32,36,${.55-row*.08})" transform="rotate(${a*180/Math.PI} ${186+Math.cos(a)*r} ${186+Math.sin(a)*r})"/>`}});s.innerHTML=h})();
+// dot-matrix spectrum on the LCD
+(()=>{const d=document.getElementById('dots');for(let c=0;c<48;c++){const col=document.createElement('div');col.className='col';const v=Math.round(3+Math.abs(Math.sin(c*.42)*7+Math.sin(c*.17)*5)*(1-c/80));for(let r=0;r<12;r++){const i=document.createElement('i');if(r<v)i.className='on';if(r==v+1)i.className='pk';col.append(i)}d.append(col)}})();
+// analog VU faces
+function vu(id){const s=document.getElementById(id);const cx=117,cy=240,R=150;let h='';
+ const ticks=[[-20,-46],[-10,-30],[-7,-20],[-5,-12],[-3,-2],[-1,8],[0,15],[1,22],[2,30],[3,38]];
+ h+=`<path d="M${cx+Math.cos(-2.25)*R} ${cy+Math.sin(-2.25)*R} A${R} ${R} 0 0 1 ${cx+Math.cos(-1.32)*R} ${cy+Math.sin(-1.32)*R}" stroke="#2b2420" stroke-width="2" fill="none"/>`;
+ h+=`<path d="M${cx+Math.cos(-1.32)*R} ${cy+Math.sin(-1.32)*R} A${R} ${R} 0 0 1 ${cx+Math.cos(-0.89)*R} ${cy+Math.sin(-0.89)*R}" stroke="#d92a1f" stroke-width="7" fill="none"/>`;
+ for(let a=-2.25;a<=-0.89;a+=0.045){h+=`<line x1="${cx+Math.cos(a)*(R-2)}" y1="${cy+Math.sin(a)*(R-2)}" x2="${cx+Math.cos(a)*(R+4)}" y2="${cy+Math.sin(a)*(R+4)}" stroke="${a>-1.32?'#d92a1f':'#2b2420'}" stroke-width="1"/>`}
+ ticks.forEach(([v,deg])=>{const a=(deg-90)*Math.PI/180;h+=`<line x1="${cx+Math.cos(a)*(R-2)}" y1="${cy+Math.sin(a)*(R-2)}" x2="${cx+Math.cos(a)*(R+12)}" y2="${cy+Math.sin(a)*(R+12)}" stroke="${v>0?'#d92a1f':'#2b2420'}" stroke-width="2"/>`;
+   h+=`<text x="${cx+Math.cos(a)*(R+24)}" y="${cy+Math.sin(a)*(R+24)+4}" font-family="VT" font-size="15" text-anchor="middle" fill="${v>0?'#d92a1f':'#2b2420'}">${v>0?'+'+v:v}</text>`});
+ h+=`<text x="${cx}" y="${cy-72}" font-family="Galmuri" font-size="20" text-anchor="middle" fill="#2b2420" letter-spacing="3">VU</text>`;
+ h+=`<text x="${cx}" y="${cy-54}" font-family="Galmuri" font-size="7" text-anchor="middle" fill="rgba(43,36,32,.6)" letter-spacing="2">KR-01 · LEVEL</text>`;
+ h+=`<g class="needle ${id=='vuR'?'r':''}" style="transform-origin:${cx}px ${cy}px"><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy-R-6}" stroke="#141210" stroke-width="1.8"/><line x1="${cx}" y1="${cy-R+30}" x2="${cx}" y2="${cy-R-6}" stroke="#d92a1f" stroke-width="1.8"/></g>`;
+ h+=`<rect x="0" y="212" width="234" height="30" fill="#24262b"/><circle cx="${cx}" cy="214" r="16" fill="#24262b"/><circle cx="${cx}" cy="216" r="5" fill="#5b5f67"/><text x="14" y="230" font-family="Galmuri" font-size="8" fill="rgba(255,255,255,.45)" letter-spacing="2">${id=='vuL'?'L':'R'} · CH</text><text x="220" y="230" font-family="Galmuri" font-size="8" fill="rgba(255,255,255,.45)" letter-spacing="2" text-anchor="end">dB</text>`;
+ s.innerHTML=h}
+vu('vuL');vu('vuR');
+// LED ring around the knob
+(()=>{const s=document.getElementById('ring');let h='';const n=31;for(let i=0;i<n;i++){const a=(-225+i*270/(n-1))*Math.PI/180;const on=i<22;const x=122+Math.cos(a)*112,y=122+Math.sin(a)*112;
+ h+=`<circle cx="${x}" cy="${y}" r="3.6" fill="${on?(i>19?'#ffb04a':'#3ee08f'):'#c3c8d0'}" ${on?'filter="url(#gl)"':''}/>`}
+ s.innerHTML=`<defs><filter id="gl" x="-2" y="-2" width="5" height="5"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`+h+
+  `<text x="22" y="236" font-family="Galmuri" font-size="8" fill="rgba(55,65,81,.55)" letter-spacing="2">MIN</text><text x="196" y="236" font-family="Galmuri" font-size="8" fill="rgba(55,65,81,.55)" letter-spacing="2">MAX</text>`})();
+// title-bar level meter
+(()=>{const m=document.getElementById('tm');for(let i=0;i<24;i++){const b=document.createElement('i');if(i<15)b.className='on';if(i>=15&&i<18)b.className='y';m.append(b)}})();
+</script>
+</body>
+</html>

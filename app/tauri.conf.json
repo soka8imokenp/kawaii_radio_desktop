@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Kawaii Radio",
+  "version": "0.1.0",
+  "identifier": "uz.kawaii.radio.desk",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Kawaii Radio",
+        "width": 1600,
+        "height": 900,
+        "minWidth": 1120,
+        "minHeight": 630,
+        "center": true,
+        "decorations": false,
+        "resizable": true,
+        "backgroundColor": "#101114"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+  }
+}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<title>Kawaii Radio</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="frame">
+  <div id="stage" class="dark">
+    <!-- everything below sits on the rendered device (assets/<theme>-up.webp) in its 1920 x 1080 coordinates -->
+
+    <!-- window keys on the printer head -->
+    <div id="winkeys"><i data-win="minimize" title="Yig'ish"></i><i data-win="maximize" title="Kattalashtirish"></i><i data-win="close" title="Yopish"></i></div>
+
+    <!-- live text on the bay -->
+    <div id="listeners" class="silk">— TINGLOVCHI</div>
+    <div id="stationFreq" class="silk"></div>
+
+    <!-- trivision cover window -->
+    <div id="tv"></div>
+    <div id="tvShade"></div>
+
+    <!-- lyrics display -->
+    <div id="lyr">
+      <div class="lh"><i class="dotled"></i><b id="lyTitle">—</b><span id="lyArtist"></span></div>
+      <div id="lyLines"></div>
+      <div id="lyRail"></div>
+    </div>
+
+    <!-- a module that slides over the lyrics display: search, library, profile -->
+    <div id="panel" hidden>
+      <div class="ph"><b id="pTitle">QIDIRUV</b><span id="pSub"></span><i id="pClose" title="Yopish">×</i></div>
+      <div id="pSearch"><input id="pInput" placeholder="QO'SHIQ YOKI IJROCHI" spellcheck="false"></div>
+      <div id="pList"></div>
+    </div>
+
+    <!-- the big LCD -->
+    <canvas id="lcd" width="1254" height="152"></canvas>
+    <!-- tuner drum -->
+    <canvas id="drum" width="500" height="92"></canvas>
+    <!-- knob dot -->
+    <div id="knobDot"><i></i></div>
+
+    <!-- printer: line counter and the receipt -->
+    <div id="qator">QATOR 01/01</div>
+    <div id="paperWin"><div id="paper"></div></div>
+
+    <!-- chat -->
+    <div id="chat">
+      <div class="ch"><b>CHAT</b><span id="chOnline">ulanmoqda…</span><span class="live"><i></i>LIVE</span></div>
+      <div id="chPin" hidden><i></i><div><small id="chPinWho">QADALGAN</small><span id="chPinText"></span></div></div>
+      <div id="chMsgs"></div>
+      <div id="chCompose"><div class="ck"><img src="assets/logo.svg" alt=""></div><div class="cin" id="chInput">KAWAII ID BILAN KIRING</div><div class="ck">:)</div></div>
+    </div>
+
+    <!-- hit areas and lit overlays for every control (filled in by app.js) -->
+    <div id="controls"></div>
+
+    <!-- a little LCD toast for things that are not here yet -->
+    <div id="toast"></div>
+  </div>
+</div>
+<audio id="audio" crossorigin="anonymous" preload="auto"></audio>
+<script src="app.js"></script>
+</body>
+</html>

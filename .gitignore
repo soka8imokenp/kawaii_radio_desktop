@@ -1,0 +1,11 @@
+.tools/
+app/target/
+app/build.log
+design/blend/anim_*/
+design/blend/*.blend
+design/blend/*.blend1
+design/blend/*.log
+design/blend/__pycache__/
+design/blend/jb_*.png
+design/blend/jbt.png
+Kawaii Radio.exe
