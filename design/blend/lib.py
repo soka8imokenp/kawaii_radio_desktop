@@ -140,7 +140,7 @@ class Ctx:
             # product-shot light: long strip softboxes grazing the device, so every chamfer and edge catches a line of light
             dk = self.theme == 'dark'
             self.area('rimN', (0, 9.5, 2.2), 26, 900 if dk else 260, (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6)
-            self.area('rimW', (-14, 0, 2.6), 14, 380 if dk else 110, (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5)
+            self.area('rimW', (-14, 0, 2.6), 14, 560 if dk else 110, (0.72, 0.84, 1.0) if dk else (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5)
             # a big soft key from upper left gives the large surfaces a gradient instead of a flat fill
             self.area('grad', (-12, 7, 7), 6, 1100 if dk else 220, (1.0, 0.96, 0.9), target=(2, -2, 0))
 
@@ -378,14 +378,14 @@ class Ctx:
     def _mats(self):
         T = self.T
         c = hexc
-        self.CHALK = self.flake(self.dotted(self.mat('chalk', c(T['chassis']), 0.78, bump=(420, 0.2), spec=0.22), 0.13, 0.012, c(T['dots'])), 2400, 0.14, 0.25 if self.theme == 'dark' else 0.0)
-        self.TRAY = self.flake(self.dotted(self.mat('tray', c(T['tray']), 0.82, bump=(420, 0.2), spec=0.18), 0.13, 0.012, c(T['trayDots'])), 2400, 0.12, 0.15 if self.theme == 'dark' else 0.0)
-        self.GRAPH = self.flake(self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(900, 0.1), spec=0.4), 0.08, 0.009, c(T['bayDots'])), 3000, 0.2, 0.35)
+        self.CHALK = self.flake(self.dotted(self.mat('chalk', c(T['chassis']), 0.78, bump=(420, 0.2), spec=0.22), 0.13, 0.012, c(T['dots'])), 2400, 0.14, 0.0)
+        self.TRAY = self.flake(self.dotted(self.mat('tray', c(T['tray']), 0.82, bump=(420, 0.2), spec=0.18), 0.13, 0.012, c(T['trayDots'])), 2400, 0.12, 0.0)
+        self.GRAPH = self.flake(self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(900, 0.1), spec=0.4), 0.08, 0.009, c(T['bayDots'])), 3000, 0.2, 0.0)
         self.WELL = self.mat('well', c(T['well']), 0.35, bump=(1200, 0.03))
-        self.KEY = self.flake(self.mat('key', c(T['key']), 0.42, coat=0.18, bump=(1400, 0.035), spec=0.3), 3200, 0.1, 0.2 if self.theme == 'dark' else 0.0)
+        self.KEY = self.flake(self.mat('key', c(T['key']), 0.42, coat=0.18, bump=(1400, 0.035), spec=0.3), 3200, 0.1, 0.0)   # plastics are dielectric: metallic strictly 0, or they read as cheap plastic-metal
         import sys as _s
         if '--flat' not in _s.argv:
-            for m_, sc_, am_, fi_ in ((self.CHALK, 1.6, 0.14, 0.25), (self.TRAY, 1.9, 0.12, 0.2), (self.GRAPH, 2.4, 0.16, 0.15), (self.KEY, 3.0, 0.08, 0.1)):
+            for m_, sc_, am_, fi_ in ((self.CHALK, 1.6, 0.14, 0.5), (self.TRAY, 1.9, 0.12, 0.4), (self.GRAPH, 2.4, 0.16, 0.3), (self.KEY, 3.0, 0.08, 0.28)):
                 self.smudge(m_, sc_, am_, fi_)
             if '--nopbr' not in _s.argv:
                 self.pbr(self.CHALK, 'Plastic013A', 5.0, 0.10, 0.55)
@@ -548,7 +548,7 @@ class Ctx:
 
     def key(self, name, x0, y0, x1, y1, r, down=False, m=None, z=0.0):
         zt = z + (0.05 if down else 0.11)
-        k = self.rbox(name, x0, y0, x1, y1, z - 0.05, zt, r, 3.2, m or self.KEY)
+        k = self.rbox(name, x0, y0, x1, y1, z - 0.05, zt, r, 4.5, m or self.KEY)   # a softer roll-off edge catches the rim light
         return k, zt
 
     def icon(self, name, cx, cy, px, m, z, h=0.006):
