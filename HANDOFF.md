@@ -75,6 +75,14 @@ cp target/release/kawaii-radio.exe "../Kawaii Radio/Kawaii Radio.exe"   # ряд
 ```
 `WebView2Loader.dll` берётся из `target/release/` после сборки (или из zip в `dist/`).
 
+### 3.1b Установщик (NSIS, без прав администратора)
+```bash
+cargo install tauri-cli --version "^2" --locked     # один раз (~15 мин)
+cd app && cargo tauri build                          # → target/release/bundle/nsis/Kawaii Radio_<ver>_x64-setup.exe
+```
+Версия — в `tauri.conf.json`, `Cargo.toml` и `const VERSION` в `ui/app.js` (держать одинаковой). Готовый
+установщик кладётся в `dist/KawaiiRadio-<ver>-setup.exe`. WebView2Loader.dll установщик кладёт сам, WebView2 ставит сам.
+
 ### 3.2 Рендеры корпуса (≈2 мин на плиту на RTX, 4 плиты)
 ```bash
 B=/d/kawaii_radio_exe/.tools/blender-4.5.9-windows-x64/blender.exe
@@ -173,7 +181,7 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
    `npx wrangler deploy` в `cloud/` (только с разрешения пользователя, это прод!).
 2. После входа: писать в чат, LEVEL/RANK (как в мобилке: `LevelPanel.kt`, `KawaiiId.kt`), O'Z TANLOVIM (Kawaii Pass).
 3. SAQLASH (сохранить трек в библиотеку/офлайн).
-4. Установщик (Tauri bundle NSIS/MSI) + автообновление (tauri-plugin-updater, релизы GitHub).
+4. ~~Установщик~~ (готов, v0.3.0). Автообновление: tauri-plugin-updater + GitHub Releases (нужен ключ подписи updater — хранить вне git).
 5. Системное: SMTC (медиа-клавиши, панель Now Playing Windows), трей, Discord Rich Presence.
 
 ## 8. Подводные камни
