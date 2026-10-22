@@ -277,6 +277,79 @@ class Ctx:
                 nt.links.new(nm.outputs['Normal'], sock)
         return m
 
+    def plastic(self, m, rough_spread=0.12, bump=0.08, grain=90.0, dome=0.0):
+        """Procedural plastic (the SILVER PUNK recipe, scaled to the device):
+        roughness = noise -> ramp (0.3..0.8) around the base value, so the highlight is never uniform;
+        bump = fine noise x multifractal noise (multiply) -> inverted Bump: moulded micro-texture;
+        dome > 0 bends the normal of flat tops into a slight convex cap, so keys catch a rolling highlight."""
+        nt = m.node_tree
+        b = nt.nodes['Principled BSDF']
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        # roughness breakup
+        n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = grain * 0.18
+        n.inputs['Detail'].default_value = 10; n.inputs['Roughness'].default_value = 1.0; n.inputs['Distortion'].default_value = 0.1
+        nt.links.new(tc.outputs['Object'], n.inputs['Vector'])
+        ramp = nt.nodes.new('ShaderNodeValToRGB')
+        ramp.color_ramp.elements[0].position = 0.3; ramp.color_ramp.elements[1].position = 0.8
+        nt.links.new(n.outputs['Fac'], ramp.inputs['Fac'])
+        mr = nt.nodes.new('ShaderNodeMapRange')
+        rin = b.inputs['Roughness']
+        base = rin.default_value
+        mr.inputs['To Min'].default_value = max(0.05, base - rough_spread); mr.inputs['To Max'].default_value = min(1.0, base + rough_spread)
+        nt.links.new(ramp.outputs['Color'], mr.inputs['Value'])
+        if rin.is_linked:   # keep earlier variation (smudges, scans): average them
+            avg = nt.nodes.new('ShaderNodeMath'); avg.operation = 'ADD'
+            mh = nt.nodes.new('ShaderNodeMath'); mh.operation = 'MULTIPLY'; mh.inputs[1].default_value = 0.5
+            nt.links.new(rin.links[0].from_socket, avg.inputs[0]); nt.links.new(mr.outputs['Result'], avg.inputs[1])
+            nt.links.new(avg.outputs[0], mh.inputs[0]); nt.links.new(mh.outputs[0], rin)
+        else:
+            nt.links.new(mr.outputs['Result'], rin)
+        # moulded micro relief: two noises multiplied
+        a = nt.nodes.new('ShaderNodeTexNoise'); a.inputs['Scale'].default_value = grain
+        a.inputs['Detail'].default_value = 8; a.inputs['Roughness'].default_value = 0.9; a.inputs['Distortion'].default_value = 0.1
+        c = nt.nodes.new('ShaderNodeTexNoise')
+        try:
+            c.noise_type = 'MULTIFRACTAL'
+        except Exception:
+            pass
+        c.inputs['Scale'].default_value = grain * 1.5; c.inputs['Detail'].default_value = 10
+        c.inputs['Roughness'].default_value = 1.0; c.inputs['Distortion'].default_value = 2.0
+        for t in (a, c):
+            nt.links.new(tc.outputs['Object'], t.inputs['Vector'])
+        mx = nt.nodes.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.blend_type = 'MULTIPLY'; mx.inputs['Factor'].default_value = 1.0
+        nt.links.new(a.outputs['Fac'], mx.inputs[6]); nt.links.new(c.outputs['Fac'], mx.inputs[7])
+        bp = nt.nodes.new('ShaderNodeBump'); bp.invert = True
+        bp.inputs['Strength'].default_value = bump; bp.inputs['Distance'].default_value = 0.003
+        nt.links.new(mx.outputs[2], bp.inputs['Height'])
+        if dome:
+            # convex cap: on faces looking up, tilt the normal by the position inside the object's bounds
+            g = nt.nodes.new('ShaderNodeNewGeometry')
+            sub = nt.nodes.new('ShaderNodeVectorMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = (0.5, 0.5, 0.5)
+            nt.links.new(tc.outputs['Generated'], sub.inputs[0])
+            sc_ = nt.nodes.new('ShaderNodeVectorMath'); sc_.operation = 'MULTIPLY'; sc_.inputs[1].default_value = (dome, dome, 0)
+            nt.links.new(sub.outputs[0], sc_.inputs[0])
+            add = nt.nodes.new('ShaderNodeVectorMath'); add.operation = 'ADD'
+            nt.links.new(sc_.outputs[0], add.inputs[0]); nt.links.new(g.outputs['Normal'], add.inputs[1])
+            nrm = nt.nodes.new('ShaderNodeVectorMath'); nrm.operation = 'NORMALIZE'
+            nt.links.new(add.outputs[0], nrm.inputs[0])
+            sep = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(g.outputs['Normal'], sep.inputs[0])
+            up = nt.nodes.new('ShaderNodeMath'); up.operation = 'GREATER_THAN'; up.inputs[1].default_value = 0.985
+            nt.links.new(sep.outputs['Z'], up.inputs[0])
+            mv = nt.nodes.new('ShaderNodeMix'); mv.data_type = 'VECTOR'
+            nt.links.new(up.outputs[0], mv.inputs['Factor']); nt.links.new(g.outputs['Normal'], mv.inputs[4]); nt.links.new(nrm.outputs[0], mv.inputs[5])
+            nt.links.new(mv.outputs[1], bp.inputs['Normal'])
+        # put it under the existing normal chain (procedural bumps stack; a normal map consumes the bottom)
+        nin = b.inputs['Normal']
+        if nin.is_linked:
+            top = nin.links[0].from_node
+            if top.type == 'BUMP' and not top.inputs['Normal'].is_linked:
+                nt.links.new(bp.outputs['Normal'], top.inputs['Normal'])
+            else:
+                nt.links.new(bp.outputs['Normal'], nin)   # replace (keeps the result simple and predictable)
+        else:
+            nt.links.new(bp.outputs['Normal'], nin)
+        return m
+
     def flake(self, m, scale=2600, amount=0.18, metal=0.0):
         """Sparkle in the plastic: tiny cells with their own roughness (and a little metal), like painted hardware."""
         nt = m.node_tree
@@ -388,12 +461,21 @@ class Ctx:
             for m_, sc_, am_, fi_ in ((self.CHALK, 1.6, 0.14, 0.5), (self.TRAY, 1.9, 0.12, 0.4), (self.GRAPH, 2.4, 0.16, 0.3), (self.KEY, 3.0, 0.08, 0.28)):
                 self.smudge(m_, sc_, am_, fi_)
             if '--nopbr' not in _s.argv:
-                self.pbr(self.CHALK, 'Plastic013A', 5.0, 0.10, 0.55)
-                self.pbr(self.TRAY, 'Plastic013A', 5.5, 0.08, 0.45)
-                self.pbr(self.GRAPH, 'Plastic006', 7.0, 0.10, 0.25)
-                self.pbr(self.KEY, 'Plastic010', 4.0, 0.08, 0.35)
+                self.pbr(self.CHALK, 'Plastic013A', 5.0, 0.10, 0.0)
+                self.pbr(self.TRAY, 'Plastic013A', 5.5, 0.08, 0.0)
+                self.pbr(self.GRAPH, 'Plastic006', 7.0, 0.10, 0.0)
+                self.pbr(self.KEY, 'Plastic010', 4.0, 0.08, 0.0)
                 self.pbr(self.KEY, 'Fingerprints002', 9.0, 0.10, 0.0)
+            if '--noplastic' not in _s.argv:
+                self.plastic(self.CHALK, 0.12, 0.10, 90)
+                self.plastic(self.TRAY, 0.10, 0.08, 90)
+                self.plastic(self.GRAPH, 0.12, 0.06, 110)
+                self.plastic(self.KEY, 0.10, 0.07, 120, dome=0.35)
         self.KEYS = self.mat('keys', c(T['keyStation']), 0.42, coat=0.3, bump=(1400, 0.04))
+        if '--flat' not in _s.argv and '--noplastic' not in _s.argv:
+            self.plastic(self.KEYS, 0.10, 0.07, 120, dome=0.35)
+        # brushed steel for trims: a dielectric-free metal (metallic 1), anisotropic, a little rough
+        self.STEEL = self.mat('steel', (0.56, 0.57, 0.58), 0.3, metal=1.0, aniso=0.7)
         self.INK = self.mat('ink', c(T['ink']), 0.6)
         self.INKD = self.mat('inkd', c(T['inkD']), 0.6)
         self.INKS = self.mat('inks', c(T['inkSoft']), 0.6)
@@ -496,6 +578,13 @@ class Ctx:
         x, y = P(cx, cy)
         o.location = (x, y, z)
         o.data.materials.append(m)
+        return o
+
+    def ring(self, name, x0, y0, x1, y1, r, w, z0, z1, m):
+        """A thin rounded frame (outer box minus inner box), e.g. a steel trim around an opening."""
+        o = self.rbox(name, x0 - w, y0 - w, x1 + w, y1 + w, z0, z1, r + w, 0.6, m)
+        c = self.rbox(name + '_cut', x0, y0, x1, y1, z0 - 0.1, z1 + 0.1, r, 0, m)
+        self.cut(o, c)
         return o
 
     def cut(self, target, cutter, first=False):

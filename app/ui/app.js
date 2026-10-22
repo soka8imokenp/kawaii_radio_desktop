@@ -71,10 +71,11 @@ let click = function () {
 };
 
 // nav
-const NAV = ['ASOSIY', 'QIDIRUV', 'CHAT', 'KUTUBXONA', 'PROFIL'];
-const navKeys = NAV.map((n, i) => ctl('nav' + i, 20, 22 + i * 96, 108, 118 + i * 96, {
-  title: n, click: () => openScreen(i),
-}));
+// (no CHAT key: the chat is always on screen, bottom right) — screen ids stay: 0 home, 1 search, 3 library, 4 profile
+const NAV = [['ASOSIY', 0], ['QIDIRUV', 1], ['KUTUBXONA', 3], ['PROFIL', 4]];
+const navKeys = NAV.map(([n, id], k) => Object.assign(ctl('nav' + k, 20, 22 + k * 104, 108, 118 + k * 104, {
+  title: n, click: () => openScreen(id),
+}), { _id: id }));
 on(navKeys[0], true);
 const gearKey = ctl('gear', 20, 978, 108, 1058, { title: 'Sozlamalar', click: () => (screen === 5 ? openScreen(0) : openSettings()) });
 const meter = Array.from({ length: 18 }, (_, j) => led('m' + j, 64, 548 + j * 22, 10));
@@ -595,7 +596,7 @@ let screen = 0;
 function openScreen(i) {
   if (i === screen && i !== 0) i = 0;
   screen = i;
-  navKeys.forEach((k, j) => on(k, j === i));
+  navKeys.forEach((k) => on(k, k._id === i));
   on(gearKey, false);
   const p = $('#panel');
   if (i === 0 || i === 2) {
@@ -648,6 +649,9 @@ setInterval(() => { if (S.playing && !audio.paused) store.set('listened', store.
 audio.addEventListener('playing', () => { if (audio.dataset.counted !== audio.dataset.id) { audio.dataset.counted = audio.dataset.id; store.set('songs', store.get('songs', 0) + 1); } });
 
 
+/* ───────────── fixed device sizes (S / M / L), restored at start */
+invoke('set_size', { size: store.get('size', 'auto') });
+
 /* ───────────── settings: the gear opens a module with real switches */
 function openSettings() {
   screen = 5;
@@ -664,6 +668,7 @@ function fillSettings() {
     <div class="set"><div><b>Mavzu</b><span>Kunduzgi bo'r yoki tungi grafit korpus</span></div>${seg('theme', [['light', 'KUN'], ['dark', 'TUN']], S.theme)}</div>
     <div class="set"><div><b>Qo'shiq matni</b><span>Matnli qo'shiqlar uchun til</span></div>${seg('lang', [['uz', "O'ZB"], ['rom', 'ROM'], ['jp', '日本']], S.lang)}</div>
     <div class="set"><div><b>Stansiya</b><span>Ilova ochilganda qaysi efir</span></div>${seg('station', [['jpop', 'J-POP'], ['ost', 'OST'], ['riot', 'RIOT']], S.station)}</div>
+    <div class="set"><div><b>Oyna hajmi</b><span>Qurilma o'lchami: kichik, o'rta yoki katta</span></div>${seg('size', [['s', 'S'], ['m', 'M'], ['l', 'L']], store.get('size', 'auto'))}</div>
     <div class="set"><div><b>To'liq ekran</b><span>F11 — kino rejimi kabi</span></div>${seg('full', [['on', 'F11']], '')}</div>`;
 }
 $('#pList').addEventListener('click', (e) => {
@@ -675,6 +680,7 @@ $('#pList').addEventListener('click', (e) => {
   if (name === 'lang') { S.lang = v; store.set('lang', v); langUi(); renderLyrics(true); }
   if (name === 'station') tuneStation(v);
   if (name === 'full') invoke('window_action', { action: 'fullscreen' });
+  if (name === 'size') { store.set('size', v); invoke('set_size', { size: v }); }
   if (name !== 'full') fillSettings();
 });
 
@@ -697,18 +703,17 @@ WIN.forEach(([a, cx]) => ctl('win_' + a, cx - 16, 42, cx + 16, 74, { cls: 'round
 // the shutter: down (old content goes dark), swap, up (new content powers on with a scan line)
 let shutterBusy = Promise.resolve();
 let shutter = function shutter(swap) {
+  // a calm display change: the old screen sinks and dims, the new one surfaces — no shutter, no flicker
   shutterBusy = shutterBusy.then(async () => {
-    const sh = $('#shutter'), scan = $('#scan');
-    await sh.animate([{ transform: 'translateY(-104%)' }, { transform: 'translateY(0)' }], { duration: 300, easing: 'cubic-bezier(.55,0,.75,.35)', fill: 'forwards' }).finished;
-    await sh.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-1.5%)' }, { transform: 'translateY(0)' }], { duration: 120, easing: 'ease-out', fill: 'forwards' }).finished;
-    click();
+    const vis = () => ($('#panel').hidden ? $('#lyr') : $('#panel'));
+    const old = vis();
+    await old.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(10px) scale(.985)', filter: 'blur(3px)' }],
+      { duration: 170, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished;
     swap();
-    await new Promise((r) => setTimeout(r, 70));
-    sh.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-104%)' }], { duration: 420, easing: 'cubic-bezier(.3,1.25,.4,1)', fill: 'forwards' });
-    scan.animate([{ top: '194px', opacity: 0 }, { opacity: 1, offset: 0.1 }, { top: '628px', opacity: 0.9 }, { top: '628px', opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.4,0,.2,1)' });
-    const target = $('#panel').hidden ? $('#lyr') : $('#panel');
-    target.animate([{ opacity: 0, filter: 'brightness(2)' }, { opacity: 0.6, offset: 0.25 }, { opacity: 0.15, offset: 0.4 }, { opacity: 1, filter: 'brightness(1)' }], { duration: 520, easing: 'steps(6, end)' });
-    await new Promise((r) => setTimeout(r, 420));
+    old.getAnimations().forEach((a) => a.cancel());
+    const nu = vis();
+    await nu.animate([{ opacity: 0, transform: 'translateY(-8px) scale(.99)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+      { duration: 280, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished;
   });
   return shutterBusy;
 }

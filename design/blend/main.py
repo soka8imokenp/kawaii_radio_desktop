@@ -62,11 +62,15 @@ recess('grille', 892, 858, 1016, 1062, 22, 0.05)
 recess('keys2', 122, 970, 770, 1064, 28, 0.06)
 recess('pn', 1030, 856, 1102, 1062, 24, 0.06)
 kwz = round_recess('knob', 1250, 958, 100, 0.06)
+if '--flat' not in argv:
+    # brushed-steel trims around the two big openings, like a hi-fi front: a 3 px bright line that catches the rim light
+    C.ring('trim_bay', 122, 16, 1398, 650, 36, 3, -0.004, 0.012, C.STEEL)
+    C.ring('trim_lcd', 122, 666, 1398, 840, 26, 3, -0.004, 0.012, C.STEEL)
 recess('print', 1410, 16, 1904, 562, 30, 0.07)
 recess('chat', 1410, 578, 1904, 1064, 30, 0.07)
 
 # ───────────────────────────── nav
-NAV = [('RADIO', 'ASOSIY'), ('SEARCH', 'QIDIRUV'), ('CHAT', 'CHAT'), ('LIBRARY', 'KUTUBXONA'), ('USER', 'PROFIL')]
+NAV = [('RADIO', 'ASOSIY'), ('SEARCH', 'QIDIRUV'), ('LIBRARY', 'KUTUBXONA'), ('USER', 'PROFIL')]   # no CHAT key: the chat is always on screen
 y = 28
 for i, (ic, lab) in enumerate(NAV):
     down = DOWN if APP else i == 0
@@ -74,7 +78,7 @@ for i, (ic, lab) in enumerate(NAV):
     C.icon(ic, 64, y + 34, 2.6, INKD if down else INK, zt)
     C.text(lab, 64, y + 72, 10.5, GAL, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.05)   # light keys need the darker ink to read
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
-    y += 96
+    y += 104
 # a vertical level meter of real LEDs
 for j in range(18):
     yy = 548 + j * 22

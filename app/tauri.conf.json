@@ -14,12 +14,11 @@
         "title": "Kawaii Radio",
         "width": 1600,
         "height": 900,
-        "minWidth": 1120,
-        "minHeight": 630,
         "center": true,
         "decorations": false,
         "resizable": true,
-        "backgroundColor": "#101114"
+        "backgroundColor": "#101114",
+        "maximizable": false
       }
     ],
     "security": {
