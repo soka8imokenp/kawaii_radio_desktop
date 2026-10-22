@@ -43,14 +43,14 @@ def recess(name, x0, y0, x1, y1, r, depth, floor=True):
     c = C.rbox('cut_' + name, x0, y0, x1, y1, -depth, 0.3, r, 0, C.CHALK)
     C.cut(chassis, c)
     if floor:
-        C.rbox('floor_' + name, x0 - 1, y0 - 1, x1 + 1, y1 + 1, -depth - 0.05, -depth, r, 0, C.TRAY)
+        C.rbox('floor_' + name, x0 - 1, y0 - 1, x1 + 1, y1 + 1, -depth - 0.05, -depth + 0.001, r, 0, C.TRAY)
     return -depth
 
 
 def round_recess(name, cx, cy, rad, depth):
     c = C.cyl('cut_' + name, cx, cy, rad, -depth, 0.3, C.CHALK, segs=128)
     C.cut(chassis, c)
-    C.cyl('floor_' + name, cx, cy, rad + 1, -depth - 0.05, -depth, C.TRAY, segs=128)
+    C.cyl('floor_' + name, cx, cy, rad + 1, -depth - 0.05, -depth + 0.001, C.TRAY, segs=128)
     return -depth
 
 
@@ -93,7 +93,7 @@ BZ = -0.03
 def bwell(name, x0, y0, x1, y1, r, depth, m=None):
     c = C.rbox('bcut_' + name, x0, y0, x1, y1, BZ - depth, BZ + 0.3, r, 0, C.WELL)
     C.cut(bay, c, first=True)
-    C.rbox('bfloor_' + name, x0 - 1, y0 - 1, x1 + 1, y1 + 1, BZ - depth - 0.05, BZ - depth, r, 0, m or C.WELL)
+    C.rbox('bfloor_' + name, x0 - 1, y0 - 1, x1 + 1, y1 + 1, BZ - depth - 0.05, BZ - depth + 0.001, r, 0, m or C.WELL)
     return BZ - depth
 
 
@@ -304,7 +304,7 @@ for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 826, 'HEART')):
 c = C.rbox('cut_drum', 256, 864, 760, 960, -2.6, 0.3, 22, 0, C.CHALK); C.cut(chassis, c)
 C.rbox('drumfloor', 254, 862, 762, 962, -2.7, -2.6, 22, 0, C.WELL)
 R = 2.42
-DRUM = C.mat('drumm', hexc('#eef0f3') if not DARK else hexc('#3a3d44'), 0.32, coat=0.35, emit=hexc('#eef0f3') if not DARK else hexc('#3a3d44'), estr=0.4 if not DARK else 0.25)
+DRUM = C.mat('drumm', hexc('#eef0f3') if not DARK else hexc('#3a3d44'), 0.62, spec=0.2, emit=hexc('#eef0f3') if not DARK else hexc('#3a3d44'), estr=0.12 if not DARK else 0.08)
 bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=256, radius1=R, radius2=R, depth=0.9)
 me = bpy.data.meshes.new('drum'); bm.to_mesh(me); bm.free()
 for p_ in me.polygons:
@@ -324,7 +324,7 @@ for i in range(-42, 43):
     t.location = (dx + R * math.sin(th), dy, -R + 0.02 + R * math.cos(th) + 0.002)
     t.rotation_euler = (0, th, 0)
 C.rbox('needle', 502, 872, 514, 952, 0.05, 0.08, 6, 1.5, C.RED)
-C.rbox('drumglass', 258, 866, 758, 958, 0.03, 0.045, 20, 1, C.mat('drumg', hexc('#ffffff'), 0.22, trans=1.0, spec=0.12))
+# (no glass over the drum: it only mirrored the softboxes as a bright smear)
 
 for nm, x0, x1, ic, lab in (('tavsif', 128, 444, 'INFO', 'TAVSIF'), ('saqlash', 454, 764, 'SAVE', 'SAQLASH')):
     k, zt = C.key(nm, x0, 976, x1, 1058, 24, DOWN if APP else nm == 'tavsif', z=-0.06)
@@ -575,6 +575,11 @@ for o in set(sc.objects) - _before - {CHATROOT}:
         CHAT_LEDS.append(o)
 
 C.bloom(0.35, 1.3, 0.5)
+
+if '--flat' not in argv:
+    # machined chamfers on every opening cut into the chassis (after all the booleans), so edges catch light
+    ch = chassis.modifiers.new('chamfer', 'BEVEL')
+    ch.width = 0.022; ch.segments = 4; ch.limit_method = 'ANGLE'; ch.angle_limit = math.radians(40); ch.harden_normals = True
 
 if APP:
     DYN_TEXT = {'214 TINGLOVCHI', 'KICK BACK', 'Kenshi Yonezu', '8', '1:42', '/ 3:13', 'ON AIR *',

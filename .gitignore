@@ -9,3 +9,7 @@ design/blend/__pycache__/
 design/blend/jb_*.png
 design/blend/jbt.png
 Kawaii Radio/
+
+# scanned CC0 textures, fetched by design/blend/fetch_pbr.sh
+design/blend/pbr/
+design/blend/*.bak

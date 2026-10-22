@@ -443,8 +443,15 @@ let drawMeter = function drawMeter() {
     v = Math.min(1, Math.sqrt(s / abuf.length) * 3.2);
   }
   level = v > level ? v : level * 0.9 + v * 0.1;
-  const n = Math.round(level * 18);
-  meter.forEach((m, j) => on(m, 17 - j < n));
+  // analogue LEDs: the top one glows partly, each fades with a short afterglow instead of snapping off
+  const x = level * 18;
+  meter.forEach((m, j) => {
+    const want = Math.max(0, Math.min(1, x - (17 - j)));
+    const lit = m._lit || (m._lit = m.querySelector('.lit'));
+    m._b = want > (m._b || 0) ? want : (m._b || 0) * 0.82;
+    if (lit) { lit.style.transition = 'none'; lit.style.opacity = m._b < 0.02 ? 0 : (0.25 + 0.75 * m._b).toFixed(3); }
+    m.classList.toggle('on', m._b > 0.35);
+  });
 }
 
 /* ───────────── the receipt: printed song info, wound like a scroll */
@@ -894,7 +901,7 @@ function drawViz() {
   const cv = $('#viz');
   if (cv.width !== Math.round(700 * k)) { cv.width = Math.round(700 * k); cv.height = Math.round(300 * k); viz.setTransform(k, 0, 0, k, 0, 0); }
   viz.clearRect(0, 0, 700, 300);
-  const cols = 48, rows = 22, cw = 700 / cols, rh = 300 / rows;
+  const cols = 64, rows = 30, cw = 700 / cols, rh = 300 / rows;
   let bins = null;
   if (analyser && S.playing) { fbuf = fbuf || new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(fbuf); bins = fbuf; }
   for (let c = 0; c < cols; c++) {
@@ -908,8 +915,9 @@ function drawViz() {
     peaks[c] = Math.max(peaks[c] - 0.25, h);
     for (let r = 0; r < rows; r++) {
       const lit = r < h, pk = r === Math.round(peaks[c]);
-      viz.fillStyle = lit ? (r > rows * 0.8 ? '#e6ff9a' : '#a8c060') : pk ? 'rgba(196,224,120,.7)' : 'rgba(120,140,70,.10)';
-      viz.fillRect(c * cw + 2, 300 - (r + 1) * rh + 2, cw - 4, rh - 4);
+      // round pixels like a real dot-matrix VFD: unlit dots stay faintly visible behind the glass
+      viz.fillStyle = lit ? (r > rows * 0.82 ? '#eaffb0' : `rgba(178,206,104,${(0.55 + 0.45 * r / rows).toFixed(2)})`) : pk ? 'rgba(214,240,140,.8)' : 'rgba(120,140,70,.07)';
+      viz.beginPath(); viz.arc(c * cw + cw / 2, 300 - (r + 0.5) * rh, Math.min(cw, rh) * 0.36, 0, 6.2832); viz.fill();
     }
   }
 }

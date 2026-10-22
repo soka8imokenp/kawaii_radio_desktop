@@ -292,5 +292,11 @@ body.light { background: #e3e5ea; }
 /* glyph avatars of guests */
 .m .av.g { display: grid; place-items: center; font: 16px Dela; color: #262e1e; }
 
-#viz { position: absolute; left: 30px; top: 110px; width: 700px; height: 300px; transition: opacity .6s; filter: drop-shadow(0 0 6px rgba(196,224,120,.35)); pointer-events: none; }
+#viz { position: absolute; left: 30px; top: 110px; width: 700px; height: 300px; transition: opacity .6s; filter: drop-shadow(0 0 3px rgba(196,224,120,.28)); pointer-events: none; }
 #lyLines .none { top: 62px !important; font-size: 22px !important; letter-spacing: .14em; color: #6d7a46 !important; }
+
+/* photographic finish: a whisper of film grain and lens falloff over the whole device, so the live layer and the render read as one photo */
+#grain { position: absolute; inset: 0; pointer-events: none; z-index: 31;
+  background: radial-gradient(130% 120% at 45% 40%, transparent 60%, rgba(0,0,0,.22) 100%), var(--noise);
+  background-size: auto, 220px 220px; mix-blend-mode: overlay; opacity: .55; }
+#stage.light #grain { background: radial-gradient(130% 120% at 45% 40%, transparent 62%, rgba(60,66,80,.16) 100%), var(--noise); background-size: auto, 220px 220px; opacity: .4; }

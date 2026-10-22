@@ -135,6 +135,14 @@ class Ctx:
         self.area('key', (-9, 9, 11), 9, T['key_light'], (1.0, 0.98, 0.95))
         self.area('fill', (10, -6, 9), 12, T['fill'], (0.92, 0.95, 1.0))
         self.area('top', (0, 0, 14), 18, T['top'])
+        import sys as _s
+        if '--flat' not in _s.argv:
+            # product-shot light: long strip softboxes grazing the device, so every chamfer and edge catches a line of light
+            dk = self.theme == 'dark'
+            self.area('rimN', (0, 9.5, 2.2), 26, 900 if dk else 260, (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6)
+            self.area('rimW', (-14, 0, 2.6), 14, 380 if dk else 110, (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5)
+            # a big soft key from upper left gives the large surfaces a gradient instead of a flat fill
+            self.area('grad', (-12, 7, 7), 6, 1100 if dk else 220, (1.0, 0.96, 0.9), target=(2, -2, 0))
 
     # ── materials
     def mat(self, name, color, rough=0.5, metal=0.0, coat=0.0, emit=None, estr=0.0, trans=0.0, ior=1.45, aniso=0.0, bump=None, spec=0.5, alpha=1.0, sss=0.0):
@@ -183,6 +191,90 @@ class Ctx:
         mr.inputs['To Min'].default_value = estr; mr.inputs['To Max'].default_value = estr * 0.25
         nt.links.new(lw.outputs['Facing'], mr.inputs['Value'])
         nt.links.new(mr.outputs['Result'], b.inputs['Emission Strength'])
+        return m
+
+    def smudge(self, m, scale=2.2, amount=0.12, fine=0.0):
+        """Real surfaces are not uniform: low-frequency roughness variation (handling, wiping) and
+        an optional fine bead-blast grain in the normal, both only visible in reflections."""
+        nt = m.node_tree
+        b = nt.nodes['Principled BSDF']
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = scale; n.inputs['Detail'].default_value = 6
+        n.inputs['Roughness'].default_value = 0.65
+        nt.links.new(tc.outputs['Object'], n.inputs['Vector'])
+        sub = nt.nodes.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = 0.5
+        nt.links.new(n.outputs['Fac'], sub.inputs[0])
+        mul = nt.nodes.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = amount * 2
+        nt.links.new(sub.outputs[0], mul.inputs[0])
+        add = nt.nodes.new('ShaderNodeMath'); add.operation = 'ADD'; add.use_clamp = True
+        rin = b.inputs['Roughness']
+        if rin.is_linked:
+            src = rin.links[0].from_socket
+            nt.links.new(src, add.inputs[0])
+        else:
+            add.inputs[0].default_value = rin.default_value
+        nt.links.new(mul.outputs[0], add.inputs[1])
+        nt.links.new(add.outputs[0], rin)
+        if fine:
+            g = nt.nodes.new('ShaderNodeTexNoise'); g.inputs['Scale'].default_value = 2600; g.inputs['Detail'].default_value = 2
+            nt.links.new(tc.outputs['Object'], g.inputs['Vector'])
+            bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = fine; bp.inputs['Distance'].default_value = 0.004
+            nt.links.new(g.outputs['Fac'], bp.inputs['Height'])
+            nin = b.inputs['Normal']
+            if nin.is_linked:
+                nt.links.new(nin.links[0].from_socket, bp.inputs['Normal'])
+            nt.links.new(bp.outputs['Normal'], nin)
+        return m
+
+    def pbr(self, m, asset, tile=6.0, rough_amt=0.0, normal=0.0, rough_map='Roughness'):
+        """Scanned CC0 surface (ambientCG, design/blend/pbr/<asset>): its roughness map shifts the material's
+        roughness by +-rough_amt and its normal map adds the real grain. Planar mapping, the camera looks straight down."""
+        d = os.path.join(HERE, 'pbr', asset)
+        if not os.path.isdir(d):
+            return m
+        def find(kind):
+            for f in os.listdir(d):
+                if f.endswith('_' + kind + '.jpg'):
+                    return os.path.join(d, f)
+        nt = m.node_tree
+        b = nt.nodes['Principled BSDF']
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        mp = nt.nodes.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (1 / tile, 1 / tile, 1 / tile)
+        nt.links.new(tc.outputs['Object'], mp.inputs['Vector'])
+        def img(path):
+            t = nt.nodes.new('ShaderNodeTexImage'); t.image = bpy.data.images.load(path, check_existing=True)
+            t.image.colorspace_settings.name = 'Non-Color'; t.extension = 'REPEAT'; t.interpolation = 'Cubic'
+            nt.links.new(mp.outputs['Vector'], t.inputs['Vector'])
+            return t
+        rp = find(rough_map)
+        if rough_amt and rp:
+            t = img(rp)
+            sub = nt.nodes.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = 0.5
+            nt.links.new(t.outputs['Color'], sub.inputs[0])
+            mul = nt.nodes.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = rough_amt * 2
+            nt.links.new(sub.outputs[0], mul.inputs[0])
+            add = nt.nodes.new('ShaderNodeMath'); add.operation = 'ADD'; add.use_clamp = True
+            rin = b.inputs['Roughness']
+            if rin.is_linked:
+                nt.links.new(rin.links[0].from_socket, add.inputs[0])
+            else:
+                add.inputs[0].default_value = rin.default_value
+            nt.links.new(mul.outputs[0], add.inputs[1]); nt.links.new(add.outputs[0], rin)
+        np_ = find('NormalGL')
+        if normal and np_:
+            t = img(np_)
+            nm = nt.nodes.new('ShaderNodeNormalMap'); nm.inputs['Strength'].default_value = normal
+            nt.links.new(t.outputs['Color'], nm.inputs['Color'])
+            # feed it under the existing bump chain, so procedural and scanned detail add up
+            sock = b.inputs['Normal']
+            while sock.is_linked:
+                n = sock.links[0].from_node
+                if 'Normal' in n.inputs:
+                    sock = n.inputs['Normal']
+                else:
+                    break
+            if not sock.is_linked:
+                nt.links.new(nm.outputs['Normal'], sock)
         return m
 
     def flake(self, m, scale=2600, amount=0.18, metal=0.0):
@@ -291,6 +383,16 @@ class Ctx:
         self.GRAPH = self.flake(self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(900, 0.1), spec=0.4), 0.08, 0.009, c(T['bayDots'])), 3000, 0.2, 0.35)
         self.WELL = self.mat('well', c(T['well']), 0.35, bump=(1200, 0.03))
         self.KEY = self.flake(self.mat('key', c(T['key']), 0.42, coat=0.18, bump=(1400, 0.035), spec=0.3), 3200, 0.1, 0.2 if self.theme == 'dark' else 0.0)
+        import sys as _s
+        if '--flat' not in _s.argv:
+            for m_, sc_, am_, fi_ in ((self.CHALK, 1.6, 0.14, 0.25), (self.TRAY, 1.9, 0.12, 0.2), (self.GRAPH, 2.4, 0.16, 0.15), (self.KEY, 3.0, 0.08, 0.1)):
+                self.smudge(m_, sc_, am_, fi_)
+            if '--nopbr' not in _s.argv:
+                self.pbr(self.CHALK, 'Plastic013A', 5.0, 0.10, 0.55)
+                self.pbr(self.TRAY, 'Plastic013A', 5.5, 0.08, 0.45)
+                self.pbr(self.GRAPH, 'Plastic006', 7.0, 0.10, 0.25)
+                self.pbr(self.KEY, 'Plastic010', 4.0, 0.08, 0.35)
+                self.pbr(self.KEY, 'Fingerprints002', 9.0, 0.10, 0.0)
         self.KEYS = self.mat('keys', c(T['keyStation']), 0.42, coat=0.3, bump=(1400, 0.04))
         self.INK = self.mat('ink', c(T['ink']), 0.6)
         self.INKD = self.mat('inkd', c(T['inkD']), 0.6)
@@ -305,6 +407,9 @@ class Ctx:
         self.LEDG = self.mat('ledg', c('#3ee08f'), 0.3, emit=c('#3ee08f'), estr=5)
         self.LEDOFF = self.mat('ledoff', c('#b9bec7') if self.theme == 'light' else c('#3a3d44'), 0.3)
         self.GLASS = self.mat('glass', (1, 1, 1), 0.02, trans=1.0, ior=1.5, spec=0.6)
+        import sys as _s
+        if '--flat' not in _s.argv and '--nopbr' not in _s.argv:
+            self.pbr(self.GLASS, 'Fingerprints002', 8.0, 0.07, 0.0)   # faint prints and wipes, seen only in the reflections
         self.LYR = self.mat('lyr', c('#d4ef86'), 0.4, emit=c('#c4e078'), estr=3.2)
         self.LYRD = self.mat('lyrd', c('#56603f'), 0.5, emit=c('#56603f'), estr=0.8)
         self.GOLD = self.mat('gold', c('#f5b93b'), 0.35, emit=c('#f5b93b'), estr=1.5)
@@ -318,7 +423,7 @@ class Ctx:
         # real LEDs: a tinted dome lens, dark when off, glowing from inside when on
         self.LED_ON = self.led('ledon', c('#fff1d6'), c('#ff9a2e'), 2.2)
         self.LED_HOT = self.led('ledhot', c('#ffd8c8'), c('#ff3a1e'), 2.0)
-        self.LED_DIM = self.mat('leddim', c('#5a3512'), 0.12, coat=1.0, spec=0.9)
+        self.LED_DIM = self.mat('leddim', c('#2e1d12') if self.theme == 'dark' else c('#4a3426'), 0.18, coat=1.0, spec=0.7)   # smoked lens, dark until lit
         self.LED_DIMR = self.mat('leddimr', c('#4a1510'), 0.12, coat=1.0, spec=0.9)
         self.BEZEL = self.mat('bezel', c('#16171a'), 0.4)
 
@@ -343,6 +448,10 @@ class Ctx:
         bm.to_mesh(me); bm.free()
         for p in me.polygons:
             p.use_smooth = True
+        try:
+            me.set_sharp_from_angle(angle=math.radians(30))   # flat faces stay flat: no smeared diagonal shading on big panels
+        except Exception:
+            pass
         o = self.link(bpy.data.objects.new(name, me))
         o.data.materials.append(m)
         if bev > 0:
@@ -360,6 +469,10 @@ class Ctx:
         me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
         for p in me.polygons:
             p.use_smooth = True
+        try:
+            me.set_sharp_from_angle(angle=math.radians(30))
+        except Exception:
+            pass
         o = self.link(bpy.data.objects.new(name, me))
         x, y = P(cx, cy)
         o.location = (x, y, (z0 + z1) / 2)
