@@ -315,13 +315,19 @@ function renderLyrics(force) {
       rows.push(`<div class="ln ${cls}" style="top:${top}px;font-size:${size}px;color:${color}">${cls === 'now' ? `<span class="k">${esc(L[k].s)}</span>` : esc(L[k].s)}</div>`);
     };
     at(i - 2, 6, 24, '#3f4730'); at(i - 1, 44, 28, '#5f6b44');
-    if (i >= 0) at(i, 104, 52, '#e6ff9a', 'now'); else rows.push(`<div class="ln" style="top:104px;font-size:40px;color:#5f6b44">♪ ♪ ♪</div>`);
+    // the sung line always fits in two lines: long lines get a smaller size (VT323 is ~0.5em wide, the box ~676px)
+    const len = L[i] ? [...L[i].s].length : 0;
+    const size = Math.min(52, Math.max(30, Math.floor(2600 / Math.max(1, len))));
+    const wrap = len * size * 0.5 > 660 ? 2 : 1;
+    const h = wrap * size * 0.98;
+    if (i >= 0) at(i, 104, size, '#e6ff9a', 'now'); else rows.push(`<div class="ln" style="top:104px;font-size:40px;color:#5f6b44">♪ ♪ ♪</div>`);
     // translation under the sung line
+    let hasTr = false;
     if (i >= 0 && S.lang !== 'uz' && lines.uz.length) {
       const tr = lines.uz.reduce((b, l) => (l.t <= L[i].t + 0.5 ? l : b), null);
-      if (tr) rows.push(`<div class="tr" style="top:${L[i].s.length > 34 ? 214 : 166}px">${esc(tr.s)}</div>`);
+      if (tr) { hasTr = true; rows.push(`<div class="tr" style="top:${Math.round(104 + h + 10)}px">${esc(tr.s)}</div>`); }
     }
-    const nb = L[i] && L[i].s.length > 34 ? 250 : 216;
+    const nb = Math.round(104 + (i >= 0 ? h : 40) + (hasTr ? 52 : 40));
     at(i + 1, nb, 30, '#6f7c4c'); at(i + 2, nb + 42, 26, '#4f5838'); at(i + 3, nb + 80, 22, '#373e28');
     box.innerHTML = rows.join('');
     // rail

@@ -72,7 +72,7 @@ for i, (ic, lab) in enumerate(NAV):
     down = DOWN if APP else i == 0
     k, zt = C.key('nav%d' % i, 26, y, 102, y + 84, 20, down, z=navz)
     C.icon(ic, 64, y + 34, 2.6, INKD if down else INK, zt)
-    C.text(lab, 64, y + 72, 10.5, GAL, INKD if down else INK, zt + 0.001, align='CENTER', spacing=1.05)
+    C.text(lab, 64, y + 72, 10.5, GAL, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.05)   # light keys need the darker ink to read
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
     y += 96
 # a vertical level meter of real LEDs
@@ -304,7 +304,7 @@ for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 826, 'HEART')):
 c = C.rbox('cut_drum', 256, 864, 760, 960, -2.6, 0.3, 22, 0, C.CHALK); C.cut(chassis, c)
 C.rbox('drumfloor', 254, 862, 762, 962, -2.7, -2.6, 22, 0, C.WELL)
 R = 2.42
-DRUM = C.mat('drumm', hexc('#eef0f3') if not DARK else hexc('#3a3d44'), 0.62, spec=0.2, emit=hexc('#eef0f3') if not DARK else hexc('#3a3d44'), estr=0.12 if not DARK else 0.08)
+DRUM = C.mat('drumm', hexc('#d4d8de') if not DARK else hexc('#3a3d44'), 0.62, spec=0.2, emit=hexc('#d4d8de') if not DARK else hexc('#3a3d44'), estr=0.04 if not DARK else 0.08)
 bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=256, radius1=R, radius2=R, depth=0.9)
 me = bpy.data.meshes.new('drum'); bm.to_mesh(me); bm.free()
 for p_ in me.polygons:
