@@ -1,0 +1,53 @@
+diff --git cloud/src/index.ts cloud/src/index.ts
+index d26fc37..b29fda1 100644
+--- cloud/src/index.ts
++++ cloud/src/index.ts
+@@ -193,25 +193,27 @@ async function kawaiiIdRoute(req: Request, env: Env, path: string, url: URL): Pr
+   const m = req.method;
+   const state = url.searchParams.get('s') ?? '';
+   const goodState = /^[A-Za-z0-9_-]{16,64}$/.test(state);
++  // d=1: the desktop app (Windows) — the last page opens kawaii://auth?… instead of an Android intent
++  const desk = url.searchParams.get('d') === '1' ? '&d=1' : '';
+ 
+   if (path === '/auth/start' && m === 'GET') {
+     if (!goodState) throw new HttpError(400, 'bad state');
+     // the kawaii_id cookie lives on .kawaii.uz: the round trip must come back to radio.kawaii.uz
+-    const done = `https://radio.kawaii.uz/auth/done?s=${state}`;
++    const done = `https://radio.kawaii.uz/auth/done?s=${state}${desk}`;
+     return Response.redirect(`${KID_URL}/auth/refresh?return=${encodeURIComponent(done)}`, 302);
+   }
+   if (path === '/auth/done' && m === 'GET') {
+     if (!goodState) throw new HttpError(400, 'bad state');
+-    const retry = `${KID_URL}/login?return=${encodeURIComponent(`https://radio.kawaii.uz/auth/done?s=${state}&r=1`)}`;
++    const retry = `${KID_URL}/login?return=${encodeURIComponent(`https://radio.kawaii.uz/auth/done?s=${state}${desk}&r=1`)}`;
+     const acc = await verifyKidToken(kidCookie(req, 'kawaii_id'));
+     if (!acc) {
+       // no session yet: once through the login page, then say so
+       if (url.searchParams.get('r') !== '1') return Response.redirect(retry, 302);
+-      return finishPage(null, state, '', retry);
++      return finishPage(null, state, '', retry, !!desk);
+     }
+     const r = await room(env).fetch(new Request('https://chat/kid/login', { method: 'POST', body: JSON.stringify(acc) }));
+     const { token } = (await r.json()) as { token: string };
+-    return finishPage(token, state, acc.name || acc.username, retry);
++    return finishPage(token, state, acc.name || acc.username, retry, !!desk);
+   }
+   if ((path === '/auth/me' && m === 'GET') || (path === '/auth/logout' && m === 'POST') || (path === '/auth/sync' && (m === 'GET' || m === 'POST'))) {
+     const headers: Record<string, string> = { Authorization: req.headers.get('Authorization') ?? '' };
+diff --git cloud/src/kawaiiId.ts cloud/src/kawaiiId.ts
+index 52b3238..786171a 100644
+--- cloud/src/kawaiiId.ts
++++ cloud/src/kawaiiId.ts
+@@ -178,8 +178,10 @@ export async function verifyWebhook(secret: string, ts: string | null, body: Arr
+ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+ 
+ /** Last page of the sign-in: back to the app with the session token (or what went wrong). */
+-export function finishPage(token: string | null, state: string, name: string, retry: string): Response {
+-  const app = token ? `intent://auth?t=${encodeURIComponent(token)}&s=${encodeURIComponent(state)}#Intent;scheme=kawaii;package=${APP_PACKAGE};end` : '';
++export function finishPage(token: string | null, state: string, name: string, retry: string, desk = false): Response {
++  const q = token ? `auth?t=${encodeURIComponent(token)}&s=${encodeURIComponent(state)}` : '';
++  // phone: an Android intent to the app package; desktop: the kawaii:// scheme the Windows app registers
++  const app = token ? (desk ? `kawaii://${q}` : `intent://${q}#Intent;scheme=kawaii;package=${APP_PACKAGE};end`) : '';
+   const title = token ? `Salom, ${esc(name)}!` : 'Kirib bo\'lmadi';
+   const sub = token ? 'Kawaii Radio ilovasiga qaytamiz…' : 'Kawaii ID sessiyasi topilmadi. Qaytadan urinib ko\'ring.';
+   const button = token

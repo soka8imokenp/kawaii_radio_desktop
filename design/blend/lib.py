@@ -139,10 +139,10 @@ class Ctx:
         if '--flat' not in _s.argv:
             # product-shot light: long strip softboxes grazing the device, so every chamfer and edge catches a line of light
             dk = self.theme == 'dark'
-            self.area('rimN', (0, 9.5, 2.2), 26, 900 if dk else 260, (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6)
+            self.area('rimN', (0, 9.5, 2.2), 26, 300 if dk else 100, (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6)
             self.area('rimW', (-14, 0, 2.6), 14, 560 if dk else 110, (0.72, 0.84, 1.0) if dk else (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5)
             # a big soft key from upper left gives the large surfaces a gradient instead of a flat fill
-            self.area('grad', (-12, 7, 7), 6, 1100 if dk else 220, (1.0, 0.96, 0.9), target=(2, -2, 0))
+            self.area('grad', (-3, 6, 10), 9, 420 if dk else 110, (1.0, 0.97, 0.93), target=(0, -1, 0))   # soft and from above: no sun spot in the upper left
 
     # ── materials
     def mat(self, name, color, rough=0.5, metal=0.0, coat=0.0, emit=None, estr=0.0, trans=0.0, ior=1.45, aniso=0.0, bump=None, spec=0.5, alpha=1.0, sss=0.0):
@@ -475,14 +475,15 @@ class Ctx:
         if '--flat' not in _s.argv and '--noplastic' not in _s.argv:
             self.plastic(self.KEYS, 0.10, 0.07, 120, dome=0.35)
         # brushed steel for trims: a dielectric-free metal (metallic 1), anisotropic, a little rough
-        self.STEEL = self.mat('steel', (0.56, 0.57, 0.58), 0.3, metal=1.0, aniso=0.7)
+        self.STEEL = self.brushed('steel', (0.56, 0.57, 0.58), 0.2, 0.34)
+        self.STEELB = self.brushed('steelb', (0.66, 0.67, 0.69), 0.14, 0.3)
         self.INK = self.mat('ink', c(T['ink']), 0.6)
         self.INKD = self.mat('inkd', c(T['inkD']), 0.6)
         self.INKS = self.mat('inks', c(T['inkSoft']), 0.6)
         self.WHITE = self.mat('white', c('#eceef2'), 0.5)
         self.GREY = self.mat('grey', c('#8a909b'), 0.55)
         self.DARKINK = self.mat('darkink', c('#1f2329'), 0.6)
-        self.ALU = self.mat('alu', c('#c9ccd2'), 0.22, metal=1.0, aniso=0.85)
+        self.ALU = self.brushed('alu', c('#c9ccd2'), 0.16, 0.28, kind='alu', aniso=0.7)
         self.ALUD = self.mat('alud', c('#9aa0aa'), 0.35, metal=1.0)
         self.CHROME = self.mat('chrome', c('#e6e8ec'), 0.08, metal=1.0)
         self.RED = self.mat('red', c('#ff3b30'), 0.3, emit=c('#ff3b30'), estr=5)
@@ -580,6 +581,113 @@ class Ctx:
         o.data.materials.append(m)
         return o
 
+    # measured complex IOR (n, k) for RGB: a physical conductor reads as real metal at every angle
+    CONDUCTOR = {'steel': ((2.91, 2.95, 2.58), (3.08, 2.93, 2.61)), 'alu': ((1.35, 0.97, 0.62), (7.47, 6.40, 5.30))}
+
+    def _metal_out(self, m, kind, rough, normal, aniso=0.0, tangent=None):
+        """Replace the Principled BSDF with a Metallic BSDF (physical conductor, Blender 4.3+); Principled if missing."""
+        nt = m.node_tree; L = nt.links.new
+        pb = nt.nodes['Principled BSDF']
+        try:
+            mb = nt.nodes.new('ShaderNodeBsdfMetallic')
+        except Exception:
+            L(rough, pb.inputs['Roughness']); L(normal, pb.inputs['Normal'])
+            return m
+        mb.fresnel_type = 'PHYSICAL_CONDUCTOR'
+        n, k = self.CONDUCTOR[kind]
+        mb.inputs['IOR'].default_value = n
+        mb.inputs['Extinction'].default_value = k
+        mb.inputs['Anisotropy'].default_value = aniso
+        L(rough, mb.inputs['Roughness']); L(normal, mb.inputs['Normal'])
+        if tangent is not None:
+            L(tangent, mb.inputs['Tangent'])
+        L(mb.outputs['BSDF'], nt.nodes['Material Output'].inputs['Surface'])
+        nt.nodes.remove(pb)
+        return m
+
+    def brushed(self, name, color, r0, r1, scale=1.0, kind='steel', aniso=0.55, bump=0.08):
+        """Brushed metal. Graph: Object coords -> Mapping(scale) -> two noises stretched 600:1 (streaks along both axes,
+        so a frame reads brushed on every side) -> Maximum -> Linear Light with a low-frequency noise (soft wipes,
+        uneven polish) -> Map Range(r0..r1) -> Roughness; streaks + micro pits -> Bump -> Normal; physical conductor."""
+        m = self.mat(name, color, (r0 + r1) / 2, metal=1.0)
+        nt = m.node_tree; L = nt.links.new
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        mp = nt.nodes.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (2.0 * scale,) * 3
+        L(tc.outputs['Object'], mp.inputs['Vector'])
+        streak = []
+        for sc_ in ((1.0, 600.0, 1.0), (600.0, 1.0, 1.0)):
+            m2 = nt.nodes.new('ShaderNodeMapping'); m2.inputs['Scale'].default_value = sc_
+            L(mp.outputs['Vector'], m2.inputs['Vector'])
+            n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = 4.0; n.inputs['Detail'].default_value = 8
+            n.inputs['Roughness'].default_value = 0.65
+            L(m2.outputs['Vector'], n.inputs['Vector']); streak.append(n)
+        mx = nt.nodes.new('ShaderNodeMath'); mx.operation = 'MAXIMUM'
+        L(streak[0].outputs['Fac'], mx.inputs[0]); L(streak[1].outputs['Fac'], mx.inputs[1])
+        wipe = nt.nodes.new('ShaderNodeTexNoise'); wipe.inputs['Scale'].default_value = 1.3; wipe.inputs['Detail'].default_value = 3
+        L(mp.outputs['Vector'], wipe.inputs['Vector'])
+        ll = nt.nodes.new('ShaderNodeMix'); ll.data_type = 'RGBA'; ll.blend_type = 'LINEAR_LIGHT'; ll.inputs['Factor'].default_value = 0.35
+        L(mx.outputs['Value'], ll.inputs[6]); L(wipe.outputs['Color'], ll.inputs[7])
+        bw = nt.nodes.new('ShaderNodeRGBToBW'); L(ll.outputs[2], bw.inputs['Color'])
+        rr = nt.nodes.new('ShaderNodeMapRange'); rr.inputs['From Min'].default_value = 0.3; rr.inputs['From Max'].default_value = 0.85
+        rr.inputs['To Min'].default_value = r0; rr.inputs['To Max'].default_value = r1
+        L(bw.outputs['Val'], rr.inputs['Value'])
+        pits = nt.nodes.new('ShaderNodeTexNoise'); pits.inputs['Scale'].default_value = 1800; pits.inputs['Detail'].default_value = 2
+        L(mp.outputs['Vector'], pits.inputs['Vector'])
+        b1 = nt.nodes.new('ShaderNodeBump'); b1.inputs['Strength'].default_value = bump; b1.inputs['Distance'].default_value = 0.002
+        L(mx.outputs['Value'], b1.inputs['Height'])
+        b2 = nt.nodes.new('ShaderNodeBump'); b2.inputs['Strength'].default_value = 0.04; b2.inputs['Distance'].default_value = 0.0005
+        L(pits.outputs['Fac'], b2.inputs['Height']); L(b1.outputs['Normal'], b2.inputs['Normal'])
+        return self._metal_out(m, kind, rr.outputs['Result'], b2.outputs['Normal'], aniso)
+
+    def spun(self, name, color, r0=0.14, r1=0.28):
+        """Spun (lathe-turned) aluminium, like the bottom of a pan: concentric rings (Wave, rings, spherical, a little
+        distortion) in roughness and bump, and anisotropy along circular tangents around the knob axis."""
+        m = self.mat(name, color, (r0 + r1) / 2, metal=1.0)
+        nt = m.node_tree; L = nt.links.new
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        w = nt.nodes.new('ShaderNodeTexWave'); w.wave_type = 'RINGS'; w.rings_direction = 'SPHERICAL'
+        w.inputs['Scale'].default_value = 260; w.inputs['Distortion'].default_value = 1.2; w.inputs['Detail'].default_value = 4
+        w.inputs['Detail Roughness'].default_value = 0.7
+        L(tc.outputs['Object'], w.inputs['Vector'])
+        rr = nt.nodes.new('ShaderNodeMapRange'); rr.inputs['To Min'].default_value = r0; rr.inputs['To Max'].default_value = r1
+        L(w.outputs['Fac'], rr.inputs['Value'])
+        bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.1; bp.inputs['Distance'].default_value = 0.001
+        L(w.outputs['Fac'], bp.inputs['Height'])
+        tg = nt.nodes.new('ShaderNodeTangent'); tg.direction_type = 'RADIAL'; tg.axis = 'Z'
+        return self._metal_out(m, 'alu', rr.outputs['Result'], bp.outputs['Normal'], 0.75, tg.outputs['Tangent'])
+
+    def knurl_z(self, name, cx, cy, R, R2, z0, z1, m, n=180):
+        """A vertical knurled collar: a star profile (alternating radii) extruded upward, so each ridge catches light."""
+        bm = bmesh.new()
+        a0, a1 = [], []
+        for i in range(n):
+            a = 2 * math.pi * i / n
+            r = (R if i % 2 == 0 else R2) / 100
+            a0.append(bm.verts.new((r * math.cos(a), r * math.sin(a), z0)))
+            a1.append(bm.verts.new((r * math.cos(a), r * math.sin(a), z1)))
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((a0[i], a0[j], a1[j], a1[i]))
+        bm.faces.new(list(reversed(a0))); bm.faces.new(a1)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+        o = self.link(bpy.data.objects.new(name, me)); o.data.materials.append(m)
+        o.location = (*P(cx, cy), 0)
+        return o
+
+    def trim(self, name, x0, y0, x1, y1, r):
+        """A machined bezel around an opening (x0..y1 is the opening): a dark gap line, then a 6 px brushed-steel
+        frame with a rounded, polished top edge that catches the rim lights, standing a little proud of the chassis."""
+        g = 1.5
+        gap = self.rbox(name + '_gap', x0 - g, y0 - g, x1 + g, y1 + g, -0.05, 0.003, r + g, 0, self.BEZEL)
+        self.cut(gap, self.rbox(name + '_gc', x0, y0, x1, y1, -0.2, 0.2, r, 0, self.BEZEL))
+        w = 3.5
+        o = self.rbox(name, x0 - g - w, y0 - g - w, x1 + g + w, y1 + g + w, -0.01, 0.02, r + g + w, 0, self.STEELB)
+        self.cut(o, self.rbox(name + '_c', x0 - g, y0 - g, x1 + g, y1 + g, -0.2, 0.2, r + g, 0, self.STEELB))
+        md = o.modifiers.new('round', 'BEVEL')
+        md.width = 0.014; md.segments = 5; md.limit_method = 'ANGLE'; md.angle_limit = math.radians(40); md.harden_normals = True
+        return o
+
     def ring(self, name, x0, y0, x1, y1, r, w, z0, z1, m):
         """A thin rounded frame (outer box minus inner box), e.g. a steel trim around an opening."""
         o = self.rbox(name, x0 - w, y0 - w, x1 + w, y1 + w, z0, z1, r + w, 0.6, m)
@@ -602,7 +710,7 @@ class Ctx:
             self._fonts[name] = bpy.data.fonts.load(os.path.join(FONTS, name))
         return self._fonts[name]
 
-    SCALE = {'galmuri11.ttf': 1.45, 'dotgothic16.ttf': 1.1, 'pixelify_600.ttf': 1.2, 'michroma.ttf': 1.3, 'mplus_r_xb.ttf': 1.12, 'mplus_r_md.ttf': 1.05, 'mplus_r_bd.ttf': 1.05, 'dela.ttf': 1.0}
+    SCALE = {'BarlowSemiCondensed-SemiBold.ttf': 1.18, 'BarlowSemiCondensed-Bold.ttf': 1.18, 'galmuri11.ttf': 1.45, 'dotgothic16.ttf': 1.1, 'pixelify_600.ttf': 1.2, 'michroma.ttf': 1.3, 'mplus_r_xb.ttf': 1.12, 'mplus_r_md.ttf': 1.05, 'mplus_r_bd.ttf': 1.05, 'dela.ttf': 1.0}
 
     def text(self, body, x, y, size_px, fnt, m, z, align='LEFT', valign='TOP_BASELINE', extrude=0.0, spacing=1.0, rot=0):
         cu = bpy.data.curves.new('t', 'FONT')

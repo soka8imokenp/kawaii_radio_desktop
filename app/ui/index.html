@@ -12,7 +12,8 @@
 
 
     <!-- live text on the bay -->
-    <div id="listeners" class="silk">— TINGLOVCHI</div>
+    <!-- listeners: a little VFD window — a counter and a row of pixel people that bob to the music -->
+    <div id="lis"><div class="cnt" id="lisN">000</div><div class="ppl" id="lisP"></div><div class="lb">TINGLOVCHI</div></div>
     <div id="stationFreq" class="silk"></div>
 
     <!-- light of the cover spilling over the bay -->
@@ -22,12 +23,12 @@
     <div id="tvShade"></div>
 
     <!-- lyrics display -->
-    <div id="lyr">
+    <div id="lyr"><div id="lyrIn">
       <div class="lh"><i class="dotled"></i><b id="lyTitle">—</b><span id="lyArtist"></span></div>
       <div id="lyLines"></div>
       <div id="lyRail"></div>
       <canvas id="viz" width="700" height="300"></canvas>
-    </div>
+    </div></div>
 
     <!-- a module that slides over the lyrics display: search, library, profile -->
     <div id="panel" hidden>
@@ -36,8 +37,7 @@
       <div id="pList"></div>
     </div>
 
-    <!-- the metal shutter that rolls down over the display while modules change -->
-    <div id="shutWin"><div id="shutter"><i class="grip"></i><i class="stripe"></i></div></div>
+    <!-- the write-head that runs across the display while it redraws a page -->
     <div id="scan"></div>
 
     <!-- the big LCD -->
@@ -54,11 +54,12 @@
 
     <!-- chat -->
     <div id="chat">
-      <div class="ch"><b>CHAT</b><span id="chOnline">ulanmoqda…</span><span class="live"><i></i>LIVE</span></div>
-      <div id="chPin" hidden><i></i><div><small id="chPinWho">QADALGAN</small><span id="chPinText"></span></div></div>
+      <div class="ch"><b>CH·01 CHAT</b><span id="chOnline">ulanmoqda…</span><span class="live"><i></i>LIVE</span></div>
+      <div id="chPin" hidden><small id="chPinWho">QADALGAN</small><div class="run" id="chPinText"></div></div>
       <div id="chMsgs"></div>
-      <div id="chCompose"><div class="ck"><img src="assets/logo.svg" alt=""></div><div class="cin" id="chInput">KAWAII ID BILAN KIRING</div><div class="ck">:)</div></div>
     </div>
+    <!-- the input strip under the tube (its keys are in the render) -->
+    <div id="chCompose"><div class="cin" id="chInput">KAWAII ID BILAN KIRING</div></div>
 
     <!-- hit areas and lit overlays for every control (filled in by app.js) -->
     <div id="controls"></div>
@@ -72,6 +73,7 @@
     <div id="toast"></div>
   </div>
 </div>
+<div id="rz"><i data-d="n"></i><i data-d="s"></i><i data-d="e"></i><i data-d="w"></i><i data-d="nw"></i><i data-d="ne"></i><i data-d="sw"></i><i data-d="se"></i></div>
 <audio id="audio" crossorigin="anonymous" preload="auto"></audio>
 <script src="app.js"></script>
 </body>

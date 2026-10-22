@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.3.0';
+const VERSION = '0.5.0';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -18,7 +18,7 @@ const S = {
   theme: store.get('theme', 'dark'),
   station: store.get('station', 'jpop'),
   volume: store.get('volume', 0.72),
-  lang: store.get('lang', 'rom'),
+  lang: 'rom',
   liked: new Set(store.get('liked', [])),
   playing: false,
 };
@@ -88,18 +88,13 @@ const STATIONS = [['jpop', 'J-POP FM'], ['ost', 'OST FM'], ['riot', 'RIOT FM']];
 const stKeys = STATIONS.map(([key, freq], i) => ctl('st' + i, 152 + i * 216, 112, 360 + i * 216, 178, {
   title: freq, click: () => tuneStation(key),
 }));
-const onAir = led('onair', 1102, 145, 11);
 
-// language keys of the lyrics display
-const LANGS = [['uz', 1200, 1244], ['rom', 1250, 1302], ['jp', 1308, 1352]];
-const langKeys = LANGS.map(([k, x0, x1]) => ctl('lang' + k, x0 - 2, 202, x1 + 2, 232, { click: () => { S.lang = k; store.set('lang', k); langUi(); renderLyrics(true); } }));
-function langUi() { LANGS.forEach(([k], i) => on(langKeys[i], S.lang === k)); }
 
 // deck
 const playKey = ctl('play', 126, 852, 246, 972, { cls: 'round', title: 'Ijro / pauza', click: () => togglePlay() });
-const heartKey = ctl('heart', 775, 861, 877, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
-const tavsifKey = ctl('tavsif', 122, 970, 450, 1064, { title: 'Tavsif', click: () => printReceipt() });
-const saveKey = ctl('saqlash', 448, 970, 770, 1064, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
+const heartKey = ctl('heart', 769, 861, 871, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
+const tavsifKey = ctl('tavsif', 128, 982, 498, 1058, { title: 'Tavsif', click: () => printReceipt() });
+const saveKey = ctl('saqlash', 508, 982, 878, 1058, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
 ctl('prev', 1030, 856, 1102, 960, { title: 'Oldingi', click: () => toast('JONLI EFIR · ORQAGA YO\'Q') });
 ctl('next', 1030, 956, 1102, 1062, { title: 'Keyingi', click: () => toast('JONLI EFIR · OLDINGA YO\'Q') });
 const ring = Array.from({ length: 21 }, (_, i) => {
@@ -107,6 +102,9 @@ const ring = Array.from({ length: 21 }, (_, i) => {
   return led('r' + i, 1250 + Math.cos(a) * 86, 958 - Math.sin(a) * 86, 9);
 });
 const printerLed = led('pled', 1866, 50, 9);
+// the monitor's input row: round ID key, an LCD strip, round smile key
+ctl('cid', 1440, 1007, 1480, 1047, { cls: 'round', title: 'Kawaii ID', click: () => (kid.acc ? openScreen(4) : kidLogin()) });
+ctl('csm', 1834, 1007, 1874, 1047, { cls: 'round', title: 'Stikerlar', click: () => (kid.acc ? stickerTray() : kidLogin()) });
 
 /* ───────────── window keys and dragging by the chassis */
 stage.addEventListener('mousedown', (e) => {
@@ -310,10 +308,11 @@ function renderLyrics(force) {
   if (i < 0) i = t < L[0].t ? -1 : L.length - 1;
   if (force || i !== lastIdx) {
     lastIdx = i;
-    const rows = [];
+    // every line keeps its own element, so moving up, growing and dimming are CSS transitions, not a redraw
+    const want = [];
     const at = (k, top, size, color, cls = '') => {
       if (k < 0 || k >= L.length) return;
-      rows.push(`<div class="ln ${cls}" style="top:${top}px;font-size:${size}px;color:${color}">${cls === 'now' ? `<span class="k">${esc(L[k].s)}</span>` : esc(L[k].s)}</div>`);
+      want.push({ key: 'l' + k, cls: 'ln ' + cls, top, style: `font-size:${size}px;color:${color}`, html: cls === 'now' ? `<span class="k">${esc(L[k].s)}</span>` : esc(L[k].s) });
     };
     at(i - 2, 6, 24, '#3f4730'); at(i - 1, 44, 28, '#5f6b44');
     // the sung line always fits in two lines: long lines get a smaller size (VT323 is ~0.5em wide, the box ~676px)
@@ -321,16 +320,46 @@ function renderLyrics(force) {
     const size = Math.min(52, Math.max(30, Math.floor(2600 / Math.max(1, len))));
     const wrap = len * size * 0.5 > 660 ? 2 : 1;
     const h = wrap * size * 0.98;
-    if (i >= 0) at(i, 104, size, '#e6ff9a', 'now'); else rows.push(`<div class="ln" style="top:104px;font-size:40px;color:#5f6b44">♪ ♪ ♪</div>`);
+    if (i >= 0) at(i, 104, size, '#e6ff9a', 'now'); else want.push({ key: 'wait', cls: 'ln', top: 104, style: 'font-size:40px;color:#5f6b44', html: '♪ ♪ ♪' });
     // translation under the sung line
     let hasTr = false;
     if (i >= 0 && S.lang !== 'uz' && lines.uz.length) {
-      const tr = lines.uz.reduce((b, l) => (l.t <= L[i].t + 0.5 ? l : b), null);
-      if (tr) { hasTr = true; rows.push(`<div class="tr" style="top:${Math.round(104 + h + 10)}px">${esc(tr.s)}</div>`); }
+      const ti = lines.uz.reduce((b, l, k) => (l.t <= L[i].t + 0.5 ? k : b), -1);
+      if (ti >= 0) { hasTr = true; want.push({ key: 't' + ti, cls: 'tr', top: Math.round(104 + h + 10), style: '', html: esc(lines.uz[ti].s) }); }
     }
     const nb = Math.round(104 + (i >= 0 ? h : 40) + (hasTr ? 52 : 40));
     at(i + 1, nb, 30, '#6f7c4c'); at(i + 2, nb + 42, 26, '#4f5838'); at(i + 3, nb + 80, 22, '#373e28');
-    box.innerHTML = rows.join('');
+    if (force) box.innerHTML = '';
+    const keep = new Set(want.map((w) => w.key));
+    for (const el of [...box.children]) {
+      if (el.dataset.k && keep.has(el.dataset.k) && !el.classList.contains('gone')) continue;
+      if (el.classList.contains('gone')) continue;
+      // lines leaving drift up and fade out
+      el.classList.add('gone');
+      el.style.top = (parseFloat(el.style.top) || 0) - 34 + 'px';
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 700);
+    }
+    for (const w of want) {
+      let el = [...box.children].find((e) => e.dataset.k === w.key && !e.classList.contains('gone'));
+      if (!el) {
+        el = document.createElement('div');
+        el.dataset.k = w.key;
+        el.className = w.cls;
+        el.style.cssText = w.style;
+        el.style.top = w.top + 36 + 'px';   // new lines rise in from below
+        el.style.opacity = '0';
+        el.innerHTML = w.html;
+        box.append(el);
+        void el.offsetWidth;
+      }
+      if (el.className !== w.cls) el.className = w.cls;
+      if (el._html !== w.html) { el.innerHTML = w.html; el._html = w.html; }
+      const top = w.top + 'px';
+      el.style.cssText = w.style;
+      el.style.top = top;
+      el.style.opacity = '';
+    }
     // rail
     const n = Math.min(14, L.length), pos = Math.max(0, Math.round((i / Math.max(1, L.length - 1)) * (n - 1)));
     $('#lyRail').innerHTML = Array.from({ length: n }, (_, k) => `<i class="${k === pos ? 'on' : ''}" style="top:${k * 22}px"></i>`).join('');
@@ -339,7 +368,7 @@ function renderLyrics(force) {
   if (i >= 0) {
     const a = L[i].t, b = i + 1 < L.length ? L[i + 1].t : a + 5;
     const p = Math.max(0, Math.min(1, (t - a) / Math.max(0.5, b - a)));
-    const k = box.querySelector('.now .k');
+    const k = box.querySelector('.now:not(.gone) .k');
     if (k) k.style.setProperty('--p', (p * 100).toFixed(1) + '%');
   }
 }
@@ -379,34 +408,111 @@ let drawLcd = function drawLcd() {
   c.fillStyle = ink; c.fillRect(27 + frac * 1200, 47, 3, 62);
   c.fillStyle = 'rgba(35,43,27,.18)'; c.fillRect(27, 117, 1200, 1);
   c.font = '22px VT'; c.fillStyle = ink;
-  const L = S.lang;
-  const foot = `UZ ${L === 'uz' ? '●' : '○'}   ROM ${L === 'rom' ? '●' : '○'}   JP ${L === 'jp' ? '●' : '○'}        ${t ? `${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : ''}`;
+  const foot = t ? `${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : '';
   c.fillText(foot, 29, 141);
-  c.textAlign = 'right'; c.fillText(S.playing ? 'ON AIR ●' : 'ON AIR ○', 1227, 141); c.textAlign = 'left';
 }
 
 /* ───────────── tuner drum: ticks around a cylinder, turning with the music */
 const drum = $('#drum').getContext('2d');
 let drumA = 0, drumKick = 0;
 function tick(n) { drumKick += n; }
+// the tuner drum is a real part: a brushed-aluminium cylinder (graphite anodised in the dark theme) with a printed
+// scale, lit from the upper left, turning away at both ends, a red acrylic pointer in front of it
+let brush = null;
+function brushed() {
+  // circumferential brushing: fine horizontal streaks (they run along the turn, so they never move)
+  const b = document.createElement('canvas'); b.width = 1000; b.height = 184;
+  const g = b.getContext('2d');
+  for (let y = 0; y < 184; y++) {
+    const a = Math.random();
+    g.fillStyle = a > .5 ? `rgba(255,255,255,${(a - .5) * .16})` : `rgba(0,0,0,${(.5 - a) * .2})`;
+    g.fillRect(0, y, 1000, 1);
+    for (let k = 0; k < 6; k++) { g.fillStyle = `rgba(255,255,255,${Math.random() * .07})`; g.fillRect(Math.random() * 1000, y, 40 + Math.random() * 260, 1); }
+  }
+  return b;
+}
 function drawDrum(dt) {
-  const c = drum, W = 500, H = 92, R = 242;
-  c.clearRect(0, 0, W * 4, H * 4);
-  // the drum only turns when the tuner moves (new song, station change), otherwise it rests
+  const c = drum, W = 494, H = 92, R = 239, light = S.theme === 'light';
+  brush = brush || brushed();
   drumA += drumKick * 0.02;
   drumKick *= 0.9;
-  const ink = S.theme === 'light' ? 'rgba(55,65,81,' : 'rgba(225,228,234,';
-  for (let k = -60; k <= 60; k++) {
-    const th = (k * 2 + (drumA * 57.3) % 2) * Math.PI / 180;
-    if (Math.abs(th) > 1.45) continue;
-    const x = W / 2 + R * Math.sin(th);
-    const vis = Math.cos(th);
-    const long = ((k + Math.floor(drumA * 57.3 / 2)) % 5 + 5) % 5 === 0;
-    c.fillStyle = ink + (0.15 + 0.55 * vis).toFixed(2) + ')';
-    const w = (long ? 2.4 : 1.2) * (0.4 + 0.6 * vis);
-    const h = long ? 50 : 32;
-    c.fillRect(x - w / 2, H / 2 - h / 2, w, h);
+  // body: the cylinder's shading across its width
+  const body = c.createLinearGradient(0, 0, W, 0);
+  const st = light ? ['#5d636c', '#9aa0a9', '#d9dde2', '#f4f5f7', '#c9ced5', '#8a9099', '#4f545c']
+                   : ['#0c0d0f', '#25282d', '#40444b', '#565b63', '#3a3e45', '#212328', '#0b0c0e'];
+  [0, .1, .3, .42, .62, .88, 1].forEach((p, i) => body.addColorStop(p, st[i]));
+  c.fillStyle = body; c.fillRect(0, 0, W, H);
+  c.globalAlpha = light ? .55 : .8; c.drawImage(brush, 0, 0, W, H); c.globalAlpha = 1;
+  const deg0 = drumA * 57.3;
+  // knurled rims (like a thumbwheel): fine machined ribs every 1.5°, they turn with the drum and squeeze at the ends
+  for (const [y0, y1] of [[0, 11], [H - 11, H]]) {
+    for (let k = -120; k <= 120; k++) {
+      const th = (k * 1.5 - (deg0 % 1.5)) * Math.PI / 180;
+      if (Math.abs(th) > 1.45) continue;
+      const x = W / 2 + R * Math.sin(th), vis = Math.cos(th), w = Math.max(.4, 1.6 * vis);
+      c.fillStyle = `rgba(255,255,255,${(light ? .5 : .22) * vis})`; c.fillRect(x - w, y0, w * .6, y1 - y0);
+      c.fillStyle = `rgba(0,0,0,${(light ? .35 : .55) * vis})`; c.fillRect(x, y0, w * .7, y1 - y0);
+    }
   }
+  // the printed band: a satin ivory/graphite strip between the rims, with a hairline edge on each side
+  const band = c.createLinearGradient(0, 0, W, 0);
+  const bs = light ? ['rgba(236,231,214,.0)', 'rgba(236,231,214,.85)', 'rgba(246,242,228,.95)', 'rgba(236,231,214,.85)', 'rgba(236,231,214,0)']
+                   : ['rgba(22,23,26,0)', 'rgba(22,23,26,.75)', 'rgba(30,31,35,.8)', 'rgba(22,23,26,.75)', 'rgba(22,23,26,0)'];
+  [0, .12, .45, .88, 1].forEach((p, i) => band.addColorStop(p, bs[i]));
+  c.fillStyle = band; c.fillRect(0, 12, W, H - 24);
+  c.fillStyle = light ? 'rgba(120,110,90,.35)' : 'rgba(255,255,255,.08)'; c.fillRect(0, 12, W, 1); c.fillRect(0, H - 13, W, 1);
+  // the printed scale: ticks and numbers squeezed by the curvature, fading as they turn away
+  const ink = light ? '44,40,34' : '232,226,208';   // warm printer's ink on the band
+  const deg = drumA * 57.3, base = Math.floor(deg / 2);
+  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  for (let k = -64; k <= 64; k++) {
+    const th = (k * 2 - (deg - base * 2)) * Math.PI / 180;
+    if (Math.abs(th) > 1.42) continue;
+    const x = W / 2 + R * Math.sin(th), vis = Math.cos(th);
+    const n = k + base, long = ((n % 5) + 5) % 5 === 0;
+    const a = (0.12 + 0.78 * vis * vis).toFixed(3);
+    c.fillStyle = `rgba(${ink},${a})`;
+    const w = (long ? 2.2 : 1.1) * (0.35 + 0.65 * vis);
+    const top = long ? 16 : 22, bot = long ? 54 : 46;
+    c.fillRect(x - w / 2, top, w, bot - top);
+    if (long) {
+      c.save(); c.translate(x, 76); c.scale(Math.max(.05, vis), 1);
+      c.font = '600 15px Barlow, sans-serif';
+      const v = (((n / 5) % 100) + 100) % 100;
+      if (v % 10 === 0) {
+        // every tenth mark: a little pixel heart in KR red instead of a number
+        c.fillStyle = `rgba(226,70,60,${(0.2 + 0.75 * vis * vis).toFixed(3)})`;
+        const HEART = [' XX XX ', 'XXXXXXX', 'XXXXXXX', ' XXXXX ', '  XXX  ', '   X   '];
+        HEART.forEach((row, ry) => [...row].forEach((ch, rx) => { if (ch === 'X') c.fillRect((rx - 3.5) * 1.7, (ry - 6) * 1.7 - 2, 1.7, 1.7); }));
+      } else c.fillText(String(v).padStart(2, '0'), 0, 0);   // an odometer-like counter scale
+      c.restore();
+    }
+  }
+  c.fillStyle = `rgba(${ink},.32)`; c.fillRect(0, 59, W, 1);
+  // the drum turning away into the dark at both ends, and the lip of the window shading top and bottom
+  const side = c.createLinearGradient(0, 0, W, 0);
+  side.addColorStop(0, 'rgba(0,0,0,.75)'); side.addColorStop(.14, 'rgba(0,0,0,0)'); side.addColorStop(.86, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,.8)');
+  c.fillStyle = side; c.fillRect(0, 0, W, H);
+  const lip = c.createLinearGradient(0, 0, 0, H);
+  lip.addColorStop(0, 'rgba(0,0,0,.6)'); lip.addColorStop(.16, 'rgba(0,0,0,0)'); lip.addColorStop(.84, 'rgba(0,0,0,0)'); lip.addColorStop(1, 'rgba(0,0,0,.45)');
+  c.fillStyle = lip; c.fillRect(0, 0, W, H);
+  // a soft specular stripe along the axis
+  const sp = c.createLinearGradient(130, 0, 230, 0);
+  sp.addColorStop(0, 'rgba(255,255,255,0)'); sp.addColorStop(.5, `rgba(255,255,255,${light ? .28 : .1})`); sp.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = sp; c.fillRect(130, 0, 100, H);
+  // the pointer: red acrylic, a shadow on the drum, a bright edge, a little light inside
+  const px = W / 2;
+  c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(px + 2, 8, 6, H - 14);
+  const nd = c.createLinearGradient(px - 4, 0, px + 4, 0);
+  nd.addColorStop(0, '#7e1a16'); nd.addColorStop(.35, '#d9453a'); nd.addColorStop(.6, '#ec7466'); nd.addColorStop(1, '#8e1d18');
+  c.shadowColor = 'rgba(230,60,40,.28)'; c.shadowBlur = 4;
+  c.fillStyle = nd; c.beginPath(); c.roundRect(px - 4, 6, 8, H - 12, 3); c.fill();
+  c.shadowBlur = 0;
+  c.fillStyle = 'rgba(255,225,215,.45)'; c.fillRect(px - 1.5, 9, 1.2, H - 18);
+  // the glass over it: one faint diagonal reflection
+  const gl = c.createLinearGradient(0, 0, W, H);
+  gl.addColorStop(.25, 'rgba(255,255,255,0)'); gl.addColorStop(.32, 'rgba(255,255,255,.05)'); gl.addColorStop(.36, 'rgba(255,255,255,0)');
+  c.fillStyle = gl; c.fillRect(0, 0, W, H);
 }
 
 /* ───────────── volume knob: wheel or drag; the LED ring and the red dot follow */
@@ -462,7 +568,7 @@ let drawMeter = function drawMeter() {
 }
 
 /* ───────────── the receipt: printed song info, wound like a scroll */
-let paperOut = 0, paperScroll = 0, paperVel = 0, printing = null;
+let paperOut = 0, paperScroll = 0, paperVel = 0, paperGoal = null, printing = null;
 let buildReceipt = function buildReceipt(t, animate) {
   const info = t.info || {};
   const d = new Date();
@@ -478,7 +584,7 @@ let buildReceipt = function buildReceipt(t, animate) {
   h += `<div class="barcode">${Array.from({ length: 70 }, (_, k) => `<i style="width:${[1.6, 1.6, 3.2, 4.8][(hashOf(t.id + k) >>> 0) % 4]}px"></i>`).join('')}</div>`;
   const p = $('#paper');
   p.innerHTML = h;
-  paperScroll = 0; paperVel = 0;
+  paperScroll = 0; paperVel = 0; paperGoal = null;
   if (animate) { paperOut = 0; printing = performance.now(); on(printerLed, true); }
   else { paperOut = 1e6; }
   layoutPaper();
@@ -493,14 +599,20 @@ function printReceipt() {
 function layoutPaper() {
   const p = $('#paper');
   const full = p.scrollHeight;
-  const maxScroll = Math.max(0, full - 424);
+  const maxScroll = Math.max(0, full - 432);
   paperScroll = Math.max(0, Math.min(maxScroll, paperScroll));
-  p.style.top = -paperScroll + 'px';
+  p.style.transform = `translate3d(0, ${(-paperScroll).toFixed(2)}px, 0)`;
   p.style.setProperty('--out', Math.min(full, paperOut + paperScroll) + 'px');
   const lines = Math.max(1, Math.round(full / 21)), line = Math.min(lines, Math.round(paperScroll / 21) + 1);
   $('#qator').textContent = `QATOR ${String(line).padStart(2, '0')}/${String(lines).padStart(2, '0')}`;
 }
-$('#paperWin').addEventListener('wheel', (e) => { e.preventDefault(); paperVel += e.deltaY * 0.35; }, { passive: false });
+
+$('#paperWin').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const step = e.deltaMode === 1 ? e.deltaY * 21 : e.deltaY * 0.5;   // a notch ~ 2.5 printed lines
+  const max = Math.max(0, $('#paper').scrollHeight - 432);
+  paperGoal = Math.max(0, Math.min(max, (paperGoal ?? paperScroll) + step));
+}, { passive: false });
 function stepPaper(dt) {
   if (printing != null) {
     // the head feeds in little steps
@@ -510,7 +622,12 @@ function stepPaper(dt) {
     if (paperOut > $('#paper').scrollHeight) { printing = null; paperOut = 1e6; on(printerLed, false); }
     layoutPaper();
   }
-  if (Math.abs(paperVel) > 0.1) { paperScroll += paperVel; paperVel *= 0.86; layoutPaper(); }
+  if (paperGoal != null) {
+    const d = paperGoal - paperScroll;
+    if (Math.abs(d) < 0.3) { paperScroll = paperGoal; paperGoal = null; }
+    else paperScroll += d * (1 - Math.exp(-(dt || 0.016) / 0.11));
+    layoutPaper();
+  }
 }
 
 /* ───────────── chat (read-only without Kawaii ID) */
@@ -541,8 +658,11 @@ let msgHtml = function msgHtml(m) {
     const t = tracks.get(m.body);
     body = t ? `<div class="song"><img src="${url(t.coverArt)}"><div><div class="t">♪ ${esc(t.title)}</div><div class="n">${esc(t.artist)}</div></div></div>` : `<div class="t">♪ qo'shiq</div>`;
   } else body = `<div class="t">${esc(m.body).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</div>`;
-  return `<div class="m" data-id="${m.id}"><div class="av" style="${av ? `background-image:url('${av}')` : ''}"></div><div class="bubble"><div class="n">${esc(m.name)}</div>${body}<div class="ts">${time}</div></div></div>`;
+  return `<div class="m" data-id="${m.id}"><div class="av" style="${av ? `background-image:url('${av}')` : ''}"></div><div class="bd"><div class="n" style="color:${nameInk(m.name)}">${esc(m.name)}<span class="ts">${time}</span></div>${body}</div></div>`;
 }
+// phosphor colours a CRT can show well; a name always gets the same one
+const INKS = ['#ffcf7a', '#7fe9ff', '#ff9fd8', '#9dff9a', '#c8b0ff', '#ffa98a'];
+function nameInk(n) { let h = 0; for (const c of String(n || '')) h = (h * 31 + c.codePointAt(0)) >>> 0; return INKS[h % INKS.length]; }
 function addMsgs(list, replace) {
   const box = $('#chMsgs');
   if (replace) box.innerHTML = '';
@@ -556,29 +676,33 @@ async function loadStickers() {
     for (const st of j.stickers || []) stickers.set(st.id, st.file);
   } catch {}
 }
+let chatWs = null;
 function connectChat() {
   let ws;
   try { ws = new WebSocket(API.replace('https', 'wss') + '/chat'); } catch { return; }
+  chatWs = ws;
   ws.onopen = () => {
     const id = chatId();
     ws.send(JSON.stringify({ type: 'hello', uid: id.uid, key: id.key, name: 'Mehmon', avatar: 'p:0', live: true, fg: true }));
   };
   ws.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (m.type === 'welcome') { addMsgs(m.history || [], true); presence(m); room(m.room); }
+    if (m.type === 'welcome') { addMsgs(m.history || [], true); presence(m); room(m.room); kid.you = m.you || null; if (kid.token) kidMe(); }
+    else if (m.type === 'you') { kid.you = m.you || m; }
+    else if (m.type === 'error') toast(String(m.text || 'XATO').toUpperCase());
     else if (m.type === 'msg') addMsgs([m.m]);
     else if (m.type === 'presence') presence(m);
     else if (m.type === 'deleted') { const el = document.querySelector(`.m[data-id="${m.id}"]`); if (el) el.remove(); }
     else if (m.type === 'cleared') $('#chMsgs').innerHTML = '';
     else if (m.type === 'room') room(m);
   };
-  ws.onclose = () => { $('#chOnline').textContent = 'qayta ulanmoqda…'; setTimeout(connectChat, 4000); };
-  setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' })); }, 25000);
+  ws.onclose = () => { if (chatWs === ws) chatWs = null; $('#chOnline').textContent = 'qayta ulanmoqda…'; setTimeout(connectChat, 4000); };
+  const ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); else if (ws.readyState > 1) clearInterval(ping); }, 25000);
 }
 function presence(m) {
   if (m.online == null) return;
   $('#chOnline').textContent = `${m.online} onlayn · ${m.live ?? 0} radioda`;
-  $('#listeners').textContent = `${m.live ?? m.online} TINGLOVCHI`;
+  setListeners(m.live ?? m.online);
 }
 function room(r) {
   if (!r) return;
@@ -586,9 +710,109 @@ function room(r) {
   const box = $('#chPin');
   if (p && (p.body || p.text)) {
     box.hidden = false;
-    $('#chPinWho').textContent = 'QADALGAN · ' + (p.name || '').toUpperCase();
-    $('#chPinText').textContent = (p.body || p.text || '').replace(/\*\*/g, '');
+    $('#chPinWho').textContent = 'QADALGAN';
+    const txt = (p.body || p.text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim() + (p.name ? '  — ' + p.name : '');
+    const run = $('#chPinText');
+    run.innerHTML = `<span>${esc(txt)}</span><span>${esc(txt)}</span>`;
+    run.style.setProperty('--dur', Math.max(12, txt.length * 0.16) + 's');
   } else box.hidden = true;
+}
+
+/* ───────────── Kawaii ID: sign in (a small login window, see kid_login in main.rs), write in the chat */
+const kid = { token: store.get('kidToken', null), acc: store.get('kidAcc', null), you: null };
+async function kidMe() {
+  if (!kid.token) return;
+  const id = chatId();
+  try {
+    const [st, body] = await invoke('kid_api', { path: '/auth/me', token: kid.token, uid: id.uid, key: id.key });
+    if (st === 200) { const j = JSON.parse(body); if (j.ok && j.account) { kid.acc = j.account; store.set('kidAcc', kid.acc); } }
+    else if (st === 401) { kid.token = null; kid.acc = null; store.set('kidToken', null); store.set('kidAcc', null); toast('KAWAII ID · QAYTA KIRING'); }
+  } catch {}
+  composeUi();
+  if (screen === 4) fillScreen(4);
+}
+let kidPoll = null;
+async function kidLogin() {
+  if (!tauri) { toast('KAWAII ID · ILOVADA'); return; }
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+  try { await invoke('kid_login', { state }); } catch { toast('KAWAII ID · OCHILMADI'); return; }
+  toast('KAWAII ID · BRAUZERDA KIRING');
+  // the browser brings the token back through a kawaii:// link; wait for it up to five minutes
+  clearInterval(kidPoll);
+  const until = Date.now() + 300000;
+  kidPoll = setInterval(async () => {
+    const t = await invoke('kid_take');
+    if (t) {
+      clearInterval(kidPoll);
+      kid.token = t; store.set('kidToken', t);
+      await kidMe();
+      if (kid.acc) { toast(`SALOM, ${String(kid.acc.name || kid.acc.username).toUpperCase()}`); sfx('up'); }
+    } else if (Date.now() > until) clearInterval(kidPoll);
+  }, 800);
+}
+async function kidLogout() {
+  const id = chatId();
+  if (kid.token) { try { await invoke('kid_api', { path: '/auth/logout', token: kid.token, uid: id.uid, key: id.key }); } catch {} }
+  kid.token = null; kid.acc = null; store.set('kidToken', null); store.set('kidAcc', null);
+  composeUi(); toast('KAWAII ID · CHIQILDI');
+  if (screen === 4) fillScreen(4);
+}
+function chatSend(kind, body) {
+  if (!chatWs || chatWs.readyState !== 1) { toast('CHAT · ULANMOQDA'); return false; }
+  chatWs.send(JSON.stringify({ type: 'send', kind, body, nonce: Math.random().toString(36).slice(2) }));
+  return true;
+}
+// the input strip under the tube: a real text field once signed in
+function composeUi() {
+  const c = $('#chCompose');
+  if (kid.acc) {
+    if (!$('#chText')) {
+      c.innerHTML = '<input id="chText" maxlength="300" spellcheck="false" placeholder="XABAR YOZING">';
+      const inp = $('#chText');
+      inp.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter' && inp.value.trim()) { if (chatSend('text', inp.value.trim())) { inp.value = ''; sfx('tick'); } }
+        if (e.key === 'Escape') inp.blur();
+      });
+    }
+    c.classList.add('live');
+  } else {
+    c.innerHTML = '<div class="cin" id="chInput">KAWAII ID BILAN KIRING</div>';
+    c.classList.remove('live');
+  }
+}
+$('#chCompose').addEventListener('click', () => { if (!kid.acc) { click(); kidLogin(); } });
+// stickers: a tray that slides up over the bottom of the tube
+function stickerTray() {
+  let t = $('#stTray');
+  if (t) { t.remove(); return; }
+  t = document.createElement('div'); t.id = 'stTray';
+  t.innerHTML = [...stickers.entries()].filter(([, f]) => !/\.(webm|mp4)$/.test(f)).slice(0, 48)
+    .map(([id, f]) => `<img data-id="${esc(id)}" src="${url(f)}" loading="lazy">`).join('') || '<div class="note">Stikerlar yuklanmoqda…</div>';
+  t.addEventListener('click', (e) => {
+    const im = e.target.closest('img');
+    if (im && chatSend('sticker', im.dataset.id)) { click(); t.remove(); }
+  });
+  $('#chat').append(t);
+}
+composeUi();
+
+/* ───────────── listeners: counter + a row of pixel people in the VFD window */
+const LIS_MAX = 20;
+$('#lisP').innerHTML = Array.from({ length: LIS_MAX }, () => '<i></i>').join('');
+let lisCount = 0;
+function setListeners(n) {
+  lisCount = Math.max(0, n | 0);
+  $('#lisN').textContent = String(Math.min(999, lisCount)).padStart(3, '0');
+  [...$('#lisP').children].forEach((p, k) => p.classList.toggle('on', k < lisCount));
+}
+// lit people bob with the music, each a little out of step
+function bobListeners() {
+  const ps = $('#lisP').children;
+  for (let k = 0; k < Math.min(lisCount, LIS_MAX); k++) {
+    const lift = S.playing ? Math.max(0, Math.sin(performance.now() / 160 + k * 1.3)) * level * 4 : 0;
+    ps[k].style.transform = `translateY(${(-lift).toFixed(1)}px)`;
+  }
 }
 
 /* ───────────── screens: a module slides over the lyrics display */
@@ -616,8 +840,16 @@ function fillScreen(i) {
   if (i === 4) {
     $('#pTitle').textContent = 'PROFIL'; $('#pSub').textContent = 'KR-01 DESK';
     const mins = Math.round(store.get('listened', 0) / 60);
-    list.innerHTML = `<div class="stat"><div><b>${mins}</b><span>DAQIQA</span></div><div><b>${S.liked.size}</b><span>SEVIMLI</span></div><div><b>${store.get('songs', 0)}</b><span>QO'SHIQ</span></div></div>
-      <div class="note">Kawaii ID bilan kirish, LEVEL, sezon RANKI va chatda yozish — kompyuter ilovasiga tez orada keladi.</div>`;
+    const a = kid.acc;
+    const card = a ? `<div class="kid">
+        <div class="kav" style="background-image:url('${esc(a.avatar || '')}')"></div>
+        <div class="kin"><b>${esc(a.name || a.username)}</b><span>@${esc(a.username)} · LVL ${a.level ?? '—'}${a.kpUntil && a.kpUntil > Date.now() ? ' · KAWAII PASS' : ''}</span>
+          ${a.xpNeeded ? `<div class="kxp"><i style="width:${Math.min(100, Math.round(100 * (a.xpInto || 0) / a.xpNeeded))}%"></i></div><span>${a.xpInto || 0} / ${a.xpNeeded} XP</span>` : ''}</div>
+        ${a.rankImg ? `<div class="krk"><img src="${esc(a.rankImg)}" alt=""><em>${esc(a.displayLabel || a.displayRank || a.rank || '')}</em></div>` : ''}
+      </div>
+      <div class="kbtn" id="kidOut">[ CHIQISH ]</div>`
+      : `<div class="kbtn" id="kidIn">[ KAWAII ID BILAN KIRISH ]</div><div class="note">Kirgandan keyin chatda yozish, stikerlar va LEVEL ochiladi.</div>`;
+    list.innerHTML = `${card}<div class="stat"><div><b>${mins}</b><span>DAQIQA</span></div><div><b>${S.liked.size}</b><span>SEVIMLI</span></div><div><b>${store.get('songs', 0)}</b><span>QO'SHIQ</span></div></div>`;
   }
 }
 $('#pClose').addEventListener('click', () => { click(); openScreen(0); });
@@ -627,6 +859,8 @@ function rows(list, empty) {
   box.innerHTML = list.slice(0, 80).map((t) => `<div class="row ${cur && cur.track.id === t.id ? 'now' : ''}" data-id="${t.id}"><img loading="lazy" src="${url(t.coverArt)}"><div><b>${esc(t.title)}</b><span>${esc(t.artist)} · ${esc(t.category)}</span></div><em>${fmt(t.duration)}</em></div>`).join('');
 }
 $('#pList').addEventListener('click', (e) => {
+  if (e.target.closest('#kidIn')) { click(); kidLogin(); return; }
+  if (e.target.closest('#kidOut')) { click(); kidLogout(); return; }
   const r = e.target.closest('.row');
   if (!r) return;
   click();
@@ -650,7 +884,20 @@ audio.addEventListener('playing', () => { if (audio.dataset.counted !== audio.da
 
 
 /* ───────────── fixed device sizes (S / M / L), restored at start */
-invoke('set_size', { size: store.get('size', 'auto') });
+// the window opens at the size it was left at (S the first time); dragging the border resizes it freely
+invoke('set_size', { size: String(store.get('winW', 's')) });
+document.querySelectorAll('#rz i').forEach((z) => z.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && !document.body.classList.contains('full')) { e.preventDefault(); invoke('start_resize', { dir: z.dataset.d }); }
+}));
+let winT;
+addEventListener('resize', () => {
+  clearTimeout(winT);
+  winT = setTimeout(async () => {
+    const full = await invoke('is_maximized');
+    document.body.classList.toggle('full', !!full);
+    if (!full && innerWidth >= 800) store.set('winW', Math.round(innerWidth));
+  }, 400);
+});
 
 /* ───────────── settings: the gear opens a module with real switches */
 function openSettings() {
@@ -666,9 +913,8 @@ function fillSettings() {
   const seg = (name, items, val) => `<div class="seg" data-set="${name}">${items.map(([k, l]) => `<i data-v="${k}" class="${k === val ? 'on' : ''}">${l}</i>`).join('')}</div>`;
   $('#pList').innerHTML = `
     <div class="set"><div><b>Mavzu</b><span>Kunduzgi bo'r yoki tungi grafit korpus</span></div>${seg('theme', [['light', 'KUN'], ['dark', 'TUN']], S.theme)}</div>
-    <div class="set"><div><b>Qo'shiq matni</b><span>Matnli qo'shiqlar uchun til</span></div>${seg('lang', [['uz', "O'ZB"], ['rom', 'ROM'], ['jp', '日本']], S.lang)}</div>
     <div class="set"><div><b>Stansiya</b><span>Ilova ochilganda qaysi efir</span></div>${seg('station', [['jpop', 'J-POP'], ['ost', 'OST'], ['riot', 'RIOT']], S.station)}</div>
-    <div class="set"><div><b>Oyna hajmi</b><span>Qurilma o'lchami: kichik, o'rta yoki katta</span></div>${seg('size', [['s', 'S'], ['m', 'M'], ['l', 'L']], store.get('size', 'auto'))}</div>
+    <div class="set"><div><b>Oyna hajmi</b><span>Tez tanlov; chetidan tortib ham o'zgartiriladi</span></div>${seg('size', [['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']], '')}</div>
     <div class="set"><div><b>To'liq ekran</b><span>F11 — kino rejimi kabi</span></div>${seg('full', [['on', 'F11']], '')}</div>`;
 }
 $('#pList').addEventListener('click', (e) => {
@@ -677,10 +923,9 @@ $('#pList').addEventListener('click', (e) => {
   click();
   const name = i.parentElement.dataset.set, v = i.dataset.v;
   if (name === 'theme') { S.theme = v; store.set('theme', v); applyTheme(); }
-  if (name === 'lang') { S.lang = v; store.set('lang', v); langUi(); renderLyrics(true); }
   if (name === 'station') tuneStation(v);
   if (name === 'full') invoke('window_action', { action: 'fullscreen' });
-  if (name === 'size') { store.set('size', v); invoke('set_size', { size: v }); }
+  if (name === 'size') invoke('set_size', { size: v });
   if (name !== 'full') fillSettings();
 });
 
@@ -688,7 +933,7 @@ $('#pList').addEventListener('click', (e) => {
 /* ───────────── polish pass: sharp canvases, window keys, shutter transitions */
 function sharpen() {
   const k = Math.min(3, (parseFloat(stage.dataset.scale) || 1) * (devicePixelRatio || 1));
-  for (const [cv, w, h] of [[$('#lcd'), 1254, 152], [$('#drum'), 500, 92]]) {
+  for (const [cv, w, h] of [[$('#lcd'), 1254, 152], [$('#drum'), 494, 92]]) {
     const W = Math.round(w * k), H = Math.round(h * k);
     if (cv.width !== W) { cv.width = W; cv.height = H; cv.getContext('2d').setTransform(k, 0, 0, k, 0, 0); }
   }
@@ -703,17 +948,25 @@ WIN.forEach(([a, cx]) => ctl('win_' + a, cx - 16, 42, cx + 16, 74, { cls: 'round
 // the shutter: down (old content goes dark), swap, up (new content powers on with a scan line)
 let shutterBusy = Promise.resolve();
 let shutter = function shutter(swap) {
-  // a calm display change: the old screen sinks and dims, the new one surfaces — no shutter, no flicker
+  // the display keeps its glass and dot mesh; only the picture on it changes. The old page dims away with a
+  // little phosphor flare, the new one is written in by a soft sweep with a glowing head and settles from bright.
   shutterBusy = shutterBusy.then(async () => {
-    const vis = () => ($('#panel').hidden ? $('#lyr') : $('#panel'));
-    const old = vis();
-    await old.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(10px) scale(.985)', filter: 'blur(3px)' }],
-      { duration: 170, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished;
+    const layer = () => ($('#panel').hidden ? $('#lyrIn') : $('#panel'));
+    const old = layer();
+    await old.animate([{ opacity: 1, filter: 'brightness(1)' }, { opacity: 0, filter: 'brightness(1.7) blur(1px)' }],
+      { duration: 130, easing: 'cubic-bezier(.5,0,1,1)', fill: 'forwards' }).finished;
     swap();
+    // while a page is up the lyrics are switched off entirely, so they never flash through between two pages
+    $('#lyrIn').style.visibility = $('#panel').hidden ? '' : 'hidden';
+    const nu = layer();
     old.getAnimations().forEach((a) => a.cancel());
-    const nu = vis();
-    await nu.animate([{ opacity: 0, transform: 'translateY(-8px) scale(.99)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-      { duration: 280, easing: 'cubic-bezier(.2,.8,.2,1)' }).finished;
+    const ease = 'cubic-bezier(.3,.75,.25,1)', dur = 440;
+    $('#scan').animate([{ transform: 'translateX(-40px)', opacity: 0 }, { opacity: 1, offset: .12 }, { opacity: 1, offset: .8 }, { transform: 'translateX(752px)', opacity: 0 }],
+      { duration: dur, easing: ease });
+    await nu.animate([
+      { clipPath: 'inset(0 100% 0 0)', filter: 'brightness(2)' },
+      { clipPath: 'inset(0 0 0 0)', filter: 'brightness(1.25)', offset: .75 },
+      { clipPath: 'inset(0 0 0 0)', filter: 'brightness(1)' }], { duration: dur + 160, easing: ease }).finished;
   });
   return shutterBusy;
 }
@@ -791,7 +1044,6 @@ document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
 // LED colours: every lens blooms in its own light
 meter.forEach((m, j) => m.style.setProperty('--g', j < 9 ? 'rgba(255,70,40,.7)' : 'rgba(255,170,64,.65)'));
 ring.forEach((r, i) => r.style.setProperty('--g', i >= 18 ? 'rgba(255,70,40,.7)' : 'rgba(255,175,70,.6)'));
-onAir.style.setProperty('--g', 'rgba(255,60,40,.85)');
 printerLed.style.setProperty('--g', 'rgba(80,240,160,.75)');
 
 // volume ticks sound like a detented knob
@@ -833,7 +1085,7 @@ onTrack = (t) => { _onTrack(t); coverColor(url(t.coverArt)); };
 
 // shutter and its sounds
 const _shutter = shutter;
-shutter = (swap) => { sfx('shutter'); return _shutter(() => { sfx('latch'); swap(); }); };
+shutter = (swap) => { sfx('tick'); return _shutter(() => { sfx('up'); swap(); }); };
 
 // printing: buzz, jitter, the head LED blinks; double click tears the receipt off
 const _build = buildReceipt;
@@ -981,14 +1233,13 @@ function frame(now) {
   drawMeter();
   renderLyrics(false);
   drawViz();
+  bobListeners();
   stepPaper(dt);
-  on(onAir, S.playing && Math.floor(now / 800) % 2 === 0);
   requestAnimationFrame(frame);
 }
 
 /* ───────────── start */
 (async function start() {
-  langUi();
   stationUi();
   requestAnimationFrame(frame);
   try {

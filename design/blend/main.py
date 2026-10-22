@@ -29,6 +29,7 @@ sc = C.sc
 DARK = THEME == 'dark'
 MI, IN, IN6, DOT, VT, GAL = 'mplus_r_xb.ttf', 'mplus_r_md.ttf', 'mplus_r_bd.ttf', 'dotgothic16.ttf', 'vt323.ttf', 'galmuri11.ttf'
 DELA = 'dela.ttf'
+BAR = 'BarlowSemiCondensed-SemiBold.ttf'   # key legends: a narrow technical face, like silkscreen on real hardware
 # app assets: --app leaves out everything the app draws live (texts, LCDs, covers, receipt, chat);
 # --down renders every key pressed and every LED lit, so the app can cut the pressed/lit look out of it
 APP = '--app' in argv
@@ -59,13 +60,13 @@ recess('bay', 122, 16, 1398, 650, 36, 0.16)
 bay = C.rbox('bay', 127, 21, 1393, 645, -0.5, -0.03, 32, 4, C.GRAPH)
 recess('lcd', 122, 666, 1398, 840, 26, 0.09)
 recess('grille', 892, 858, 1016, 1062, 22, 0.05)
-recess('keys2', 122, 970, 770, 1064, 28, 0.06)
+recess('keys2', 122, 976, 884, 1064, 28, 0.06)
 recess('pn', 1030, 856, 1102, 1062, 24, 0.06)
 kwz = round_recess('knob', 1250, 958, 100, 0.06)
 if '--flat' not in argv:
     # brushed-steel trims around the two big openings, like a hi-fi front: a 3 px bright line that catches the rim light
-    C.ring('trim_bay', 122, 16, 1398, 650, 36, 3, -0.004, 0.012, C.STEEL)
-    C.ring('trim_lcd', 122, 666, 1398, 840, 26, 3, -0.004, 0.012, C.STEEL)
+    C.trim('trim_bay', 122, 16, 1398, 650, 36)
+    C.trim('trim_lcd', 122, 666, 1398, 840, 26)
 recess('print', 1410, 16, 1904, 562, 30, 0.07)
 recess('chat', 1410, 578, 1904, 1064, 30, 0.07)
 
@@ -76,7 +77,7 @@ for i, (ic, lab) in enumerate(NAV):
     down = DOWN if APP else i == 0
     k, zt = C.key('nav%d' % i, 26, y, 102, y + 84, 20, down, z=navz)
     C.icon(ic, 64, y + 34, 2.6, INKD if down else INK, zt)
-    C.text(lab, 64, y + 72, 10.5, GAL, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.05)   # light keys need the darker ink to read
+    C.text(lab, 64, y + 72, 11.5, BAR, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.16)   # light keys need the darker ink to read
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
     y += 104
 # a vertical level meter of real LEDs
@@ -101,21 +102,9 @@ def bwell(name, x0, y0, x1, y1, r, depth, m=None):
     return BZ - depth
 
 
-# logo
-try:
-    bpy.ops.import_curve.svg(filepath=os.path.join(lib.HERE, '..', 'logo.svg'))
-    for o in [o for o in sc.objects if o.type == 'CURVE' and o.name.startswith('Curve')]:
-        o.data.materials.clear(); o.data.materials.append(C.WHITE)
-        bpy.context.view_layer.update()
-        bb = [o.matrix_world @ Vector(c) for c in o.bound_box]
-        s = 0.36 / max(max(v.y for v in bb) - min(v.y for v in bb), 1e-6)
-        o.scale = (o.scale.x * s, o.scale.y * s, 1)
-        bpy.context.view_layer.update()
-        bb = [o.matrix_world @ Vector(c) for c in o.bound_box]
-        tx, ty = P(156, 40)
-        o.location.x += tx - min(v.x for v in bb); o.location.y += ty - max(v.y for v in bb); o.location.z = BZ + 0.002
-except Exception as e:
-    print('logo failed', e)
+# logo: the app icon (dark bunny on sage) as an enamel badge; the SVG lost the hair when imported as curves
+C.rbox('logobadge', 152, 40, 196, 84, BZ, BZ + 0.016, 11, 2.2, C.mat('badge', hexc('#8f9c7f'), 0.42, coat=0.6, spec=0.5))
+C.plane('logoface', 153.5, 41.5, 194.5, 82.5, BZ + 0.0165, C.image_mat('logoimg', os.path.join(lib.TEX, 'logo_badge.png'), rough=0.4, coat=0.7, value=0.66), r=10)
 C.text('KAWAII RADIO', 202, 66, 27, DELA, C.WHITE, BZ + 0.001, spacing=1.06)
 C.text('KR-01 DESK  ·  J-POP FM  ·  105.7', 203, 90, 11.5, MI, C.GREY, BZ + 0.001, spacing=1.1)
 
@@ -125,20 +114,16 @@ SLM = C.KEY if not DARK else C.mat('slk', hexc('#e9ebef'), 0.42, coat=0.2)
 SLINK = C.DARKINK
 if APP and DOWN:   # the slider on the right: O'Z TANLOVIM
     sk, szt = C.key('slider', 1100, 40, 1362, 96, 17, m=SLM, z=sz)
-    C.text("O'Z TANLOVIM", 1146, 68, 16, MI, SLINK, szt + 0.001, spacing=1.08)
-    C.text("istalgan qo'shiq", 1147, 89, 15, IN, C.mat('slink2', hexc('#6b7280'), 0.6), szt + 0.001)
+    C.text("O'Z TANLOVIM", 1240, 75, 17, BAR, SLINK, szt + 0.001, align='CENTER', spacing=1.16)
     for gx in (1112, 1119, 1126):
         C.rbox('grip', gx, 52, gx + 2.6, 84, szt - 0.004, szt + 0.003, 1, 0, C.mat('gripm', hexc('#c3c7d0'), 0.5))
-    C.dome('sled', 1336, 68, 5, szt, C.LED_ON)
-    C.text("‹‹‹  RADIO", 968, 76, 14.5, MI, C.GREY, sz + 0.001, align='CENTER', spacing=1.08)
+    C.text("‹‹‹  RADIO", 968, 75, 15.5, BAR, C.mat('slotink', hexc('#b4bac4') if DARK else hexc('#4b515b'), 0.5), sz + 0.004, align='CENTER', spacing=1.14)
 else:
     sk, szt = C.key('slider', 842, 40, 1104, 96, 17, m=SLM, z=sz)
-    C.text('RADIO', 866, 68, 16, MI, SLINK, szt + 0.001, spacing=1.08)
-    C.text('jonli efir', 867, 89, 15, IN, C.mat('slink2', hexc('#6b7280'), 0.6), szt + 0.001)
+    C.text('RADIO', 960, 75, 17, BAR, SLINK, szt + 0.001, align='CENTER', spacing=1.16)
     for gx in (1066, 1073, 1080):
         C.rbox('grip', gx, 52, gx + 2.6, 84, szt - 0.004, szt + 0.003, 1, 0, C.mat('gripm', hexc('#c3c7d0'), 0.5))
-    C.dome('sled', 1046, 68, 5, szt, C.LED_HOT)
-    C.text("O'Z TANLOVIM  ›››", 1236, 76, 14.5, MI, C.GREY, sz + 0.001, align='CENTER', spacing=1.08)
+    C.text("O'Z TANLOVIM  ›››", 1236, 75, 15.5, BAR, C.mat('slotink', hexc('#b4bac4') if DARK else hexc('#4b515b'), 0.5), sz + 0.004, align='CENTER', spacing=1.14)
 
 # station keys with LED windows
 x = 156
@@ -146,13 +131,11 @@ for i, s_ in enumerate(['J-POP', 'OST', 'RIOT']):
     on = DOWN if APP else i == 0
     wz = bwell('stw%d' % i, x - 4, 114, x + 204, 176, 18, 0.06)
     k, zt = C.key('st%d' % i, x, 118, x + 200, 172, 15, on, m=C.KEYS, z=wz)
-    C.text(s_, x + 100, 157, 16, MI, C.WHITE if on else C.GREY, zt + 0.001, align='CENTER', spacing=1.08)
+    C.text(s_, x + 100, 157, 17, BAR, C.WHITE if on else C.GREY, zt + 0.001, align='CENTER', spacing=1.16)
     C.rbox('stl%d' % i, x + 85, 125, x + 115, 130, zt - 0.01, zt + 0.003, 2, 0, C.LEDG if on else C.mat('ledoffd', hexc('#3e4148'), 0.4))
     x += 216
-C.cyl('oab', 1102, 145, 9, BZ - 0.01, BZ + 0.012, C.BEZEL, segs=32)
-C.dome('oa', 1102, 145, 6.5, BZ + 0.012, C.LED_HOT if (DOWN or not APP) else C.LED_DIMR)
-C.text('ON AIR', 1122, 152, 13.5, MI, C.mat('oaink', hexc('#ff8a7a'), 0.5), BZ + 0.001, spacing=1.1)
-C.text('214 TINGLOVCHI', 1366, 152, 13.5, MI, C.GREY, BZ + 0.001, align='RIGHT', spacing=1.08)
+# listeners: a small smoked VFD window; the app lights a row of pixel people and a counter in it
+lisz = bwell('lis', 806, 116, 1370, 174, 16, 0.05, m=C.mat('lisfl', hexc('#070908'), 0.85, spec=0.15))
 
 # the cover window: a flat trivision panel. 24 three-sided slats, each printed with a slice of three covers;
 # changing the track turns them 120° in a wave (left to right, a little bounce). Seen straight on, no perspective.
@@ -242,11 +225,6 @@ C.cyl('lyd', LX0 + 24, LY0 + 26, 3.5, lz, lz + 0.004, C.LEDG)
 C.text('KICK BACK', LX0 + 38, LY0 + 32, 16, MI, C.WHITE, LZ)
 C.text('Kenshi Yonezu', LX0 + 146, LY0 + 32, 16, IN, C.GREY, LZ)
 xx = LX1 - 18
-for lab, on in (('日本', DOWN), ('ROM', DOWN or not APP), ('UZ', DOWN)):
-    w_ = 44 if lab != 'ROM' else 52
-    k, zt = C.key('lang' + lab, xx - w_, LY0 + 14, xx, LY0 + 40, 8, on, m=C.KEYS, z=lz)
-    C.text(lab, xx - w_ / 2, LY0 + 32, 11, DOT if lab == '日本' else MI, C.WHITE if on else C.GREY, zt + 0.001, align='CENTER')
-    xx -= w_ + 6
 C.rbox('lysep', LX0 + 20, LY0 + 52, LX1 - 20, LY0 + 53, lz, lz + 0.002, 0, 0, C.mat('sep', hexc('#2a2c31'), 0.5))
 
 
@@ -295,7 +273,7 @@ C.text('ON AIR *', 1360, 818, 22, VT, C.LCDINK, LT, align='RIGHT')
 C.rbox('glass', 131, 675, 1389, 831, LZ0 + 0.05, LZ0 + 0.065, 20, 1, C.GLASS)
 
 # ───────────────────────────── deck controls
-for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 826, 'HEART')):
+for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 820, 'HEART')):
     C.cyl(nm + 'w', cx, 912, 51, -0.06, 0.0005, C.TRAY)
     pd = APP and DOWN
     top = 0.06 if pd else 0.12
@@ -305,8 +283,10 @@ for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 826, 'HEART')):
     C.icon(ic, cx + (3 if ic == 'PLAY' else 0), 912, 3.1, C.RED if ic == 'HEART_FULL' else INK, top)
 
 # tuner drum
-c = C.rbox('cut_drum', 256, 864, 760, 960, -2.6, 0.3, 22, 0, C.CHALK); C.cut(chassis, c)
-C.rbox('drumfloor', 254, 862, 762, 962, -2.7, -2.6, 22, 0, C.WELL)
+c = C.rbox('cut_drum', 254, 864, 752, 960, -2.6, 0.3, 22, 0, C.CHALK); C.cut(chassis, c)
+C.rbox('drumfloor', 252, 862, 754, 962, -2.7, -2.6, 22, 0, C.WELL)
+if '--flat' not in argv:
+    C.trim('trim_drum', 254, 864, 752, 960, 22)
 R = 2.42
 DRUM = C.mat('drumm', hexc('#d4d8de') if not DARK else hexc('#3a3d44'), 0.62, spec=0.2, emit=hexc('#d4d8de') if not DARK else hexc('#3a3d44'), estr=0.04 if not DARK else 0.08)
 bm = bmesh.new(); bmesh.ops.create_cone(bm, cap_ends=True, segments=256, radius1=R, radius2=R, depth=0.9)
@@ -314,7 +294,7 @@ me = bpy.data.meshes.new('drum'); bm.to_mesh(me); bm.free()
 for p_ in me.polygons:
     p_.use_smooth = True
 dr = C.link(bpy.data.objects.new('drum', me))
-dx, dy = P(508, 912)
+dx, dy = P(503, 912)
 dr.location = (dx, dy, -R + 0.02); dr.rotation_euler = (math.radians(90), 0, 0); dr.data.materials.append(DRUM)
 TICK = C.INK if not DARK else C.mat('tickd', hexc('#c9cdd4'), 0.5)
 for i in range(-42, 43):
@@ -327,15 +307,15 @@ for i in range(-42, 43):
     t.scale = (0.024 if long else 0.012, 0.5 if long else 0.32, 0.006)
     t.location = (dx + R * math.sin(th), dy, -R + 0.02 + R * math.cos(th) + 0.002)
     t.rotation_euler = (0, th, 0)
-C.rbox('needle', 502, 872, 514, 952, 0.05, 0.08, 6, 1.5, C.RED)
+C.rbox('needle', 497, 872, 509, 952, 0.05, 0.08, 6, 1.5, C.RED)
 # (no glass over the drum: it only mirrored the softboxes as a bright smear)
 
-for nm, x0, x1, ic, lab in (('tavsif', 128, 444, 'INFO', 'TAVSIF'), ('saqlash', 454, 764, 'SAVE', 'SAQLASH')):
-    k, zt = C.key(nm, x0, 976, x1, 1058, 24, DOWN if APP else nm == 'tavsif', z=-0.06)
-    C.icon(ic, (x0 + x1) / 2 - 58, 1017, 2.3, INK, zt)
-    C.text(lab, (x0 + x1) / 2 - 34, 1025, 17, MI, INK, zt + 0.001, spacing=1.1)
+for nm, x0, x1, ic, lab in (('tavsif', 128, 498, 'INFO', 'TAVSIF'), ('saqlash', 508, 878, 'SAVE', 'SAQLASH')):
+    k, zt = C.key(nm, x0, 982, x1, 1058, 24, DOWN if APP else nm == 'tavsif', z=-0.06)
+    C.icon(ic, (x0 + x1) / 2 - 58, 1020, 2.3, INK, zt)
+    C.text(lab, (x0 + x1) / 2 - 34, 1028, 18, BAR, INK, zt + 0.001, spacing=1.18)
     if nm == 'tavsif':
-        C.dome('tvled', x1 - 26, 994, 4.2, zt, C.LED_ON if (DOWN or not APP) else C.LED_DIM)
+        C.dome('tvled', x1 - 26, 1000, 4.2, zt, C.LED_ON if (DOWN or not APP) else C.LED_DIM)
 
 # speaker grille
 C.rbox('grillep', 898, 864, 1010, 1056, -0.05, -0.02, 18, 1.5, C.ALUD)
@@ -364,16 +344,17 @@ for i in range(21):
 for v in range(0, 11, 2):
     a = math.radians(225 - v * 27)
     C.text(str(v), kx + math.cos(a) * 114, ky - math.sin(a) * 114 + 5, 11.5, MI, INKS, 0.001, align='CENTER')
-C.cyl('knob', kx, ky, 64, kwz, 0.36, C.ALU, bev=2, segs=160)
-for i in range(140):
-    a = i / 140 * math.tau
-    bm = bmesh.new(); bmesh.ops.create_cube(bm, size=1); me = bpy.data.meshes.new('rb'); bm.to_mesh(me); bm.free()
-    rb = C.link(bpy.data.objects.new('rib', me)); rb.data.materials.append(C.ALUD)
-    px_, py_ = P(kx, ky)
-    rb.location = (px_ + math.cos(a) * 0.64, py_ + math.sin(a) * 0.64, (kwz + 0.33) / 2)
-    rb.scale = (0.024, 0.018, 0.33 - kwz)
-    rb.rotation_euler = (0, 0, a)
-C.cyl('kcap', kx, ky, 52, 0.30, 0.38, C.ALU, bev=2.5, segs=160)
+# the knob as a machined part: a dark anodised flange, a knurled grip skirt, a smooth turned body, and a
+# spun-aluminium cap with a chamfered bright rim, an engraved circle and a shallow centre dimple
+C.cyl('kflange', kx, ky, 72, kwz, kwz + 0.025, C.mat('kfl', hexc('#1b1c20'), 0.32, metal=1.0), bev=1.2, segs=160)
+KNURL = C.brushed('knurlm', (0.6, 0.61, 0.63), 0.24, 0.4, kind='alu')
+C.knurl_z('kknurl', kx, ky, 65.5, 63.8, kwz + 0.02, 0.24, KNURL, n=200)
+C.cyl('kbody', kx, ky, 63.6, 0.23, 0.31, C.brushed('kbodym', (0.72, 0.73, 0.75), 0.16, 0.26, kind='alu'), bev=1.5, segs=160)
+SPUN = C.spun('spun', (0.8, 0.81, 0.83))
+C.cyl('kcap', kx, ky, 54, 0.30, 0.38, SPUN, bev=3.2, segs=180)
+C.cyl('kline', kx, ky, 36.6, 0.3795, 0.3808, C.mat('kline', hexc('#2a2c31'), 0.5, metal=1.0), segs=160)
+C.cyl('kline2', kx, ky, 35.6, 0.3796, 0.3812, SPUN, segs=160)
+C.cyl('kdimple', kx, ky, 9, 0.372, 0.3805, C.spun('spun2', (0.6, 0.61, 0.63), 0.24, 0.36), bev=1.5, segs=64)
 a = math.radians(225 - 14 * 13.5)
 C.cyl('kdot', kx + math.cos(a) * 38, ky - math.sin(a) * 38, 5.5, 0.37, 0.386, C.RED, bev=1.2)
 C.text('OVOZ', 1356, 1056, 10.5, MI, INKS, 0.001, align='RIGHT')
@@ -422,11 +403,40 @@ for vx in (1426, 1446, 1852, 1872):
         C.rbox('ventlip', vx + 1, vy + 28, vx + 9, vy + 29.2, PZ + 0.0004, PZ + 0.0018, 0, 0, C.mat('ventl', hexc('#ffffff') if not DARK else hexc('#44474e'), 0.5))
 C.rbox('lip', 1452, 106, 1862, 110, 0.15, 0.17, 2, 0.5, C.CHROME)
 RY = 536
-for nm, rad, ln, m in (('roller', 15, 3.96, C.CHROME), ('rub', 16, 3.64, C.mat('rubr', hexc('#1a1b1e'), 0.7))):
-    o = C.cyl(nm, 0, 0, rad, -0.5, 0.5, m, segs=64)
-    o.scale = (1, 1, ln); o.location = (*P(1657, RY), PZ + 0.04); o.rotation_euler = (0, math.radians(90), 0)
-for xx in (1452, 1862):
-    C.cyl('rcap', xx, RY, 18, PZ, PZ + 0.11, C.ALU, bev=1.5, segs=48)
+RUB = C.plastic(C.mat('rubr', hexc('#17181a'), 0.52, spec=0.4), 0.1, 0.14, 160)   # platen rubber: a soft satin line along the top
+o = C.cyl('rub', 0, 0, 16, -0.5, 0.5, RUB, segs=96)
+o.scale = (1, 1, 3.66); o.location = (*P(1657, RY), PZ + 0.04); o.rotation_euler = (0, math.radians(90), 0)
+
+
+def knurl(name, x0, x1, R, R2, n=90, m=None):
+    """A knurled collar lying along x: a star profile (alternating radii) extruded, so the ridges catch light."""
+    bm = bmesh.new()
+    a0, a1 = [], []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        r = (R if i % 2 == 0 else R2) / 100
+        a0.append(bm.verts.new((0, r * math.cos(a), r * math.sin(a))))
+        a1.append(bm.verts.new(((x1 - x0) / 100, r * math.cos(a), r * math.sin(a))))
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((a0[i], a0[j], a1[j], a1[i]))
+    bm.faces.new(list(reversed(a0))); bm.faces.new(a1)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+    ob = C.link(bpy.data.objects.new(name, me)); ob.data.materials.append(m)
+    px, py = P(x0, RY); ob.location = (px, py, PZ + 0.04)
+    return ob
+
+
+for a_, b_ in ((1460, 1477), (1837, 1854)):
+    knurl('knurl', a_, b_, 18.5, 17.3, 96, C.STEEL)
+for bx in (1440, 1856):
+    # side brackets holding the axle: brushed steel plates with two screws each
+    C.rbox('rbr', bx, RY - 28, bx + 18, RY + 28, PZ, PZ + 0.16, 5, 1.2, C.STEEL)
+    C.cyl('rax', bx + 9, RY, 6, PZ + 0.16, PZ + 0.175, C.CHROME, bev=1, segs=32)
+    for sy in (RY - 18, RY + 18):
+        C.cyl('rsc', bx + 9, sy, 3.6, PZ + 0.16, PZ + 0.172, C.CHROME, bev=0.8, segs=24)
+        C.rbox('rscs', bx + 6.6, sy - 0.6, bx + 11.4, sy + 0.6, PZ + 0.172, PZ + 0.1735, 0, 0, C.BEZEL)
 crank = bpy.data.objects.new('crank', None); C.link(crank)
 cx_, cy_ = P(1878, RY)
 crank.location = (cx_, cy_, 0)
@@ -530,6 +540,53 @@ def wind(scroll, edge=None):
 wind(SCROLL)
 
 # ───────────────────────────── right: chat
+if APP:
+    MON = C.plastic(C.mat('mon', hexc('#2a2c31') if DARK else hexc('#e2ded3'), 0.55, coat=0.1, spec=0.35), 0.1, 0.09, 110)
+    mon = C.rbox('monitor', 1418, 586, 1896, 1058, -0.07, -0.02, 26, 4, MON)
+    SX0, SY0, SX1, SY1, SR = 1434, 600, 1880, 996, 34
+    C.cut(mon, C.rbox('mon_cut', SX0, SY0, SX1, SY1, -0.068, 0.3, SR, 0, MON))
+    C.rbox('mon_well', SX0 - 1, SY0 - 1, SX1 + 1, SY1 + 1, -0.075, -0.066, SR, 0, C.WELL)
+    # the tube: a grid bulged like a CRT face, corners pulled onto the rounded rectangle
+    CRT = C.mat('crt', hexc('#0b0e0c'), 0.24, coat=0.35, spec=0.35, emit=hexc('#0c140e'), estr=0.5)   # softer glass: a dim sheen, not a mirror band
+    gx_, gy_ = 64, 56
+    bm = bmesh.new()
+    vs = []
+    for j in range(gy_ + 1):
+        row = []
+        for i in range(gx_ + 1):
+            u, v = i / gx_, j / gy_
+            x = SX0 + 2 + u * (SX1 - SX0 - 4); y = SY0 + 2 + v * (SY1 - SY0 - 4)
+            # pull into the rounded corners
+            r = SR - 2
+            cx = min(max(x, SX0 + 2 + r), SX1 - 2 - r); cy = min(max(y, SY0 + 2 + r), SY1 - 2 - r)
+            dx, dy = x - cx, y - cy
+            d = math.hypot(dx, dy)
+            if d > r:
+                x, y = cx + dx / d * r, cy + dy / d * r
+            uu, vv = 2 * u - 1, 2 * v - 1
+            z = -0.062 + 0.034 * (1 - uu * uu) * (1 - vv * vv)
+            wx, wy = P(x, y)
+            row.append(bm.verts.new((wx, wy, z)))
+        vs.append(row)
+    for j in range(gy_):
+        for i in range(gx_):
+            bm.faces.new((vs[j][i], vs[j][i + 1], vs[j + 1][i + 1], vs[j + 1][i]))
+    me = bpy.data.meshes.new('crt'); bm.to_mesh(me); bm.free()
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    crt = C.link(bpy.data.objects.new('crt', me)); crt.data.materials.append(CRT)
+    C.ring('mon_lip', SX0 - 3, SY0 - 3, SX1 + 3, SY1 + 3, SR + 3, 4, -0.066, -0.0195, C.BEZEL)   # a dark rubber gasket where the tube meets the housing
+    # the input row under the tube: a round ID key, an LCD strip for the message, a round smile key (all on the housing)
+    for nm_, kx in (('cid', 1460), ('csm', 1854)):
+        C.cyl(nm_ + 'w', kx, 1027, 21, -0.035, -0.0195, C.WELL, segs=64)
+        top_ = -0.008 if (DOWN) else 0.004
+        C.cyl(nm_, kx, 1027, 17.5, -0.035, top_, C.KEY if not DARK else C.mat('ckd', hexc('#34373e'), 0.42, coat=0.2), bev=4, segs=64)
+        if nm_ == 'cid':
+            C.text('ID', kx, 1033, 15, BAR, INK if not DARK else C.mat('cki', hexc('#c9cdd4'), 0.5), top_ + 0.001, align='CENTER', spacing=1.1)
+        else:
+            C.text(':)', kx, 1034, 17, DOT, INK if not DARK else C.mat('cki2', hexc('#c9cdd4'), 0.5), top_ + 0.001, align='CENTER')
+    C.rbox('cin_f', 1490, 1008, 1824, 1048, -0.03, -0.017, 12, 1.2, C.LCDFRAME)
+    C.rbox('cin_l', 1494, 1012, 1820, 1044, -0.03, -0.0165, 9, 0, C.LCD)
 _before = set(sc.objects)
 CZ = -0.07
 C.text('CHAT', 1432, 630, 26, DELA, INKD, CZ + 0.001, spacing=1.08)
