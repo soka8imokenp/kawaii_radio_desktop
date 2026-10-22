@@ -58,7 +58,7 @@ navz = recess('nav', 16, 16, 112, 1064, 30, 0.07)
 recess('bay', 122, 16, 1398, 650, 36, 0.16)
 bay = C.rbox('bay', 127, 21, 1393, 645, -0.5, -0.03, 32, 4, C.GRAPH)
 recess('lcd', 122, 666, 1398, 840, 26, 0.09)
-recess('grille', 880, 858, 1016, 1062, 22, 0.05)
+recess('grille', 892, 858, 1016, 1062, 22, 0.05)
 recess('keys2', 122, 970, 770, 1064, 28, 0.06)
 recess('pn', 1030, 856, 1102, 1062, 24, 0.06)
 kwz = round_recess('knob', 1250, 958, 100, 0.06)
@@ -291,8 +291,8 @@ C.text('ON AIR *', 1360, 818, 22, VT, C.LCDINK, LT, align='RIGHT')
 C.rbox('glass', 131, 675, 1389, 831, LZ0 + 0.05, LZ0 + 0.065, 20, 1, C.GLASS)
 
 # ───────────────────────────── deck controls
-for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 830, 'HEART')):
-    C.cyl(nm + 'w', cx, 912, 54, -0.06, 0.0005, C.TRAY)
+for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 826, 'HEART')):
+    C.cyl(nm + 'w', cx, 912, 51, -0.06, 0.0005, C.TRAY)
     pd = APP and DOWN
     top = 0.06 if pd else 0.12
     C.cyl(nm, cx, 912, 47, -0.06, top, C.KEY, bev=6)
@@ -324,7 +324,7 @@ for i in range(-42, 43):
     t.location = (dx + R * math.sin(th), dy, -R + 0.02 + R * math.cos(th) + 0.002)
     t.rotation_euler = (0, th, 0)
 C.rbox('needle', 502, 872, 514, 952, 0.05, 0.08, 6, 1.5, C.RED)
-C.rbox('drumglass', 258, 866, 758, 958, 0.03, 0.045, 20, 1, C.GLASS)
+C.rbox('drumglass', 258, 866, 758, 958, 0.03, 0.045, 20, 1, C.mat('drumg', hexc('#ffffff'), 0.22, trans=1.0, spec=0.12))
 
 for nm, x0, x1, ic, lab in (('tavsif', 128, 444, 'INFO', 'TAVSIF'), ('saqlash', 454, 764, 'SAVE', 'SAQLASH')):
     k, zt = C.key(nm, x0, 976, x1, 1058, 24, DOWN if APP else nm == 'tavsif', z=-0.06)
@@ -334,10 +334,10 @@ for nm, x0, x1, ic, lab in (('tavsif', 128, 444, 'INFO', 'TAVSIF'), ('saqlash', 
         C.dome('tvled', x1 - 26, 994, 4.2, zt, C.LED_ON if (DOWN or not APP) else C.LED_DIM)
 
 # speaker grille
-C.rbox('grillep', 886, 864, 1010, 1056, -0.05, -0.02, 18, 1.5, C.ALUD)
+C.rbox('grillep', 898, 864, 1010, 1056, -0.05, -0.02, 18, 1.5, C.ALUD)
 for j in range(24):
     for i in range(14):
-        xx = 896 + i * 8 + (4 if j % 2 else 0)
+        xx = 906 + i * 8 + (4 if j % 2 else 0)
         yy = 874 + j * 7.9
         if xx > 1002 or yy > 1048:
             continue

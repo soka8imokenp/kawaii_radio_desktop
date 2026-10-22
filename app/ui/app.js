@@ -96,7 +96,7 @@ function langUi() { LANGS.forEach(([k], i) => on(langKeys[i], S.lang === k)); }
 
 // deck
 const playKey = ctl('play', 126, 852, 246, 972, { cls: 'round', title: 'Ijro / pauza', click: () => togglePlay() });
-const heartKey = ctl('heart', 770, 852, 890, 972, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
+const heartKey = ctl('heart', 775, 861, 877, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
 const tavsifKey = ctl('tavsif', 122, 970, 450, 1064, { title: 'Tavsif', click: () => printReceipt() });
 const saveKey = ctl('saqlash', 448, 970, 770, 1064, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
 ctl('prev', 1030, 856, 1102, 960, { title: 'Oldingi', click: () => toast('JONLI EFIR · ORQAGA YO\'Q') });
@@ -385,7 +385,8 @@ function tick(n) { drumKick += n; }
 function drawDrum(dt) {
   const c = drum, W = 500, H = 92, R = 242;
   c.clearRect(0, 0, W * 4, H * 4);
-  drumA += dt * (S.playing ? 0.08 : 0) + drumKick * 0.02;
+  // the drum only turns when the tuner moves (new song, station change), otherwise it rests
+  drumA += drumKick * 0.02;
   drumKick *= 0.9;
   const ink = S.theme === 'light' ? 'rgba(55,65,81,' : 'rgba(225,228,234,';
   for (let k = -60; k <= 60; k++) {

@@ -55,8 +55,14 @@ class Ctx:
         sc.cycles.use_denoising = True
         sc.cycles.max_bounces = 8
         sc.cycles.transmission_bounces = 8
-        sc.view_settings.view_transform = 'Standard'
-        sc.view_settings.look = 'None'
+        import sys as _s
+        _v = _s.argv[_s.argv.index('--view') + 1] if '--view' in _s.argv else 'std'
+        if _v == 'agx':
+            sc.view_settings.view_transform = 'AgX'
+            sc.view_settings.look = 'AgX - Medium High Contrast'
+        else:
+            sc.view_settings.view_transform = 'Standard'
+            sc.view_settings.look = 'None'
         self._gpu()
         world = bpy.data.worlds.new('w')
         sc.world = world
@@ -160,6 +166,23 @@ class Ctx:
             bp.inputs['Distance'].default_value = 0.02
             nt.links.new(n.outputs['Fac'], bp.inputs['Height'])
             nt.links.new(bp.outputs['Normal'], b.inputs['Normal'])
+        return m
+
+    def led(self, name, core, edge, estr):
+        """A real diffused LED: a hot, almost white die in the middle, the saturated colour toward the lens rim."""
+        m = self.mat(name, edge, 0.35, coat=1.0, spec=0.8)
+        nt = m.node_tree; b = nt.nodes['Principled BSDF']
+        lw = nt.nodes.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.35
+        ramp = nt.nodes.new('ShaderNodeValToRGB')
+        ramp.color_ramp.elements[0].color = (*core, 1)
+        ramp.color_ramp.elements[1].position = 0.55
+        ramp.color_ramp.elements[1].color = (*edge, 1)
+        nt.links.new(lw.outputs['Facing'], ramp.inputs['Fac'])
+        nt.links.new(ramp.outputs['Color'], b.inputs['Emission Color'])
+        mr = nt.nodes.new('ShaderNodeMapRange')
+        mr.inputs['To Min'].default_value = estr; mr.inputs['To Max'].default_value = estr * 0.25
+        nt.links.new(lw.outputs['Facing'], mr.inputs['Value'])
+        nt.links.new(mr.outputs['Result'], b.inputs['Emission Strength'])
         return m
 
     def flake(self, m, scale=2600, amount=0.18, metal=0.0):
@@ -293,8 +316,8 @@ class Ctx:
         self.PAPER = self.mat('paper', c(T['paper']), 0.75, bump=(260, 0.05), sss=0.05)
         self.THERMAL = self.mat('thermal', c('#3a3a3c'), 0.8)
         # real LEDs: a tinted dome lens, dark when off, glowing from inside when on
-        self.LED_ON = self.mat('ledon', c('#ffcf8a'), 0.15, coat=1.0, emit=c('#ffa640'), estr=3.2, spec=0.8)
-        self.LED_HOT = self.mat('ledhot', c('#ff9a7a'), 0.15, coat=1.0, emit=c('#ff4a2a'), estr=3.0, spec=0.8)
+        self.LED_ON = self.led('ledon', c('#fff1d6'), c('#ff9a2e'), 2.2)
+        self.LED_HOT = self.led('ledhot', c('#ffd8c8'), c('#ff3a1e'), 2.0)
         self.LED_DIM = self.mat('leddim', c('#5a3512'), 0.12, coat=1.0, spec=0.9)
         self.LED_DIMR = self.mat('leddimr', c('#4a1510'), 0.12, coat=1.0, spec=0.9)
         self.BEZEL = self.mat('bezel', c('#16171a'), 0.4)
