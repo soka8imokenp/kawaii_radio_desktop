@@ -31,7 +31,9 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis"
+      "nsis",
+      "appimage",
+      "deb"
     ],
     "publisher": "Kawaii Uz",
     "shortDescription": "Kawaii Radio — jonli J-Pop / OST / Riot radio",

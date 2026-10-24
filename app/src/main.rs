@@ -135,6 +135,10 @@ fn open_external(url: &str) {
         use std::os::windows::process::CommandExt;
         let _ = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).creation_flags(0x0800_0000).spawn();
     }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
 }
 
 /// On /auth/done: send the intent:// link of the page to an address the login window catches (in case the
