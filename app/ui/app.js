@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -21,13 +21,20 @@ const S = {
   lang: 'rom',
   liked: new Set(store.get('liked', [])),
   playing: false,
+  mode: 'live', // 'live' or 'pick'
 };
 
-/* ───────────── scale the device into the window */
+/* ───────────── scale the device into the window
+ * Whatever shape the window gets (dragged, maximized, snapped to a half / quarter / third of the screen) the
+ * device fills it: close to 16:9 it is stretched the last few percent (invisible), otherwise it is fitted whole
+ * and centred on the chassis colour. */
 function fit() {
-  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
-  stage.style.transform = `translate(${(innerWidth - 1920 * s) / 2}px, ${(innerHeight - 1080 * s) / 2}px) scale(${s})`;
-  stage.dataset.scale = s;
+  const W = innerWidth, H = innerHeight;
+  let sx = W / 1920, sy = H / 1080;
+  const r = (W / H) / (16 / 9);
+  if (r < 0.92 || r > 1.09) { sx = sy = Math.min(sx, sy); }
+  stage.style.transform = `translate(${(W - 1920 * sx) / 2}px, ${(H - 1080 * sy) / 2}px) scale(${sx}, ${sy})`;
+  stage.dataset.scale = Math.max(sx, sy);
 }
 addEventListener('resize', fit);
 fit();
@@ -81,7 +88,7 @@ const gearKey = ctl('gear', 20, 978, 108, 1058, { title: 'Sozlamalar', click: ()
 const meter = Array.from({ length: 18 }, (_, j) => led('m' + j, 64, 548 + j * 22, 10));
 
 // band selector (RADIO / O'Z TANLOVIM)
-const slider = ctl('slider', 836, 34, 1368, 102, { title: "Radio / O'z tanlovim", click: () => toast("O'Z TANLOVIM · KAWAII PASS BILAN") });
+const slider = ctl('slider', 836, 34, 1368, 102, { title: "Radio / O'z tanlovim", click: () => toggleMode() });
 
 // stations
 const STATIONS = [['jpop', 'J-POP FM'], ['ost', 'OST FM'], ['riot', 'RIOT FM']];
@@ -95,8 +102,18 @@ const playKey = ctl('play', 126, 852, 246, 972, { cls: 'round', title: 'Ijro / p
 const heartKey = ctl('heart', 769, 861, 871, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
 const tavsifKey = ctl('tavsif', 128, 982, 498, 1058, { title: 'Tavsif', click: () => printReceipt() });
 const saveKey = ctl('saqlash', 508, 982, 878, 1058, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
-ctl('prev', 1030, 856, 1102, 960, { title: 'Oldingi', click: () => toast('JONLI EFIR · ORQAGA YO\'Q') });
-ctl('next', 1030, 956, 1102, 1062, { title: 'Keyingi', click: () => toast('JONLI EFIR · OLDINGA YO\'Q') });
+ctl('prev', 1030, 856, 1102, 960, { title: 'Oldingi', click: () => {
+  if (S.mode === 'pick') {
+    if (audio.currentTime > 3) { audio.currentTime = 0; toast('BOSHIDAN BOSHLANDI'); }
+    else playPrevTrack();
+  } else {
+    toast("JONLI EFIR · ORQAGA YO'Q");
+  }
+}});
+ctl('next', 1030, 956, 1102, 1062, { title: 'Keyingi', click: () => {
+  if (S.mode === 'pick') playNextTrack();
+  else toast("JONLI EFIR · OLDINGA YO'Q");
+}});
 const ring = Array.from({ length: 21 }, (_, i) => {
   const a = (225 - i * 13.5) * Math.PI / 180;
   return led('r' + i, 1250 + Math.cos(a) * 86, 958 - Math.sin(a) * 86, 9);
@@ -106,13 +123,18 @@ const printerLed = led('pled', 1866, 50, 9);
 ctl('cid', 1440, 1007, 1480, 1047, { cls: 'round', title: 'Kawaii ID', click: () => (kid.acc ? openScreen(4) : kidLogin()) });
 ctl('csm', 1834, 1007, 1874, 1047, { cls: 'round', title: 'Stikerlar', click: () => (kid.acc ? stickerTray() : kidLogin()) });
 
-/* ───────────── window keys and dragging by the chassis */
-stage.addEventListener('mousedown', (e) => {
+/* ───────────── window keys and dragging by the chassis
+ * Any surface that is not a control moves the window (Windows' own move loop: Snap to edges / corners / the
+ * Snap Layouts bar works); a double click there maximizes / restores, like a title bar. */
+const NO_DRAG = '.ctl, input, textarea, a, #panel, #paperWin, #chCompose, #stTray, #chMsgs, #chPin, #rz';
+document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const t = e.target;
-  if (t === stage || t.id === 'frame') invoke('start_drag');
+  if (!(t instanceof Element) || t.closest(NO_DRAG)) return;
+  e.preventDefault();
+  if (e.detail === 2) invoke('window_action', { action: 'maximize' });
+  else invoke('start_drag');
 });
-stage.addEventListener('dblclick', (e) => { if (e.target === stage) invoke('window_action', { action: 'maximize' }); });
 addEventListener('keydown', (e) => {
   if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); togglePlay(); }
   if (e.key === 'Escape') openScreen(0);
@@ -126,6 +148,41 @@ function toast(text) {
   t.classList.add('on');
   clearTimeout(toastT);
   toastT = setTimeout(() => t.classList.remove('on'), 1800);
+}
+
+/* ───────────── Kawaii ID state & pass check */
+const kid = { token: store.get('kidToken', null), acc: store.get('kidAcc', null), you: null };
+function hasKp() {
+  const a = kid.acc;
+  if (!a) return false;
+  if (a.kpUntil && a.kpUntil > Date.now()) return true;
+  if (a.adm) return true;
+  if (a.roles && a.roles.length) return true;
+  if (kid.you && (kid.you.admin || kid.you.owner)) return true;
+  return false;
+}
+
+function toggleMode(want) {
+  const target = want || (S.mode === 'pick' ? 'live' : 'pick');
+  if (target === 'pick') {
+    if (!hasKp()) {
+      toast("O'Z TANLOVIM · KAWAII PASS BILAN");
+      return;
+    }
+    S.mode = 'pick';
+    on(slider, true);
+    stationUi();
+    toast("O'Z TANLOVIM · QO'SHIQ TANLANG");
+    if (screen !== 1 && screen !== 3) openScreen(1);
+    syncListening();
+  } else {
+    S.mode = 'live';
+    on(slider, false);
+    stationUi();
+    tune(true);
+    toast(`JONLI EFIR · ${stationName()}`);
+    syncListening();
+  }
 }
 
 /* ───────────── data: tracks and the live timetable */
@@ -151,18 +208,62 @@ function slotNow() {
 const url = (p) => (p && p.startsWith('http') ? p : API + p);
 
 async function tuneStation(st) {
+  S.mode = 'live';
+  on(slider, false);
   if (st !== S.station || !schedule.slots.length) {
     S.station = st; store.set('station', st);
     stationUi();
     await loadSchedule(st);
   }
+  stationUi();
   tune(true);
 }
 function stationUi() {
-  STATIONS.forEach(([k], i) => on(stKeys[i], S.station === k));
+  STATIONS.forEach(([k], i) => on(stKeys[i], S.mode !== 'pick' && S.station === k));
+}
+
+function currentList() {
+  if (screen === 1 && searchResults.length) return searchResults;
+  if (screen === 3 && S.liked.size) return [...S.liked].map((id) => tracks.get(id)).filter(Boolean);
+  return [...tracks.values()];
+}
+function playNextTrack() {
+  const list = currentList();
+  if (!list.length) return;
+  const idx = cur ? list.findIndex((t) => t.id === cur.track.id) : -1;
+  const next = list[(idx + 1 + list.length) % list.length];
+  playPick(next);
+}
+function playPrevTrack() {
+  const list = currentList();
+  if (!list.length) return;
+  const idx = cur ? list.findIndex((t) => t.id === cur.track.id) : -1;
+  const prev = list[(idx - 1 + list.length) % list.length];
+  playPick(prev);
+}
+
+function playPick(t) {
+  if (!t) return;
+  S.mode = 'pick';
+  on(slider, true);
+  stationUi();
+  cur = { track: t, slot: null };
+  if (audio.dataset.id !== t.id) {
+    audio.dataset.id = t.id;
+    audio.src = url(t.audioSrc);
+  }
+  audio.currentTime = 0;
+  S.playing = true;
+  on(playKey, true);
+  audio.play().catch(() => {});
+  ensureAnalyser();
+  onTrack(t);
+  toast(`${t.title.toUpperCase()} · O'Z TANLOVIM`);
+  document.querySelectorAll('#pList .row').forEach((el) => el.classList.toggle('now', el.dataset.id === t.id));
 }
 
 function tune(force) {
+  if (S.mode === 'pick') return;
   const slot = slotNow();
   if (!slot) { loadSchedule(S.station).then(() => slotNow() && tune(true)); return; }
   const t = tracks.get(slot.id);
@@ -179,7 +280,7 @@ function tune(force) {
   }
 }
 function seekLive() {
-  if (!cur) return;
+  if (!cur || S.mode === 'pick') return;
   const at = (liveNow() - cur.slot.start) / 1000;
   const go = () => { try { audio.currentTime = Math.max(0, at); } catch {} };
   if (audio.readyState >= 1) go(); else audio.addEventListener('loadedmetadata', go, { once: true });
@@ -188,13 +289,28 @@ function seekLive() {
 function togglePlay() {
   S.playing = !S.playing;
   on(playKey, S.playing);
-  if (S.playing) { tune(true); audio.play().catch(() => {}); ensureAnalyser(); }
-  else audio.pause();
+  if (S.playing) {
+    if (S.mode === 'pick') {
+      audio.play().catch(() => {});
+      ensureAnalyser();
+    } else {
+      tune(true);
+      audio.play().catch(() => {});
+      ensureAnalyser();
+    }
+  } else {
+    audio.pause();
+  }
+  syncListening();
 }
-audio.addEventListener('ended', () => setTimeout(() => tune(true), 200));
+audio.addEventListener('ended', () => setTimeout(() => {
+  if (S.mode === 'pick') playNextTrack();
+  else tune(true);
+}, 200));
 
 // keep in step with the broadcast; roll over to the next song; refresh the timetable when it runs short
 setInterval(() => {
+  if (S.mode === 'pick') return;
   if (!schedule.slots.length) return;
   const last = schedule.slots[schedule.slots.length - 1];
   if (last.start - liveNow() < 20 * 60 * 1000) loadSchedule(S.station);
@@ -217,8 +333,10 @@ let onTrack = function onTrack(t) {
   on(heartKey, S.liked.has(t.id));
   buildReceipt(t, false);
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'Kawaii Radio · ' + stationName(), artwork: [{ src: url(t.coverArt), sizes: '512x512' }] });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'Kawaii Radio · ' + (S.mode === 'pick' ? "O'z tanlovim" : stationName()), artwork: [{ src: url(t.coverArt), sizes: '512x512' }] });
   }
+  syncListening();
+  reportPlayTimer(t.id);
 }
 const stationName = () => (STATIONS.find(([k]) => k === S.station) || STATIONS[0])[1];
 if ('mediaSession' in navigator) {
@@ -376,6 +494,14 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /* ───────────── the big LCD: title, time, waveform, footer */
 const lcd = $('#lcd').getContext('2d');
+$('#lcd').addEventListener('click', (e) => {
+  if (S.mode === 'pick' && cur && cur.track && cur.track.duration) {
+    const r = $('#lcd').getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const frac = Math.max(0, Math.min(1, (px - 0.02) / 0.96));
+    audio.currentTime = frac * cur.track.duration;
+  }
+});
 let wave = [];
 function waveOf(id) {
   let h = 2166136261;
@@ -408,7 +534,7 @@ let drawLcd = function drawLcd() {
   c.fillStyle = ink; c.fillRect(27 + frac * 1200, 47, 3, 62);
   c.fillStyle = 'rgba(35,43,27,.18)'; c.fillRect(27, 117, 1200, 1);
   c.font = '22px VT'; c.fillStyle = ink;
-  const foot = t ? `${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : '';
+  const foot = t ? `${S.mode === 'pick' ? "O'Z TANLOVIM" : stationName()} · ${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : '';
   c.fillText(foot, 29, 141);
 }
 
@@ -683,12 +809,35 @@ function connectChat() {
   chatWs = ws;
   ws.onopen = () => {
     const id = chatId();
-    ws.send(JSON.stringify({ type: 'hello', uid: id.uid, key: id.key, name: 'Mehmon', avatar: 'p:0', live: true, fg: true }));
+    const nowId = (S.playing && cur && cur.track) ? cur.track.id : null;
+    ws.send(JSON.stringify({
+      type: 'hello',
+      uid: id.uid,
+      key: id.key,
+      name: kid.acc ? (kid.acc.name || kid.acc.username) : 'Mehmon',
+      avatar: kid.acc ? (kid.acc.avatar ? 'k:' + kid.acc.avatar : 'p:0') : 'p:0',
+      live: S.mode !== 'pick' && S.playing,
+      fg: true,
+      card: {
+        now: nowId,
+        likes: S.liked.size,
+        plays: store.get('songs', 0),
+        minutes: Math.round(store.get('listened', 0) / 60)
+      }
+    }));
   };
   ws.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (m.type === 'welcome') { addMsgs(m.history || [], true); presence(m); room(m.room); kid.you = m.you || null; if (kid.token) kidMe(); }
+    if (m.type === 'welcome') {
+      addMsgs(m.history || [], true);
+      presence(m);
+      room(m.room);
+      kid.you = m.you || null;
+      if (kid.token) kidMe();
+      syncListening();
+    }
     else if (m.type === 'you') { kid.you = m.you || m; }
+    else if (m.type === 'face') { if (m.uid === chatId().uid && kid.you) kid.you.kid = m.kid; }
     else if (m.type === 'error') toast(String(m.text || 'XATO').toUpperCase());
     else if (m.type === 'msg') addMsgs([m.m]);
     else if (m.type === 'presence') presence(m);
@@ -698,6 +847,72 @@ function connectChat() {
   };
   ws.onclose = () => { if (chatWs === ws) chatWs = null; $('#chOnline').textContent = 'qayta ulanmoqda…'; setTimeout(connectChat, 4000); };
   const ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); else if (ws.readyState > 1) clearInterval(ping); }, 25000);
+}
+
+let playTimer = null;
+function reportPlayTimer(tid) {
+  clearTimeout(playTimer);
+  playTimer = setTimeout(async () => {
+    if (S.playing && !audio.paused && cur && cur.track && cur.track.id === tid) {
+      const id = chatId();
+      try {
+        await invoke('kid_api', {
+          path: '/chat/play',
+          token: kid.token || '',
+          uid: id.uid,
+          key: id.key,
+          body: JSON.stringify({ uid: id.uid, key: id.key, id: tid })
+        });
+      } catch {}
+    }
+  }, 30000);
+}
+
+function syncListening() {
+  if (!chatWs || chatWs.readyState !== 1) return;
+  const nowId = (S.playing && cur && cur.track) ? cur.track.id : null;
+  const payload = {
+    type: 'profile',
+    name: kid.acc ? (kid.acc.name || kid.acc.username) : 'Mehmon',
+    avatar: kid.acc ? (kid.acc.avatar ? 'k:' + kid.acc.avatar : 'p:0') : 'p:0',
+    card: {
+      now: nowId,
+      likes: S.liked.size,
+      plays: store.get('songs', 0),
+      minutes: Math.round(store.get('listened', 0) / 60)
+    }
+  };
+  chatWs.send(JSON.stringify(payload));
+  chatWs.send(JSON.stringify({
+    type: 'presence',
+    live: S.mode !== 'pick' && S.playing,
+    viewing: true,
+    fg: true
+  }));
+}
+
+async function syncProgress() {
+  if (!kid.token) return;
+  const id = chatId();
+  const stats = store.get('listeningStats', {});
+  const body = JSON.stringify({
+    devices: {
+      desk: {
+        seen: Date.now(),
+        stats: stats
+      }
+    }
+  });
+  try {
+    await invoke('kid_api', {
+      path: '/auth/sync',
+      token: kid.token,
+      uid: id.uid,
+      key: id.key,
+      body: body
+    });
+    await kidMe();
+  } catch {}
 }
 function presence(m) {
   if (m.online == null) return;
@@ -719,7 +934,6 @@ function room(r) {
 }
 
 /* ───────────── Kawaii ID: sign in (a small login window, see kid_login in main.rs), write in the chat */
-const kid = { token: store.get('kidToken', null), acc: store.get('kidAcc', null), you: null };
 async function kidMe() {
   if (!kid.token) return;
   const id = chatId();
@@ -736,19 +950,26 @@ async function kidLogin() {
   if (!tauri) { toast('KAWAII ID · ILOVADA'); return; }
   const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   try { await invoke('kid_login', { state }); } catch { toast('KAWAII ID · OCHILMADI'); return; }
-  toast('KAWAII ID · BRAUZERDA KIRING');
-  // the browser brings the token back through a kawaii:// link; wait for it up to five minutes
+  toast('KAWAII ID · KIRISH OYNASI');
+  // the login window hands the token over and closes itself; wait while it is open (up to ten minutes)
   clearInterval(kidPoll);
-  const until = Date.now() + 300000;
+  const until = Date.now() + 600000;
+  let seenOpen = false;
   kidPoll = setInterval(async () => {
     const t = await invoke('kid_take');
     if (t) {
       clearInterval(kidPoll);
       kid.token = t; store.set('kidToken', t);
+      // links this chat identity to the account (a later welcome does it again)
       await kidMe();
       if (kid.acc) { toast(`SALOM, ${String(kid.acc.name || kid.acc.username).toUpperCase()}`); sfx('up'); }
-    } else if (Date.now() > until) clearInterval(kidPoll);
-  }, 800);
+      else toast('KAWAII ID · XATO, QAYTA URINING');
+      return;
+    }
+    const open = await invoke('kid_open');
+    if (open) seenOpen = true;
+    if (Date.now() > until || (seenOpen && !open)) clearInterval(kidPoll);
+  }, 700);
 }
 async function kidLogout() {
   const id = chatId();
@@ -866,21 +1087,44 @@ $('#pList').addEventListener('click', (e) => {
   click();
   const t = tracks.get(r.dataset.id);
   if (!t) return;
-  buildReceipt(t, true);
-  toast(cur && cur.track.id === t.id ? 'HOZIR EFIRDA' : 'TAVSIF CHOP ETILDI');
+  if (hasKp()) {
+    playPick(t);
+  } else {
+    buildReceipt(t, true);
+    toast(cur && cur.track.id === t.id ? 'HOZIR EFIRDA' : "O'Z TANLOVIM · KAWAII PASS KERAK");
+  }
 });
 const norm = (s) => s.toLowerCase().replace(/[\u02bb\u02bc'`\u2019]/g, '');
+let searchResults = [];
 function search(q) {
   const n = norm(q.trim());
   const all = [...tracks.values()];
-  const hit = n ? all.filter((t) => norm(t.title + ' ' + t.artist).includes(n)) : all.filter((t) => cur && t.id === cur.track.id).concat(all.slice(0, 40));
+  const hit = n ? all.filter((t) => norm(`${t.title} ${t.artist} ${t.category || ''} ${t.info?.description || ''}`).includes(n)) : all.filter((t) => cur && t.id === cur.track.id).concat(all.slice(0, 60));
+  searchResults = hit;
   rows(hit, 'Hech narsa topilmadi.');
 }
 $('#pInput').addEventListener('input', (e) => search(e.target.value));
 $('#pInput').addEventListener('keydown', (e) => e.stopPropagation());
-// listening minutes, counted while playing
-setInterval(() => { if (S.playing && !audio.paused) store.set('listened', store.get('listened', 0) + 5); }, 5000);
-audio.addEventListener('playing', () => { if (audio.dataset.counted !== audio.dataset.id) { audio.dataset.counted = audio.dataset.id; store.set('songs', store.get('songs', 0) + 1); } });
+// listening minutes & seconds per track, counted while playing
+setInterval(() => {
+  if (S.playing && !audio.paused && cur && cur.track) {
+    store.set('listened', store.get('listened', 0) + 5);
+    const stats = store.get('listeningStats', {});
+    const tid = cur.track.id;
+    stats[tid] = stats[tid] || { seconds: 0, radio: 0 };
+    if (S.mode === 'pick') stats[tid].seconds = (stats[tid].seconds || 0) + 5;
+    else stats[tid].radio = (stats[tid].radio || 0) + 5;
+    store.set('listeningStats', stats);
+  }
+}, 5000);
+// sync progress to Kawaii ID every 5 minutes
+setInterval(syncProgress, 300000);
+audio.addEventListener('playing', () => {
+  if (audio.dataset.counted !== audio.dataset.id) {
+    audio.dataset.counted = audio.dataset.id;
+    store.set('songs', store.get('songs', 0) + 1);
+  }
+});
 
 
 /* ───────────── fixed device sizes (S / M / L), restored at start */
@@ -895,7 +1139,7 @@ addEventListener('resize', () => {
   winT = setTimeout(async () => {
     const full = await invoke('is_maximized');
     document.body.classList.toggle('full', !!full);
-    if (!full && innerWidth >= 800) store.set('winW', Math.round(innerWidth));
+    if (!full && innerWidth >= 360 && Math.abs(innerWidth / innerHeight / (16 / 9) - 1) < 0.04) store.set('winW', Math.round(innerWidth));
   }, 400);
 });
 
@@ -1242,6 +1486,7 @@ function frame(now) {
 (async function start() {
   stationUi();
   requestAnimationFrame(frame);
+  if (kid.token) kidMe();
   try {
     await loadTracks();
     await loadSchedule(S.station);

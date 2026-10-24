@@ -1,6 +1,6 @@
 [package]
 name = "kawaii-radio-desk"
-version = "0.5.0"
+version = "0.5.1"
 description = "Kawaii Radio KR-01 DESK — the desktop radio"
 edition = "2021"
 
