@@ -6,6 +6,18 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+<!-- thermal print: the head burns dots, not vector strokes — edges are thresholded into a jagged dot edge,
+     a few dots stay pale (burn defects), the ink bleeds a hair along the paper fibres -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="thermal" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="7" result="jit"/>
+    <feDisplacementMap in="SourceGraphic" in2="jit" scale=".45" xChannelSelector="R" yChannelSelector="G" result="bled"/>
+    <feComponentTransfer in="bled" result="dots"><feFuncA type="discrete" tableValues="0 .35 .9 1 1"/></feComponentTransfer>
+    <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="21" result="burn"/>
+    <feColorMatrix in="burn" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -12 8.4" result="keep"/>
+    <feComposite in="dots" in2="keep" operator="in"/>
+  </filter>
+</defs></svg>
 <div id="frame">
   <div id="stage" class="dark">
     <!-- everything below sits on the rendered device (assets/<theme>-up.webp) in its 1920 x 1080 coordinates -->

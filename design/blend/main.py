@@ -81,12 +81,20 @@ for i, (ic, lab) in enumerate(NAV):
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
     y += 104
 # a vertical level meter of real LEDs
+C.rbox('lvch', 50, 534, 78, 932, navz - 0.004, navz + 0.008, 13, 1.5, C.BEZEL)          # the channel
 for j in range(18):
     yy = 548 + j * 22
-    lit = DOWN if APP else j >= 6
-    m = (C.LED_HOT if j < 9 else C.LED_ON) if lit else (C.LED_DIMR if j < 9 else C.LED_DIM)
-    C.cyl('mb%d' % j, 64, yy, 7.5, navz - 0.01, navz + 0.012, C.BEZEL, segs=32)
-    C.dome('md%d' % j, 64, yy, 5.6, navz + 0.012, m)
+    lit = DOWN if APP else j >= 9
+    if j < 2:
+        m = C.LED_HOT if lit else C.LED_DIMR
+    elif j < 5:
+        m = C.LED_ON if lit else C.LED_DIM
+    else:
+        m = C.LED_GRN if lit else C.LED_DIMG
+    C.cyl('mb%d' % j, 64, yy, 7.2, navz + 0.002, navz + 0.012, C.WELL, segs=32)
+    C.dome('md%d' % j, 64, yy, 5.4, navz + 0.012, m)
+    if j < 17:   # dark dividers so no light bleeds into the next lens
+        C.rbox('mdiv', 54, yy + 10, 74, yy + 12, navz + 0.008, navz + 0.016, 1, 0, C.BEZEL)
 C.text('LEVEL', 64, 962, 10, MI, INKS, navz + 0.001, align='CENTER')
 k, zt = C.key('gear', 26, 984, 102, 1052, 20, APP and DOWN, z=navz)
 C.icon('GEAR', 64, 1018, 2.2, INK, zt)
@@ -111,19 +119,19 @@ C.text('KR-01 DESK  ·  J-POP FM  ·  105.7', 203, 90, 11.5, MI, C.GREY, BZ + 0.
 # band selector: slide switch
 sz = bwell('slot', 836, 34, 1368, 102, 22, 0.08)
 SLM = C.KEY if not DARK else C.mat('slk', hexc('#e9ebef'), 0.42, coat=0.2)
+SLM2 = C.KEYS                                   # the sunk key: dark, like the station keys
 SLINK = C.DARKINK
-if APP and DOWN:   # the slider on the right: O'Z TANLOVIM
-    sk, szt = C.key('slider', 1100, 40, 1362, 96, 17, m=SLM, z=sz)
-    C.text("O'Z TANLOVIM", 1240, 75, 17, BAR, SLINK, szt + 0.001, align='CENTER', spacing=1.16)
-    for gx in (1112, 1119, 1126):
-        C.rbox('grip', gx, 52, gx + 2.6, 84, szt - 0.004, szt + 0.003, 1, 0, C.mat('gripm', hexc('#c3c7d0'), 0.5))
-    C.text("‹‹‹  RADIO", 968, 75, 15.5, BAR, C.mat('slotink', hexc('#b4bac4') if DARK else hexc('#4b515b'), 0.5), sz + 0.004, align='CENTER', spacing=1.14)
-else:
-    sk, szt = C.key('slider', 842, 40, 1104, 96, 17, m=SLM, z=sz)
-    C.text('RADIO', 960, 75, 17, BAR, SLINK, szt + 0.001, align='CENTER', spacing=1.16)
-    for gx in (1066, 1073, 1080):
-        C.rbox('grip', gx, 52, gx + 2.6, 84, szt - 0.004, szt + 0.003, 1, 0, C.mat('gripm', hexc('#c3c7d0'), 0.5))
-    C.text("O'Z TANLOVIM  ›››", 1236, 75, 15.5, BAR, C.mat('slotink', hexc('#b4bac4') if DARK else hexc('#4b515b'), 0.5), sz + 0.004, align='CENTER', spacing=1.14)
+SLINK2 = C.mat('slotink', hexc('#b4bac4') if DARK else hexc('#4b515b'), 0.5)
+PICK = APP and DOWN                             # the "down" plate is the O'Z TANLOVIM state
+for nm_, x0_, x1_, lab_, grip_x in (('tg_radio', 843, 1098, 'RADIO', (1072, 1079, 1086)), ('tg_pick', 1106, 1361, "O'Z TANLOVIM", (1120, 1127, 1134))):
+    act = (nm_ == 'tg_pick') == PICK
+    top_ = sz + (0.11 if act else 0.032)        # proud vs sunk below the trough rim (the bay is at sz + 0.08)
+    m_ = SLM if act else SLM2
+    C.rbox(nm_, x0_, 41, x1_, 95, sz - 0.05, top_, 15, 4.5, m_)
+    tx_ = (x0_ + x1_) / 2 + (-14 if nm_ == 'tg_radio' else 14)
+    C.text(lab_, tx_, 75, 17, BAR, SLINK if act else SLINK2, top_ + 0.001, align='CENTER', spacing=1.16)
+    for gx in grip_x:   # moulded grip grooves (cut into the top, catching a little shadow)
+        C.rbox('grip', gx, 53, gx + 2.4, 83, top_ - 0.006, top_ + 0.0005, 1.2, 0, C.mat('gripd', hexc('#6f7581') if act else hexc('#0d0e10'), 0.6))
 
 # station keys with LED windows
 x = 156

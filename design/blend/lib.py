@@ -100,8 +100,10 @@ class Ctx:
             pass
 
     # ── lights
-    def area(self, name, loc, size, energy, color=(1, 1, 1), target=(0, 0, 0), camera=False, glossy=True, shape='SQUARE', size_y=None):
+    def area(self, name, loc, size, energy, color=(1, 1, 1), target=(0, 0, 0), camera=False, glossy=True, shape='SQUARE', size_y=None, spread=None):
         d = bpy.data.lights.new(name, 'AREA')
+        if spread:
+            d.spread = math.radians(spread)   # a gridded softbox: light goes where it points, no broad wash
         d.size = size
         d.energy = energy
         d.color = color
@@ -132,17 +134,26 @@ class Ctx:
 
     def studio(self):
         T = self.T
-        self.area('key', (-9, 9, 11), 9, T['key_light'], (1.0, 0.98, 0.95))
+        old = '--oldlight' in __import__('sys').argv
+        # a gridded key: a narrower spread concentrates the same energy, so it is scaled down to keep the exposure
+        self.area('key', (-9, 9, 11), 9, T['key_light'] * (1 if old else 0.42), (1.0, 0.98, 0.95), spread=None if old else 50)
         self.area('fill', (10, -6, 9), 12, T['fill'], (0.92, 0.95, 1.0))
         self.area('top', (0, 0, 14), 18, T['top'])
         import sys as _s
         if '--flat' not in _s.argv:
             # product-shot light: long strip softboxes grazing the device, so every chamfer and edge catches a line of light
             dk = self.theme == 'dark'
-            self.area('rimN', (0, 9.5, 2.2), 26, 300 if dk else 100, (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6)
-            self.area('rimW', (-14, 0, 2.6), 14, 560 if dk else 110, (0.72, 0.84, 1.0) if dk else (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5)
-            # a big soft key from upper left gives the large surfaces a gradient instead of a flat fill
-            self.area('grad', (-3, 6, 10), 9, 420 if dk else 110, (1.0, 0.97, 0.93), target=(0, -1, 0))   # soft and from above: no sun spot in the upper left
+            old = '--oldlight' in _s.argv
+            sp = None if old else 40
+            self.area('rimN', (0, 9.5, 2.2), 26, (300 if dk else 100) * (1 if old else 0.55), (1.0, 0.97, 0.93), target=(0, 0, 0), shape='RECTANGLE', size_y=0.6, spread=sp)
+            self.area('rimW', (-14, 0, 2.6), 14, (560 if dk else 110) * (1 if old else 0.55), (0.72, 0.84, 1.0) if dk else (0.9, 0.94, 1.0), target=(0, 0, 0), shape='RECTANGLE', size_y=0.5, spread=sp)
+            if old:
+                self.area('grad', (-3, 6, 10), 9, 420 if dk else 110, (1.0, 0.97, 0.93), target=(0, -1, 0))
+            else:
+                # no broad light from above (it washed the upper left): two gridded strips graze from the front-left
+                # and the bottom-right, so chamfers and key edges get lines of light and the flats stay deep
+                self.area('grazeFL', (-12, -7.5, 2.4), 16, 200 if dk else 70, (1.0, 0.97, 0.93), target=(-1, 0, 0), shape='RECTANGLE', size_y=0.6, spread=40)
+                self.area('grazeBR', (12, -8, 2.2), 14, 140 if dk else 50, (0.85, 0.9, 1.0), target=(1, 0, 0), shape='RECTANGLE', size_y=0.6, spread=40)
 
     # ── materials
     def mat(self, name, color, rough=0.5, metal=0.0, coat=0.0, emit=None, estr=0.0, trans=0.0, ior=1.45, aniso=0.0, bump=None, spec=0.5, alpha=1.0, sss=0.0):
@@ -304,6 +315,21 @@ class Ctx:
             nt.links.new(avg.outputs[0], mh.inputs[0]); nt.links.new(mh.outputs[0], rin)
         else:
             nt.links.new(mr.outputs['Result'], rin)
+        # dense polymer: a trace of subsurface light, plastic IOR
+        b.inputs['Subsurface Weight'].default_value = 0.03
+        b.inputs['Subsurface Radius'].default_value = (0.1, 0.1, 0.1)
+        if 'Subsurface Scale' in b.inputs:
+            b.inputs['Subsurface Scale'].default_value = 0.01
+        b.inputs['IOR'].default_value = 1.48
+        # crevices are a little rougher (dust, less polish): ambient occlusion -> crushed ramp -> + roughness
+        ao = nt.nodes.new('ShaderNodeAmbientOcclusion'); ao.inputs['Distance'].default_value = 0.08; ao.samples = 8
+        aor = nt.nodes.new('ShaderNodeValToRGB')
+        aor.color_ramp.elements[0].position = 0.35; aor.color_ramp.elements[0].color = (0.12, 0.12, 0.12, 1)
+        aor.color_ramp.elements[1].position = 0.9; aor.color_ramp.elements[1].color = (0, 0, 0, 1)
+        nt.links.new(ao.outputs['AO'], aor.inputs['Fac'])
+        rsum = nt.nodes.new('ShaderNodeMath'); rsum.operation = 'ADD'; rsum.use_clamp = True
+        nt.links.new(rin.links[0].from_socket, rsum.inputs[0]); nt.links.new(aor.outputs['Color'], rsum.inputs[1])
+        nt.links.new(rsum.outputs[0], rin)
         # moulded micro relief: two noises multiplied
         a = nt.nodes.new('ShaderNodeTexNoise'); a.inputs['Scale'].default_value = grain
         a.inputs['Detail'].default_value = 8; a.inputs['Roughness'].default_value = 0.9; a.inputs['Distortion'].default_value = 0.1
@@ -451,7 +477,7 @@ class Ctx:
     def _mats(self):
         T = self.T
         c = hexc
-        self.CHALK = self.flake(self.dotted(self.mat('chalk', c(T['chassis']), 0.78, bump=(420, 0.2), spec=0.22), 0.13, 0.012, c(T['dots'])), 2400, 0.14, 0.0)
+        self.CHALK = self.flake(self.dotted(self.mat('chalk', c(T['chassis']), 0.55, bump=(420, 0.2), spec=0.22), 0.13, 0.012, c(T['dots'])), 2400, 0.14, 0.0)
         self.TRAY = self.flake(self.dotted(self.mat('tray', c(T['tray']), 0.82, bump=(420, 0.2), spec=0.18), 0.13, 0.012, c(T['trayDots'])), 2400, 0.12, 0.0)
         self.GRAPH = self.flake(self.dotted(self.mat('graphite', c(T['bay']), 0.5, bump=(900, 0.1), spec=0.4), 0.08, 0.009, c(T['bayDots'])), 3000, 0.2, 0.0)
         self.WELL = self.mat('well', c(T['well']), 0.35, bump=(1200, 0.03))
@@ -467,7 +493,7 @@ class Ctx:
                 self.pbr(self.KEY, 'Plastic010', 4.0, 0.08, 0.0)
                 self.pbr(self.KEY, 'Fingerprints002', 9.0, 0.10, 0.0)
             if '--noplastic' not in _s.argv:
-                self.plastic(self.CHALK, 0.12, 0.10, 90)
+                self.plastic(self.CHALK, 0.075, 0.10, 90)
                 self.plastic(self.TRAY, 0.10, 0.08, 90)
                 self.plastic(self.GRAPH, 0.12, 0.06, 110)
                 self.plastic(self.KEY, 0.10, 0.07, 120, dome=0.35)
@@ -489,7 +515,12 @@ class Ctx:
         self.RED = self.mat('red', c('#ff3b30'), 0.3, emit=c('#ff3b30'), estr=5)
         self.LEDG = self.mat('ledg', c('#3ee08f'), 0.3, emit=c('#3ee08f'), estr=5)
         self.LEDOFF = self.mat('ledoff', c('#b9bec7') if self.theme == 'light' else c('#3a3d44'), 0.3)
-        self.GLASS = self.mat('glass', (1, 1, 1), 0.02, trans=1.0, ior=1.5, spec=0.6)
+        self.GLASS = self.mat('glass', (1, 1, 1), 0.04, trans=1.0, ior=1.52, spec=0.6)
+        gb = self.GLASS.node_tree.nodes['Principled BSDF']
+        gb.inputs['Base Color'].default_value = (*c('#f0fff8'), 1)
+        if 'Thin Film Thickness' in gb.inputs:
+            gb.inputs['Thin Film Thickness'].default_value = 280.0
+            gb.inputs['Thin Film IOR'].default_value = 1.38
         import sys as _s
         if '--flat' not in _s.argv and '--nopbr' not in _s.argv:
             self.pbr(self.GLASS, 'Fingerprints002', 8.0, 0.07, 0.0)   # faint prints and wipes, seen only in the reflections
@@ -507,6 +538,8 @@ class Ctx:
         self.LED_ON = self.led('ledon', c('#fff1d6'), c('#ff9a2e'), 2.2)
         self.LED_HOT = self.led('ledhot', c('#ffd8c8'), c('#ff3a1e'), 2.0)
         self.LED_DIM = self.mat('leddim', c('#2e1d12') if self.theme == 'dark' else c('#4a3426'), 0.18, coat=1.0, spec=0.7)   # smoked lens, dark until lit
+        self.LED_GRN = self.led('ledgrn', c('#eafff0'), c('#2fd36b'), 2.0)
+        self.LED_DIMG = self.mat('leddimg', c('#0f2016') if self.theme == 'dark' else c('#2c4636'), 0.18, coat=1.0, spec=0.7)
         self.LED_DIMR = self.mat('leddimr', c('#4a1510'), 0.12, coat=1.0, spec=0.9)
         self.BEZEL = self.mat('bezel', c('#16171a'), 0.4)
 

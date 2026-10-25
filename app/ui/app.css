@@ -393,3 +393,11 @@ body.full #rz { display: none; }
 .krk em { font: 16px VT; font-style: normal; letter-spacing: .1em; color: #9fb070; }
 .kbtn { align-self: flex-start; font: 24px VT; letter-spacing: .1em; color: #e6ff9a; padding: 4px 12px; margin: 6px 0 10px; cursor: pointer; border: 1px solid rgba(196,224,120,.4); border-radius: 3px; flex: none; }
 .kbtn:hover { color: #10130c; background: #c4e078; }
+
+/* the LCD waveform is a timeline in O'Z TANLOVIM */
+#lcd.seek { cursor: pointer; }
+
+/* thermal print: charcoal-brown ink (never pure black), burnt dot edges and pale dots (see #thermal in index.html) */
+#paper .ink { filter: url(#thermal); color: #1c191a; }
+#paper .ink .title, #paper .ink .h1 { color: #1c191a !important; }
+#paper .ink .soft { color: #5a5550; }

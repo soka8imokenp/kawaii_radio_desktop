@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -126,7 +126,7 @@ ctl('csm', 1834, 1007, 1874, 1047, { cls: 'round', title: 'Stikerlar', click: ()
 /* ───────────── window keys and dragging by the chassis
  * Any surface that is not a control moves the window (Windows' own move loop: Snap to edges / corners / the
  * Snap Layouts bar works); a double click there maximizes / restores, like a title bar. */
-const NO_DRAG = '.ctl, input, textarea, a, #panel, #paperWin, #chCompose, #stTray, #chMsgs, #chPin, #rz';
+const NO_DRAG = '.ctl, input, textarea, a, #panel, #paperWin, #chCompose, #stTray, #chMsgs, #chPin, #rz, #lcd';
 document.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const t = e.target;
@@ -494,14 +494,30 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /* ───────────── the big LCD: title, time, waveform, footer */
 const lcd = $('#lcd').getContext('2d');
-$('#lcd').addEventListener('click', (e) => {
-  if (S.mode === 'pick' && cur && cur.track && cur.track.duration) {
-    const r = $('#lcd').getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width;
-    const frac = Math.max(0, Math.min(1, (px - 0.02) / 0.96));
-    audio.currentTime = frac * cur.track.duration;
-  }
+// O'Z TANLOVIM: the waveform is the timeline — click or drag on it to seek, hovering shows the time under the cursor.
+// (Live radio can't be seeked: everyone hears the same second.)
+const trackDur = () => (cur && cur.track && cur.track.duration) || (isFinite(audio.duration) ? audio.duration : 0);
+const canSeek = () => S.mode === 'pick' && trackDur() > 0;
+let lcdHover = null, lcdScrub = false;
+function lcdFrac(e) {
+  const r = $('#lcd').getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * 1254;          // in canvas units; the waveform runs 27..1227
+  return Math.max(0, Math.min(1, (x - 27) / 1200));
+}
+function lcdSeek(e) { audio.currentTime = lcdFrac(e) * trackDur(); }
+$('#lcd').addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  if (!canSeek()) { toast("JONLI EFIR · O'TKAZIB BO'LMAYDI"); return; }
+  lcdScrub = true; lcdSeek(e); click();
 });
+addEventListener('mousemove', (e) => {
+  if (lcdScrub) { lcdSeek(e); lcdHover = lcdFrac(e); return; }
+  if (e.target === $('#lcd') && canSeek()) lcdHover = lcdFrac(e); else lcdHover = null;
+  $('#lcd').classList.toggle('seek', canSeek());
+});
+addEventListener('mouseup', () => { lcdScrub = false; });
+$('#lcd').addEventListener('mouseleave', () => { if (!lcdScrub) lcdHover = null; });
 let wave = [];
 function waveOf(id) {
   let h = 2166136261;
@@ -518,7 +534,7 @@ let drawLcd = function drawLcd() {
   const t = cur ? cur.track : null;
   c.font = '20px Dot';
   c.fillText(t ? `♫ ${t.title} · ${t.artist}` : '♫ KAWAII RADIO · ulanmoqda…', 28, 34);
-  const pos = audio.currentTime || 0, dur = t ? t.duration : 0;
+  const pos = audio.currentTime || 0, dur = t ? (t.duration || trackDur()) : 0;
   c.font = '46px VT'; c.textAlign = 'right';
   c.fillStyle = ghost; c.fillText('8:88', 1166, 44);
   c.fillStyle = ink; c.fillText(fmt(pos), 1166, 44);
@@ -536,6 +552,16 @@ let drawLcd = function drawLcd() {
   c.font = '22px VT'; c.fillStyle = ink;
   const foot = t ? `${S.mode === 'pick' ? "O'Z TANLOVIM" : stationName()} · ${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : '';
   c.fillText(foot, 29, 141);
+  // seek preview: a ghost head and the time it would jump to
+  if (lcdHover != null && dur) {
+    const hx = 27 + lcdHover * 1200;
+    c.fillStyle = 'rgba(35,43,27,.45)'; c.fillRect(hx - 1, 50, 2, 56);
+    const label = fmt(lcdHover * dur);
+    c.font = '22px VT'; const w = c.measureText(label).width + 14;
+    const bx = Math.max(27, Math.min(1227 - w, hx - w / 2));
+    c.fillStyle = ink; c.fillRect(bx, 118, w, 26);
+    c.fillStyle = '#c9d4a0'; c.fillText(label, bx + 7, 138);
+  }
 }
 
 /* ───────────── tuner drum: ticks around a cylinder, turning with the music */
@@ -709,7 +735,7 @@ let buildReceipt = function buildReceipt(t, animate) {
   h += `<div class="dash"></div><div class="soft">#${String(Math.abs(hashOf(t.id)) % 10000).padStart(4, '0')}   ${d.toLocaleDateString('uz')}   ${d.toTimeString().slice(0, 5)}</div>`;
   h += `<div class="barcode">${Array.from({ length: 70 }, (_, k) => `<i style="width:${[1.6, 1.6, 3.2, 4.8][(hashOf(t.id + k) >>> 0) % 4]}px"></i>`).join('')}</div>`;
   const p = $('#paper');
-  p.innerHTML = h;
+  p.innerHTML = `<div class="ink">${h}</div>`;
   paperScroll = 0; paperVel = 0; paperGoal = null;
   if (animate) { paperOut = 0; printing = performance.now(); on(printerLed, true); }
   else { paperOut = 1e6; }
@@ -1286,7 +1312,7 @@ document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
 });
 
 // LED colours: every lens blooms in its own light
-meter.forEach((m, j) => m.style.setProperty('--g', j < 9 ? 'rgba(255,70,40,.7)' : 'rgba(255,170,64,.65)'));
+meter.forEach((m, j) => m.style.setProperty('--g', j < 2 ? 'rgba(255,70,40,.7)' : j < 5 ? 'rgba(255,170,64,.65)' : 'rgba(70,230,120,.6)'));
 ring.forEach((r, i) => r.style.setProperty('--g', i >= 18 ? 'rgba(255,70,40,.7)' : 'rgba(255,175,70,.6)'));
 printerLed.style.setProperty('--g', 'rgba(80,240,160,.75)');
 
