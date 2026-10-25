@@ -53,6 +53,7 @@ class Ctx:
         sc.render.resolution_percentage = 100
         sc.cycles.samples = samples
         sc.cycles.use_denoising = True
+        sc.cycles.use_auto_tile = False   # no tile files on disk (they sometimes vanish from %TEMP% mid-render)
         sc.cycles.max_bounces = 8
         sc.cycles.transmission_bounces = 8
         import sys as _s
@@ -288,7 +289,7 @@ class Ctx:
                 nt.links.new(nm.outputs['Normal'], sock)
         return m
 
-    def plastic(self, m, rough_spread=0.12, bump=0.08, grain=90.0, dome=0.0):
+    def plastic(self, m, rough_spread=0.12, bump=0.08, grain=90.0, dome=0.0, rscale=None):
         """Procedural plastic (the SILVER PUNK recipe, scaled to the device):
         roughness = noise -> ramp (0.3..0.8) around the base value, so the highlight is never uniform;
         bump = fine noise x multifractal noise (multiply) -> inverted Bump: moulded micro-texture;
@@ -297,7 +298,7 @@ class Ctx:
         b = nt.nodes['Principled BSDF']
         tc = nt.nodes.new('ShaderNodeTexCoord')
         # roughness breakup
-        n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = grain * 0.18
+        n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = rscale or grain * 0.18
         n.inputs['Detail'].default_value = 10; n.inputs['Roughness'].default_value = 1.0; n.inputs['Distortion'].default_value = 0.1
         nt.links.new(tc.outputs['Object'], n.inputs['Vector'])
         ramp = nt.nodes.new('ShaderNodeValToRGB')
@@ -332,7 +333,7 @@ class Ctx:
         nt.links.new(rsum.outputs[0], rin)
         # moulded micro relief: two noises multiplied
         a = nt.nodes.new('ShaderNodeTexNoise'); a.inputs['Scale'].default_value = grain
-        a.inputs['Detail'].default_value = 8; a.inputs['Roughness'].default_value = 0.9; a.inputs['Distortion'].default_value = 0.1
+        a.inputs['Detail'].default_value = 15; a.inputs['Roughness'].default_value = 0.7; a.inputs['Distortion'].default_value = 0.0
         c = nt.nodes.new('ShaderNodeTexNoise')
         try:
             c.noise_type = 'MULTIFRACTAL'
@@ -493,8 +494,8 @@ class Ctx:
                 self.pbr(self.KEY, 'Plastic010', 4.0, 0.08, 0.0)
                 self.pbr(self.KEY, 'Fingerprints002', 9.0, 0.10, 0.0)
             if '--noplastic' not in _s.argv:
-                self.plastic(self.CHALK, 0.075, 0.10, 90)
-                self.plastic(self.TRAY, 0.10, 0.08, 90)
+                self.plastic(self.CHALK, 0.075, 0.10, 160, rscale=80)   # guide: fine relief + low-contrast roughness noise (scaled to 1 unit = 100 px)
+                self.plastic(self.TRAY, 0.075, 0.10, 160, rscale=80)
                 self.plastic(self.GRAPH, 0.12, 0.06, 110)
                 self.plastic(self.KEY, 0.10, 0.07, 120, dome=0.35)
         self.KEYS = self.mat('keys', c(T['keyStation']), 0.42, coat=0.3, bump=(1400, 0.04))
@@ -515,6 +516,7 @@ class Ctx:
         self.RED = self.mat('red', c('#ff3b30'), 0.3, emit=c('#ff3b30'), estr=5)
         self.LEDG = self.mat('ledg', c('#3ee08f'), 0.3, emit=c('#3ee08f'), estr=5)
         self.LEDOFF = self.mat('ledoff', c('#b9bec7') if self.theme == 'light' else c('#3a3d44'), 0.3)
+        self.GLASSOV = self.glassify(self.mat('glassov', c('#f6fffb'), 0.02, trans=1.0, ior=1.52, spec=0.6, coat=1.0))
         self.GLASS = self.mat('glass', (1, 1, 1), 0.04, trans=1.0, ior=1.52, spec=0.6)
         gb = self.GLASS.node_tree.nodes['Principled BSDF']
         gb.inputs['Base Color'].default_value = (*c('#f0fff8'), 1)
@@ -679,15 +681,62 @@ class Ctx:
         nt = m.node_tree; L = nt.links.new
         tc = nt.nodes.new('ShaderNodeTexCoord')
         w = nt.nodes.new('ShaderNodeTexWave'); w.wave_type = 'RINGS'; w.rings_direction = 'SPHERICAL'
-        w.inputs['Scale'].default_value = 260; w.inputs['Distortion'].default_value = 1.2; w.inputs['Detail'].default_value = 4
+        w.inputs['Scale'].default_value = 220; w.inputs['Distortion'].default_value = 1.2; w.inputs['Detail'].default_value = 4
         w.inputs['Detail Roughness'].default_value = 0.7
         L(tc.outputs['Object'], w.inputs['Vector'])
         rr = nt.nodes.new('ShaderNodeMapRange'); rr.inputs['To Min'].default_value = r0; rr.inputs['To Max'].default_value = r1
         L(w.outputs['Fac'], rr.inputs['Value'])
-        bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.1; bp.inputs['Distance'].default_value = 0.001
+        bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.015; bp.inputs['Distance'].default_value = 0.001
         L(w.outputs['Fac'], bp.inputs['Height'])
         tg = nt.nodes.new('ShaderNodeTangent'); tg.direction_type = 'RADIAL'; tg.axis = 'Z'
-        return self._metal_out(m, 'alu', rr.outputs['Result'], bp.outputs['Normal'], 0.75, tg.outputs['Tangent'])
+        return self._metal_out(m, 'alu', rr.outputs['Result'], bp.outputs['Normal'], 0.85, tg.outputs['Tangent'])
+
+    def glassify(self, m):
+        """Procedural glass details (the glass tutorial): smudges = Voronoi + Noise mixed with Linear Light ->
+        Brightness/Contrast -> roughness and coat roughness 0.02..0.14; warping = a soft large Noise -> Bump (slightly
+        uneven pressed glass); clear coat for the polished face; a thin film for the anti-reflection tint."""
+        nt = m.node_tree; L = nt.links.new; b = nt.nodes['Principled BSDF']
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        vo = nt.nodes.new('ShaderNodeTexVoronoi'); vo.inputs['Scale'].default_value = 3.2; vo.inputs['Randomness'].default_value = 1.0
+        no = nt.nodes.new('ShaderNodeTexNoise'); no.inputs['Scale'].default_value = 5.0; no.inputs['Detail'].default_value = 8; no.inputs['Roughness'].default_value = 0.65
+        for t in (vo, no):
+            L(tc.outputs['Object'], t.inputs['Vector'])
+        mx = nt.nodes.new('ShaderNodeMix'); mx.data_type = 'RGBA'; mx.blend_type = 'LINEAR_LIGHT'; mx.inputs['Factor'].default_value = 0.6
+        L(vo.outputs['Distance'], mx.inputs[6]); L(no.outputs['Fac'], mx.inputs[7])
+        bc = nt.nodes.new('ShaderNodeBrightContrast'); bc.inputs['Bright'].default_value = -0.25; bc.inputs['Contrast'].default_value = 0.6
+        L(mx.outputs[2], bc.inputs['Color'])
+        mr = nt.nodes.new('ShaderNodeMapRange'); mr.inputs['To Min'].default_value = 0.015; mr.inputs['To Max'].default_value = 0.07
+        L(bc.outputs['Color'], mr.inputs['Value'])
+        L(mr.outputs['Result'], b.inputs['Roughness'])
+        if 'Coat Roughness' in b.inputs:
+            L(mr.outputs['Result'], b.inputs['Coat Roughness'])
+        wn = nt.nodes.new('ShaderNodeTexNoise'); wn.inputs['Scale'].default_value = 1.4; wn.inputs['Detail'].default_value = 2
+        L(tc.outputs['Object'], wn.inputs['Vector'])
+        bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = 0.03; bp.inputs['Distance'].default_value = 0.02
+        L(wn.outputs['Fac'], bp.inputs['Height'])
+        L(bp.outputs['Normal'], b.inputs['Normal'])
+        if 'Coat Normal' in b.inputs:
+            L(bp.outputs['Normal'], b.inputs['Coat Normal'])
+        if 'Thin Film Thickness' in b.inputs:
+            b.inputs['Thin Film Thickness'].default_value = 260.0; b.inputs['Thin Film IOR'].default_value = 1.38
+        return m
+
+    def knurl_bump(self, m, scale=420.0, strength=0.45):
+        """Diamond knurl in the shading too: Voronoi (Distance to Edge) -> Bump(0.45) under the metal's normal."""
+        nt = m.node_tree; L = nt.links.new
+        mb = next((n for n in nt.nodes if n.type in ('BSDF_METALLIC', 'BSDF_PRINCIPLED')), None)
+        if mb is None:
+            return m
+        tc = nt.nodes.new('ShaderNodeTexCoord')
+        v = nt.nodes.new('ShaderNodeTexVoronoi'); v.feature = 'DISTANCE_TO_EDGE'; v.inputs['Scale'].default_value = scale
+        L(tc.outputs['Object'], v.inputs['Vector'])
+        bp = nt.nodes.new('ShaderNodeBump'); bp.inputs['Strength'].default_value = strength; bp.inputs['Distance'].default_value = 0.0015
+        L(v.outputs['Distance'], bp.inputs['Height'])
+        nin = mb.inputs['Normal']
+        if nin.is_linked:
+            L(nin.links[0].from_socket, bp.inputs['Normal'])
+        L(bp.outputs['Normal'], nin)
+        return m
 
     def knurl_z(self, name, cx, cy, R, R2, z0, z1, m, n=180):
         """A vertical knurled collar: a star profile (alternating radii) extruded upward, so each ridge catches light."""

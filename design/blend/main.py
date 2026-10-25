@@ -355,10 +355,10 @@ for v in range(0, 11, 2):
 # the knob as a machined part: a dark anodised flange, a knurled grip skirt, a smooth turned body, and a
 # spun-aluminium cap with a chamfered bright rim, an engraved circle and a shallow centre dimple
 C.cyl('kflange', kx, ky, 72, kwz, kwz + 0.025, C.mat('kfl', hexc('#1b1c20'), 0.32, metal=1.0), bev=1.2, segs=160)
-KNURL = C.brushed('knurlm', (0.6, 0.61, 0.63), 0.24, 0.4, kind='alu')
+KNURL = C.knurl_bump(C.brushed('knurlm', (0.6, 0.61, 0.63), 0.24, 0.4, kind='alu'))
 C.knurl_z('kknurl', kx, ky, 65.5, 63.8, kwz + 0.02, 0.24, KNURL, n=200)
 C.cyl('kbody', kx, ky, 63.6, 0.23, 0.31, C.brushed('kbodym', (0.72, 0.73, 0.75), 0.16, 0.26, kind='alu'), bev=1.5, segs=160)
-SPUN = C.spun('spun', (0.8, 0.81, 0.83))
+SPUN = C.spun('spun', hexc('#d0d4d8'), 0.2, 0.34)   # guide 1.3: #D0D4D8, roughness ~0.28, anisotropy 0.85
 C.cyl('kcap', kx, ky, 54, 0.30, 0.38, SPUN, bev=3.2, segs=180)
 C.cyl('kline', kx, ky, 36.6, 0.3795, 0.3808, C.mat('kline', hexc('#2a2c31'), 0.5, metal=1.0), segs=160)
 C.cyl('kline2', kx, ky, 35.6, 0.3796, 0.3812, SPUN, segs=160)
@@ -679,8 +679,18 @@ if '--glassov' in argv:
         if o.type in ('MESH', 'CURVE', 'FONT', 'SURFACE', 'META'):
             o.visible_camera = False
             o.visible_transmission = False
-    GL = C.GLASS
-    def pane(name, x0, y0, x1, y1, r, bulge, z0=0.3, rim=14):
+    GL = C.GLASSOV
+    # the surround the glass mirrors: dark overhead (the flat face, seen straight on, stays clear and dark) and bright
+    # toward the horizon — the rounded edges look sideways, so they light up like the bevel of a thick glass
+    wn = sc.world.node_tree; wbg = wn.nodes['Background']
+    wtc = wn.nodes.new('ShaderNodeTexCoord'); wsz = wn.nodes.new('ShaderNodeSeparateXYZ')
+    wn.links.new(wtc.outputs['Generated'], wsz.inputs['Vector'])
+    wmr = wn.nodes.new('ShaderNodeMapRange'); wmr.inputs['From Min'].default_value = 0.05; wmr.inputs['From Max'].default_value = 0.55
+    wmr.inputs['To Min'].default_value = 4.0; wmr.inputs['To Max'].default_value = 0.0
+    wn.links.new(wsz.outputs['Z'], wmr.inputs['Value'])
+    wbg.inputs['Color'].default_value = (0.85, 0.88, 0.92, 1)
+    wn.links.new(wmr.outputs['Result'], wbg.inputs['Strength'])
+    def pane(name, x0, y0, x1, y1, r, bulge, z0=0.3, rim=22):
         gx_, gy_ = 72, 48
         bm = bmesh.new(); vs = []
         for j in range(gy_ + 1):
@@ -709,7 +719,8 @@ if '--glassov' in argv:
         for p_ in me.polygons:
             p_.use_smooth = True
         o = C.link(bpy.data.objects.new(name, me)); o.data.materials.append(GL)
-        sol = o.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.014; sol.offset = -1; sol.use_even_offset = True
+        sol = o.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.022; sol.offset = -1; sol.use_even_offset = True
+        bv = o.modifiers.new('edge', 'BEVEL'); bv.width = 0.008; bv.segments = 4; bv.limit_method = 'ANGLE'; bv.angle_limit = math.radians(40)
         return o
     # what the glass mirrors: soft studio strips high above the device, seen only in reflections
     def strip(name, cx, cy, w, h, ang, strength, z=6.0):
