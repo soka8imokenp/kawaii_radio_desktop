@@ -450,3 +450,18 @@ body.full #rz { display: none; }
 /* v0.5.6: the lyrics display is a rendered picture tube now (bulged face + gasket): let it show through, like the chat */
 #lyr { background: radial-gradient(110% 95% at 50% 45%, rgba(40,70,52,.22), rgba(6,10,8,.4) 75%, rgba(0,0,0,.7)) !important; }
 #lyr { background: radial-gradient(120% 105% at 50% 45%, transparent 55%, rgba(0,0,0,.55) 100%) !important; }
+/* v0.5.7: the tube sits inside a raised bezel (14 px): darken the tube's own corners, like the chat CRT */
+#lyr { background: none !important; }
+#lyr::after { inset: 14px !important; border-radius: 18px !important;
+  box-shadow: inset 0 0 34px rgba(0,0,0,.8), inset 0 0 8px rgba(0,0,0,.9) !important;
+  background: radial-gradient(118% 108% at 50% 46%, transparent 55%, rgba(0,0,0,.55) 100%) !important; }
+/* v0.5.8: the tube is a dark phosphor screen like the chat CRT — the same deep green-black under-layer (it also
+   swallows the milky sheen), the content stays inside the bezel */
+#lyr::before { inset: 14px !important; border-radius: 18px !important;
+  background:
+    radial-gradient(circle at 1.5px 1.5px, rgba(150,175,95,.07) 1.1px, transparent 1.6px) 0 0 / 5px 5px,
+    radial-gradient(110% 95% at 50% 45%, rgba(40,70,52,.32), rgba(6,10,8,.6) 75%, rgba(0,0,0,.88)) !important; }
+#lyr .lh { left: 36px !important; top: 26px !important; }
+#lyLines { left: 42px !important; right: 66px !important; top: 72px !important; bottom: 26px !important; }
+#lyRail { right: 32px !important; }
+#viz { left: 42px !important; }

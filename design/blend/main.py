@@ -239,8 +239,8 @@ if APP:
         row = []
         for i in range(gx_ + 1):
             u, v = i / gx_, j / gy_
-            x = LX0 + 3 + u * (LX1 - LX0 - 6); y = LY0 + 3 + v * (LY1 - LY0 - 6)
-            cx = min(max(x, LX0 + 3 + R_), LX1 - 3 - R_); cy = min(max(y, LY0 + 3 + R_), LY1 - 3 - R_)
+            x = LX0 + 15 + u * (LX1 - LX0 - 30); y = LY0 + 15 + v * (LY1 - LY0 - 30)
+            cx = min(max(x, LX0 + 15 + R_), LX1 - 15 - R_); cy = min(max(y, LY0 + 15 + R_), LY1 - 15 - R_)
             dx, dy = x - cx, y - cy; d = math.hypot(dx, dy)
             if d > R_:
                 x, y = cx + dx / d * R_, cy + dy / d * R_
@@ -262,20 +262,25 @@ if APP:
     me2 = bpy.data.meshes.new('lyrefl'); bm.to_mesh(me2); bm.free()
     rf = C.link(bpy.data.objects.new('lyrefl', me2))
     cx_, cy_ = P((LX0 + LX1) / 2 - 60, (LY0 + LY1) / 2 - 40)
-    rf.scale = (14, 2.2, 1); rf.location = (cx_, cy_, 4.0); rf.rotation_euler = (0, 0, math.radians(30))
+    rf.scale = (14, 1.1, 1); rf.location = (cx_, cy_, 4.0); rf.rotation_euler = (0, 0, math.radians(30))
     em = bpy.data.materials.new('lyrefl'); em.use_nodes = True
     nn = em.node_tree.nodes; nn.remove(nn['Principled BSDF'])
     ee = nn.new('ShaderNodeEmission'); ee.inputs['Strength'].default_value = 1.0
     tcx = nn.new('ShaderNodeTexCoord'); grd = nn.new('ShaderNodeTexGradient'); grd.gradient_type = 'QUADRATIC_SPHERE'
     mpx = nn.new('ShaderNodeMapping'); mpx.inputs['Scale'].default_value = (1.0, 2.0, 1.0)
     em.node_tree.links.new(tcx.outputs['Object'], mpx.inputs['Vector']); em.node_tree.links.new(mpx.outputs['Vector'], grd.inputs['Vector'])
-    mlt = nn.new('ShaderNodeMath'); mlt.operation = 'MULTIPLY'; mlt.inputs[1].default_value = 3.0 if DARK else 1.6
+    mlt = nn.new('ShaderNodeMath'); mlt.operation = 'MULTIPLY'; mlt.inputs[1].default_value = 1.3 if DARK else 0.8
     em.node_tree.links.new(grd.outputs['Fac'], mlt.inputs[0]); em.node_tree.links.new(mlt.outputs[0], ee.inputs['Strength'])
     em.node_tree.links.new(ee.outputs['Emission'], nn['Material Output'].inputs['Surface'])
     rf.data.materials.append(em)
     rf.visible_camera = False; rf.visible_shadow = False
     rf.light_linking.receiver_collection = rc
-    C.ring('ly_lip', LX0 - 1, LY0 - 1, LX1 + 1, LY1 + 1, 21, 4, lz, lz + 0.03, C.BEZEL)
+    # a raised monitor bezel around the tube, like the chat monitor's housing: rounded, proud of the bay, its edges
+    # catch the rim light; a dark rubber gasket between bezel and tube
+    BZL = C.plastic(C.mat('lybezel', hexc('#2a2c31') if DARK else hexc('#e2ded3'), 0.55, coat=0.1, spec=0.35), 0.1, 0.09, 110)
+    bz = C.ring('ly_bezel', LX0 + 14, LY0 + 14, LX1 - 14, LY1 - 14, 18, 14, lz, BZ + 0.035, BZL)
+    bvm = bz.modifiers.new('round', 'BEVEL'); bvm.width = 0.06; bvm.segments = 8; bvm.limit_method = 'ANGLE'; bvm.angle_limit = math.radians(40); bvm.harden_normals = True
+    C.ring('ly_lip', LX0 + 13, LY0 + 13, LX1 - 13, LY1 - 13, 19, 3, lz, lz + 0.075, C.BEZEL)
 C.cyl('lyd', LX0 + 24, LY0 + 26, 3.5, lz, lz + 0.004, C.LEDG)
 C.text('KICK BACK', LX0 + 38, LY0 + 32, 16, MI, C.WHITE, LZ)
 C.text('Kenshi Yonezu', LX0 + 146, LY0 + 32, 16, IN, C.GREY, LZ)
@@ -788,11 +793,11 @@ if '--glassov' in argv:
         o.data.materials.append(em)
         o.visible_camera = False; o.visible_diffuse = False; o.visible_transmission = False; o.visible_shadow = False
         return o
-    strip('refl_a', -3.0, 1.2, 26, 1.4, 32, 2.3)      # the long diagonal glare
+    strip('refl_a', -3.0, 1.2, 26, 0.9, 32, 1.1)      # the long diagonal glare
     strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
     strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
     pane('g_tv', 156, 196, 592, 628, 14, 0.05)
-    pane('g_lyr', 610, 190, 1370, 634, 20, 0.075)
+    pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)
     pane('g_lcd', 133, 677, 1387, 829, 18, 0.035)
     pane('g_drum', 256, 866, 750, 958, 18, 0.028)
     pane('g_chat', 1436, 602, 1878, 994, 32, 0.04)
