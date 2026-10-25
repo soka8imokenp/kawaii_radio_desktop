@@ -744,10 +744,10 @@ if '--glassov' in argv:
     strip('refl_a', -3.0, 1.2, 26, 1.4, 32, 2.3)      # the long diagonal glare
     strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
     strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
-    pane('g_tv', 156, 196, 592, 628, 14, 0.022)
-    pane('g_lyr', 610, 190, 1370, 634, 20, 0.03)
-    pane('g_lcd', 133, 677, 1387, 829, 18, 0.016)
-    pane('g_drum', 256, 866, 750, 958, 18, 0.014)
+    pane('g_tv', 156, 196, 592, 628, 14, 0.05)
+    pane('g_lyr', 610, 190, 1370, 634, 20, 0.075)
+    pane('g_lcd', 133, 677, 1387, 829, 18, 0.035)
+    pane('g_drum', 256, 866, 750, 958, 18, 0.028)
     pane('g_chat', 1436, 602, 1878, 994, 32, 0.04)
     sc.render.film_transparent = True
     sc.cycles.film_transparent_glass = True
