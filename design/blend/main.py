@@ -229,6 +229,53 @@ C.text('TRIVISION · 24', TX0 + 2, TY1 + 0, 8, MI, C.GREY, BZ + 0.001) if False 
 LX0, LY0, LX1, LY1 = 610, 190, 1370, 634
 lz = bwell('ly', LX0, LY0, LX1, LY1, 22, 0.08, C.mat('lywell', hexc(T['well']), 0.85, bump=(900, 0.04)))
 LZ = lz + 0.001
+if APP:
+    # the lyrics display is a picture tube like the chat monitor: a bulged glossy face rising out of the well,
+    # held by a dark rubber gasket — so it stands proud instead of sitting at the bottom of a hole
+    TUBE = C.mat('lytube', hexc('#0b0e0c'), 0.24, coat=0.35, spec=0.35, emit=hexc('#0c140e'), estr=0.5)
+    gx_, gy_ = 80, 48; R_ = 20
+    bm = bmesh.new(); vs = []
+    for j in range(gy_ + 1):
+        row = []
+        for i in range(gx_ + 1):
+            u, v = i / gx_, j / gy_
+            x = LX0 + 3 + u * (LX1 - LX0 - 6); y = LY0 + 3 + v * (LY1 - LY0 - 6)
+            cx = min(max(x, LX0 + 3 + R_), LX1 - 3 - R_); cy = min(max(y, LY0 + 3 + R_), LY1 - 3 - R_)
+            dx, dy = x - cx, y - cy; d = math.hypot(dx, dy)
+            if d > R_:
+                x, y = cx + dx / d * R_, cy + dy / d * R_
+            uu, vv = 2 * u - 1, 2 * v - 1
+            z = lz + 0.004 + 0.07 * (1 - uu * uu) * (1 - vv * vv)
+            wx, wy = P(x, y)
+            row.append(bm.verts.new((wx, wy, z)))
+        vs.append(row)
+    for j in range(gy_):
+        for i in range(gx_):
+            bm.faces.new((vs[j][i], vs[j][i + 1], vs[j + 1][i + 1], vs[j + 1][i]))
+    me = bpy.data.meshes.new('lytube'); bm.to_mesh(me); bm.free()
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    lyt = C.link(bpy.data.objects.new('lytube', me)); lyt.data.materials.append(TUBE)
+    # what the tube mirrors: a soft diagonal studio strip above it, light-linked to the tube only (nothing else sees it)
+    rc = bpy.data.collections.new('lytube_recv'); rc.objects.link(lyt)
+    bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+    me2 = bpy.data.meshes.new('lyrefl'); bm.to_mesh(me2); bm.free()
+    rf = C.link(bpy.data.objects.new('lyrefl', me2))
+    cx_, cy_ = P((LX0 + LX1) / 2 - 60, (LY0 + LY1) / 2 - 40)
+    rf.scale = (14, 2.2, 1); rf.location = (cx_, cy_, 4.0); rf.rotation_euler = (0, 0, math.radians(30))
+    em = bpy.data.materials.new('lyrefl'); em.use_nodes = True
+    nn = em.node_tree.nodes; nn.remove(nn['Principled BSDF'])
+    ee = nn.new('ShaderNodeEmission'); ee.inputs['Strength'].default_value = 1.0
+    tcx = nn.new('ShaderNodeTexCoord'); grd = nn.new('ShaderNodeTexGradient'); grd.gradient_type = 'QUADRATIC_SPHERE'
+    mpx = nn.new('ShaderNodeMapping'); mpx.inputs['Scale'].default_value = (1.0, 2.0, 1.0)
+    em.node_tree.links.new(tcx.outputs['Object'], mpx.inputs['Vector']); em.node_tree.links.new(mpx.outputs['Vector'], grd.inputs['Vector'])
+    mlt = nn.new('ShaderNodeMath'); mlt.operation = 'MULTIPLY'; mlt.inputs[1].default_value = 3.0 if DARK else 1.6
+    em.node_tree.links.new(grd.outputs['Fac'], mlt.inputs[0]); em.node_tree.links.new(mlt.outputs[0], ee.inputs['Strength'])
+    em.node_tree.links.new(ee.outputs['Emission'], nn['Material Output'].inputs['Surface'])
+    rf.data.materials.append(em)
+    rf.visible_camera = False; rf.visible_shadow = False
+    rf.light_linking.receiver_collection = rc
+    C.ring('ly_lip', LX0 - 1, LY0 - 1, LX1 + 1, LY1 + 1, 21, 4, lz, lz + 0.03, C.BEZEL)
 C.cyl('lyd', LX0 + 24, LY0 + 26, 3.5, lz, lz + 0.004, C.LEDG)
 C.text('KICK BACK', LX0 + 38, LY0 + 32, 16, MI, C.WHITE, LZ)
 C.text('Kenshi Yonezu', LX0 + 146, LY0 + 32, 16, IN, C.GREY, LZ)
