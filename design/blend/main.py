@@ -670,6 +670,80 @@ if APP:
     for o in CHATROOT.children_recursive:
         o.hide_render = True
 
+# ───────────────────────────── glass overlay (--glassov): the curved cover glasses alone, on a transparent film.
+# The app lays this PNG over its live content (cover, lyrics, LCD, drum, chat), so the reflections, the bulge and
+# the glass edge sit IN FRONT of what the screens show, like on a real device. Everything else stays in the scene for
+# the reflections, but is invisible to the camera and to rays going through the glass.
+if '--glassov' in argv:
+    for o in list(sc.objects):
+        if o.type in ('MESH', 'CURVE', 'FONT', 'SURFACE', 'META'):
+            o.visible_camera = False
+            o.visible_transmission = False
+    GL = C.GLASS
+    def pane(name, x0, y0, x1, y1, r, bulge, z0=0.3, rim=14):
+        gx_, gy_ = 72, 48
+        bm = bmesh.new(); vs = []
+        for j in range(gy_ + 1):
+            row = []
+            for i in range(gx_ + 1):
+                u, v = i / gx_, j / gy_
+                x = x0 + u * (x1 - x0); y = y0 + v * (y1 - y0)
+                cx = min(max(x, x0 + r), x1 - r); cy = min(max(y, y0 + r), y1 - r)
+                dx, dy = x - cx, y - cy; d = math.hypot(dx, dy)
+                if d > r:
+                    x, y = cx + dx / d * r, cy + dy / d * r
+                # distance to the edge: the glass rolls off over the last `rim` px (a polished, rounded edge)
+                e = min(x - x0, x1 - x, y - y0, y1 - y)
+                if d > 0 and (abs(dx) > 0 or abs(dy) > 0):
+                    e = min(e, r - min(d, r))
+                k = min(1.0, max(0.0, e / rim)); k = k * k * (3 - 2 * k)
+                uu, vv = 2 * u - 1, 2 * v - 1
+                z = z0 + 0.006 * k + bulge * (1 - uu * uu) * (1 - vv * vv)
+                wx, wy = P(x, y)
+                row.append(bm.verts.new((wx, wy, z)))
+            vs.append(row)
+        for j in range(gy_):
+            for i in range(gx_):
+                bm.faces.new((vs[j][i], vs[j][i + 1], vs[j + 1][i + 1], vs[j + 1][i]))
+        me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+        for p_ in me.polygons:
+            p_.use_smooth = True
+        o = C.link(bpy.data.objects.new(name, me)); o.data.materials.append(GL)
+        sol = o.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.014; sol.offset = -1; sol.use_even_offset = True
+        return o
+    # what the glass mirrors: soft studio strips high above the device, seen only in reflections
+    def strip(name, cx, cy, w, h, ang, strength, z=6.0):
+        bm = bmesh.new(); bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+        me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+        o = C.link(bpy.data.objects.new(name, me))
+        o.scale = (w, h, 1); o.location = (cx, cy, z); o.rotation_euler = (0, 0, math.radians(ang))
+        em = bpy.data.materials.new(name); em.use_nodes = True
+        n_ = em.node_tree.nodes; n_.remove(n_['Principled BSDF'])
+        e_ = n_.new('ShaderNodeEmission'); e_.inputs['Strength'].default_value = strength
+        # soft edges: a gradient across the strip's width
+        tc_ = n_.new('ShaderNodeTexCoord'); gr_ = n_.new('ShaderNodeTexGradient'); gr_.gradient_type = 'QUADRATIC_SPHERE'
+        mp_ = n_.new('ShaderNodeMapping'); mp_.inputs['Scale'].default_value = (1.0, 2.0, 1.0)
+        em.node_tree.links.new(tc_.outputs['Object'], mp_.inputs['Vector']); em.node_tree.links.new(mp_.outputs['Vector'], gr_.inputs['Vector'])
+        mx_ = n_.new('ShaderNodeMath'); mx_.operation = 'MULTIPLY'; mx_.inputs[1].default_value = strength
+        em.node_tree.links.new(gr_.outputs['Fac'], mx_.inputs[0]); em.node_tree.links.new(mx_.outputs[0], e_.inputs['Strength'])
+        em.node_tree.links.new(e_.outputs['Emission'], n_['Material Output'].inputs['Surface'])
+        o.data.materials.append(em)
+        o.visible_camera = False; o.visible_diffuse = False; o.visible_transmission = False; o.visible_shadow = False
+        return o
+    strip('refl_a', -3.0, 1.2, 26, 1.4, 32, 2.3)      # the long diagonal glare
+    strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
+    strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
+    pane('g_tv', 156, 196, 592, 628, 14, 0.022)
+    pane('g_lyr', 610, 190, 1370, 634, 20, 0.03)
+    pane('g_lcd', 133, 677, 1387, 829, 18, 0.016)
+    pane('g_drum', 256, 866, 750, 958, 18, 0.014)
+    pane('g_chat', 1436, 602, 1878, 994, 32, 0.04)
+    sc.render.film_transparent = True
+    sc.cycles.film_transparent_glass = True
+    sc.cycles.film_transparent_roughness = 0.2
+    sc.render.image_settings.color_mode = 'RGBA'
+    sc.render.use_compositing = False
+
 reg = arg('--region')
 if reg:
     x0, y0, x1, y1 = [float(v) for v in reg.split(',')]

@@ -401,3 +401,40 @@ body.full #rz { display: none; }
 #paper .ink { filter: url(#thermal); color: #1c191a; }
 #paper .ink .title, #paper .ink .h1 { color: #1c191a !important; }
 #paper .ink .soft { color: #5a5550; }
+
+/* ── v0.5.3: glass in front of every screen (a transparent render: bulge, glass edge, studio glare) */
+#glassOv { position: absolute; inset: 0; z-index: 29; pointer-events: none; background: url(assets/glass-dark.webp) 0 0 / 100% 100% no-repeat; }
+#stage.light #glassOv { background-image: url(assets/glass-light.webp); }
+
+/* the lyrics display: a phosphor screen behind dark glass — deep green-black, the text is the light */
+#lyr { background: radial-gradient(120% 100% at 50% 42%, #111a12 0%, #0b120c 55%, #060906 100%); border-radius: 20px; }
+
+/* chat: a monochrome green terminal — no avatars, no coloured names, no cards */
+#chat .m .av { display: none; }
+#chat .m .n { color: #9dffc4 !important; font: 19px VT, Dot !important; letter-spacing: .05em; text-shadow: 0 0 6px rgba(110,255,170,.45); }
+#chat .m .n::before { content: "> "; color: #5fa877; }
+#chat .m .ts { font: 16px VT !important; color: #4f7f61 !important; }
+#chat .m .t { font: 19px/1.15 VT, Dot !important; color: #86c48f !important; letter-spacing: .03em; text-shadow: 0 0 5px rgba(110,255,170,.3); padding-left: 16px; }
+#chat .m .song img, #chat .m .st { filter: grayscale(1) sepia(1) hue-rotate(75deg) saturate(2.2) brightness(.8) contrast(1.35); image-rendering: pixelated; border-radius: 2px !important; box-shadow: 0 0 0 1px rgba(157,255,196,.4) !important; }
+#chat .m .song { padding-left: 16px; }
+#chPin small { background: none; color: #9dffc4; box-shadow: none; text-shadow: 0 0 6px rgba(110,255,170,.6); }
+#chPin small::before { content: "["; } #chPin small::after { content: "]"; }
+#chPin .run span { font: 18px VT, Dot; letter-spacing: .04em; }
+
+/* thermal print, stronger: the head prints rows of dots (a fine dot grid), the head is a little weaker at the
+   paper's edges, ink is charcoal-brown */
+#paper .ink {
+  -webkit-mask-image: repeating-linear-gradient(180deg, #000 0 1.5px, rgba(0,0,0,.42) 1.5px 2.25px),
+                      repeating-linear-gradient(90deg, #000 0 1.5px, rgba(0,0,0,.6) 1.5px 2.25px),
+                      linear-gradient(90deg, rgba(0,0,0,.72), #000 22%, #000 78%, rgba(0,0,0,.8));
+  -webkit-mask-composite: source-in, source-in;
+  mask-image: repeating-linear-gradient(180deg, #000 0 1.5px, rgba(0,0,0,.42) 1.5px 2.25px),
+              repeating-linear-gradient(90deg, #000 0 1.5px, rgba(0,0,0,.6) 1.5px 2.25px),
+              linear-gradient(90deg, rgba(0,0,0,.72), #000 22%, #000 78%, rgba(0,0,0,.8));
+  mask-composite: intersect; }
+#paper .ink .title { font-weight: 400; letter-spacing: .01em; }
+/* the paper bows out of the feeder: darker at both edges, a soft highlight down the middle */
+#paperWin::before { height: auto; bottom: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.42), rgba(0,0,0,.12) 18px, transparent 26px),
+              linear-gradient(90deg, rgba(40,32,20,.16), transparent 9%, rgba(255,255,255,.05) 45%, transparent 88%, rgba(40,32,20,.18)); }
+#paper .ink .sec { color: #2a2522 !important; opacity: 1 !important; font-size: 12px; letter-spacing: .14em; }
