@@ -1882,7 +1882,7 @@ dependencies = [
 
 [[package]]
 name = "kawaii-radio-desk"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "native-tls",
  "serde",
