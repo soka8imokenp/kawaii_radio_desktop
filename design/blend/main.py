@@ -80,21 +80,37 @@ for i, (ic, lab) in enumerate(NAV):
     C.text(lab, 64, y + 72, 11.5, BAR, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.16)   # light keys need the darker ink to read
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
     y += 104
-# a vertical level meter of real LEDs
+# LEVEL: an IN-9 style bargraph tube lying in the channel — smoked glass, a nickel cathode wire, chrome end caps.
+# --down lights the whole neon column (warm orange), the app reveals it bottom-up to the signal level.
 C.rbox('lvch', 50, 534, 78, 932, navz - 0.004, navz + 0.008, 13, 1.5, C.BEZEL)          # the channel
-for j in range(18):
-    yy = 548 + j * 22
-    lit = DOWN if APP else j >= 9
-    if j < 2:
-        m = C.LED_HOT if lit else C.LED_DIMR
-    elif j < 5:
-        m = C.LED_ON if lit else C.LED_DIM
-    else:
-        m = C.LED_GRN if lit else C.LED_DIMG
-    C.cyl('mb%d' % j, 64, yy, 7.2, navz + 0.002, navz + 0.012, C.WELL, segs=32)
-    C.dome('md%d' % j, 64, yy, 5.4, navz + 0.012, m)
-    if j < 17:   # dark dividers so no light bleeds into the next lens
-        C.rbox('mdiv', 54, yy + 10, 74, yy + 12, navz + 0.008, navz + 0.016, 1, 0, C.BEZEL)
+
+
+def tube_y(name, x, y0, y1, rad, z, m, segs=48):
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=rad / 100, radius2=rad / 100, depth=(y1 - y0) / 100)
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    o = C.link(bpy.data.objects.new(name, me))
+    wx, wy = P(x, (y0 + y1) / 2)
+    o.location = (wx, wy, z); o.rotation_euler = (math.radians(90), 0, 0)
+    o.data.materials.append(m)
+    return o
+
+
+TUBEZ = navz + 0.008 + 0.09
+NEON = C.mat('neon', hexc('#ff6a14'), 0.4, emit=hexc('#ff5408'), estr=6.0)
+NEOFF = C.mat('neoff', hexc('#2a1a12'), 0.5)
+tube_y('lvcath', 64, 552, 916, 2.2, TUBEZ - 0.02, NEON if (DOWN if APP else True) else NEOFF, segs=16)
+if not APP:
+    pass
+tube_y('lvglass', 64, 548, 920, 9.5, TUBEZ, C.mat('lvglass', hexc('#d8e4e0'), 0.04, trans=1.0, ior=1.5, spec=0.6, coat=1.0))
+for yc in (544, 924):
+    tube_y('lvcap', 64, yc - 7, yc + 7, 10.5, TUBEZ, C.CHROME)
+    tube_y('lvcapr', 64, yc - 1.2, yc + 1.2, 11.2, TUBEZ, C.STEEL)
+for j in range(10):   # a printed scale beside the tube
+    yy = 556 + j * 40
+    C.rbox('lvtk', 52, yy, 55, yy + 1.2, navz + 0.008, navz + 0.0095, 0, 0, C.INKS)
 C.text('LEVEL', 64, 962, 10, MI, INKS, navz + 0.001, align='CENTER')
 k, zt = C.key('gear', 26, 984, 102, 1052, 20, APP and DOWN, z=navz)
 C.icon('GEAR', 64, 1018, 2.2, INK, zt)
@@ -227,9 +243,9 @@ C.text('TRIVISION · 24', TX0 + 2, TY1 + 0, 8, MI, C.GREY, BZ + 0.001) if False 
 
 # lyrics display: several lines like a teleprompter — the sung one big and lit, the rest fading away
 LX0, LY0, LX1, LY1 = 610, 190, 1370, 634
-lz = bwell('ly', LX0, LY0, LX1, LY1, 22, 0.08, C.mat('lywell', hexc(T['well']), 0.85, bump=(900, 0.04)))
+lz = bwell('ly', LX0, LY0, LX1, LY1, 50 if APP else 22, 0.08, C.mat('lywell', hexc(T['well']), 0.85, bump=(900, 0.04)))
 LZ = lz + 0.001
-if APP:
+if False:
     # the lyrics display is a picture tube like the chat monitor: a bulged glossy face rising out of the well,
     # held by a dark rubber gasket — so it stands proud instead of sitting at the bottom of a hole
     TUBE = C.mat('lytube', hexc('#0b0e0c'), 0.24, coat=0.35, spec=0.35, emit=hexc('#0c140e'), estr=0.5)
@@ -277,10 +293,13 @@ if APP:
     rf.light_linking.receiver_collection = rc
     # a raised monitor bezel around the tube, like the chat monitor's housing: rounded, proud of the bay, its edges
     # catch the rim light; a dark rubber gasket between bezel and tube
-    BZL = C.plastic(C.mat('lybezel', hexc('#2a2c31') if DARK else hexc('#e2ded3'), 0.55, coat=0.1, spec=0.35), 0.1, 0.09, 110)
-    bz = C.ring('ly_bezel', LX0 + 14, LY0 + 14, LX1 - 14, LY1 - 14, 18, 14, lz, BZ + 0.035, BZL)
-    bvm = bz.modifiers.new('round', 'BEVEL'); bvm.width = 0.06; bvm.segments = 8; bvm.limit_method = 'ANGLE'; bvm.angle_limit = math.radians(40); bvm.harden_normals = True
-    C.ring('ly_lip', LX0 + 13, LY0 + 13, LX1 - 13, LY1 - 13, 19, 3, lz, lz + 0.075, C.BEZEL)
+if APP:
+    # v0.5.11: the monitor bezel, one moulded part with concentric corners: outer radius 50 (= the bay's opening, no
+    # seam), opening 13 px in with radius 37 — the CSS glass sits exactly in it (inset 13, radius 37), so nothing peeks
+    BZL = C.plastic(C.mat('lybezel', hexc('#25272b') if DARK else hexc('#e2ded3'), 0.5, coat=0.12, spec=0.4), 0.1, 0.06, 140)
+    bz = C.ring('ly_bezel', LX0 + 13, LY0 + 13, LX1 - 13, LY1 - 13, 37, 13, lz, BZ + 0.035, BZL)
+    bvm = bz.modifiers.new('round', 'BEVEL'); bvm.width = 0.05; bvm.segments = 10; bvm.profile = 0.6
+    bvm.limit_method = 'ANGLE'; bvm.angle_limit = math.radians(40); bvm.harden_normals = True
 C.cyl('lyd', LX0 + 24, LY0 + 26, 3.5, lz, lz + 0.004, C.LEDG)
 C.text('KICK BACK', LX0 + 38, LY0 + 32, 16, MI, C.WHITE, LZ)
 C.text('Kenshi Yonezu', LX0 + 146, LY0 + 32, 16, IN, C.GREY, LZ)
@@ -312,28 +331,135 @@ for j in range(14):
 
 # ───────────────────────────── deck: the big LCD under glass
 LZ0 = -0.09
-C.rbox('lcdframe', 128, 672, 1392, 834, LZ0, LZ0 + 0.02, 22, 1.5, C.LCDFRAME)
-C.rbox('lcd', 133, 677, 1387, 829, LZ0, LZ0 + 0.024, 18, 0, C.LCD)
+C.rbox('lcdframe', 590, 672, 1392, 834, LZ0, LZ0 + 0.02, 22, 1.5, C.LCDFRAME)
+C.rbox('lcd', 595, 677, 1387, 829, LZ0, LZ0 + 0.024, 18, 0, C.LCD)
 LT = LZ0 + 0.0245
-C.icon('NOTE', 164, 700, 1.6, C.LCDINK, LT)
-C.text('KICK BACK · Kenshi Yonezu', 182, 707, 20, DOT, C.LCDINK, LT)
-C.text('8', 1218, 716, 46, VT, C.LCDGHOST, LT)
-C.text('1:42', 1238, 716, 46, VT, C.LCDINK, LT)
-C.text('/ 3:13', 1368, 716, 22, VT, C.LCDGHOST, LT, align='RIGHT')
-random.seed(7)
-n = 180
-for i in range(n):
-    x0 = 160 + i * (1200 / n)
-    hg = min(8 + abs(math.sin(i * .43) * 30 + math.sin(i * .13) * 16 + random.random() * 8), 54)
-    C.rbox('wv', x0, 754 - hg / 2, x0 + 3.8, 754 + hg / 2, LT - 0.001, LT + 0.0015, 0, 0, C.LCDINK if i < 96 else C.LCDGHOST)
-C.rbox('head', 160 + 96 * (1200 / n), 724, 163 + 96 * (1200 / n), 786, LT - 0.001, LT + 0.002, 0, 0, C.LCDINK)
-C.rbox('lline', 160, 794, 1360, 795, LT - 0.001, LT + 0.0012, 0, 0, C.LCDGHOST)
-C.text('UZ o   ROM *   JP o        J-POP · 172 BPM · ENERGIYA 92%', 162, 818, 22, VT, C.LCDINK, LT)
-C.text('ON AIR *', 1360, 818, 22, VT, C.LCDINK, LT, align='RIGHT')
-C.rbox('glass', 131, 675, 1389, 831, LZ0 + 0.05, LZ0 + 0.065, 20, 1, C.GLASS)
+if not APP:   # the app draws the LCD live; this is only for the full preview
+    C.icon('NOTE', 626, 700, 1.6, C.LCDINK, LT)
+    C.text('KICK BACK · Kenshi Yonezu', 644, 707, 20, DOT, C.LCDINK, LT)
+    C.text('8', 1218, 716, 46, VT, C.LCDGHOST, LT)
+    C.text('1:42', 1238, 716, 46, VT, C.LCDINK, LT)
+    C.text('/ 3:13', 1368, 716, 22, VT, C.LCDGHOST, LT, align='RIGHT')
+    random.seed(7)
+    n = 180
+    for i in range(n):
+        x0 = 622 + i * (740 / n)
+        hg = min(8 + abs(math.sin(i * .43) * 30 + math.sin(i * .13) * 16 + random.random() * 8), 54)
+        C.rbox('wv', x0, 754 - hg / 2, x0 + 3.8, 754 + hg / 2, LT - 0.001, LT + 0.0015, 0, 0, C.LCDINK if i < 96 else C.LCDGHOST)
+    C.rbox('head', 622 + 96 * (740 / n), 724, 625 + 96 * (740 / n), 786, LT - 0.001, LT + 0.002, 0, 0, C.LCDINK)
+    C.rbox('lline', 622, 794, 1360, 795, LT - 0.001, LT + 0.0012, 0, 0, C.LCDGHOST)
+    C.text('J-POP · 172 BPM · ENERGIYA 92%', 624, 818, 22, VT, C.LCDINK, LT)
+    C.text('ON AIR *', 1360, 818, 22, VT, C.LCDINK, LT, align='RIGHT')
+C.rbox('glass', 593, 675, 1389, 831, LZ0 + 0.05, LZ0 + 0.065, 20, 1, C.GLASS)
+
+# VU meters: a dark anodised plate with four hex socket bolts, two round analogue meters with a moulded bezel, a black
+# rubber gasket, a warm cream dial lit from below by a 2700 K bulb, a printed scale with the red zone after 0 dB.
+# The needles and their pivot caps are live in the app (they swing with the signal); the glass is in --glassov.
+VUPL = C.plastic(C.mat('vuplate', hexc('#1f2125') if DARK else hexc('#2c2f34'), 0.38, coat=0.25, spec=0.45), 0.08, 0.05, 160)   # dark anodised, satin
+C.rbox('vuplate', 128, 672, 580, 834, LZ0, LZ0 + 0.02, 22, 1.5, VUPL)
+for bx_, by_ in ((146, 690), (562, 690), (146, 816), (562, 816)):
+    C.cyl('vubolt', bx_, by_, 7.5, LZ0 + 0.02, LZ0 + 0.04, C.CHROME, bev=1.5)
+    C.cyl('vuhex', bx_, by_, 3.4, LZ0 + 0.035, LZ0 + 0.0405, C.BEZEL, segs=6)
+VUBZ = C.plastic(C.mat('vubez', hexc('#1d1f23'), 0.45, coat=0.15, spec=0.4), 0.1, 0.06, 140)
+VUFACE = C.mat('vuface', hexc('#ecc98f'), 0.62, emit=hexc('#ff962e'), estr=1.0)
+nt_ = VUFACE.node_tree; bs_ = nt_.nodes['Principled BSDF']
+tc_ = nt_.nodes.new('ShaderNodeTexCoord'); sx_ = nt_.nodes.new('ShaderNodeSeparateXYZ')
+mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = -0.62; mr_.inputs['From Max'].default_value = 0.62
+mr_.inputs['To Min'].default_value = 1.0; mr_.inputs['To Max'].default_value = 0.2   # the bulb sits under the scale: warm at the bottom
+nt_.links.new(tc_.outputs['Object'], sx_.inputs['Vector']); nt_.links.new(sx_.outputs['Y'], mr_.inputs['Value'])
+nt_.links.new(mr_.outputs['Result'], bs_.inputs['Emission Strength'])
+VUINK = C.mat('vuink', hexc('#2b2520'), 0.6)
+VURED = C.mat('vured', hexc('#c7362a'), 0.55)
+VUDB = {-20: -48, -10: -28, -7: -17, -5: -8, -3: 3, -2: 10, -1: 17, 0: 25, 1: 32, 2: 40, 3: 48}
+VZ = LZ0 + 0.02
+
+
+def vu_tick(cx, py, ang, r0, r1, w, m, z):
+    bm = bmesh.new(); bmesh.ops.create_cube(bm, size=1); me = bpy.data.meshes.new('vtk'); bm.to_mesh(me); bm.free()
+    t = C.link(bpy.data.objects.new('vtk', me)); t.data.materials.append(m)
+    rm = (r0 + r1) / 2; th = math.radians(ang)
+    wx, wy = P(cx + rm * math.sin(th), py - rm * math.cos(th))
+    t.scale = (w / 100, (r1 - r0) / 100, 0.002); t.location = (wx, wy, z); t.rotation_euler = (0, 0, -th)
+    return t
+
+
+for cx in (240, 468):
+    cy = 753
+    ring_ = C.cyl('vubz', cx, cy, 75, VZ, VZ + 0.12, VUBZ, bev=4.5, segs=128)
+    bm = bmesh.new()   # the opening flares outward: a conical wall the dial's warm light falls on
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=128, radius1=0.62, radius2=0.70, depth=0.16)
+    me = bpy.data.meshes.new('vucone'); bm.to_mesh(me); bm.free()
+    cone_ = C.link(bpy.data.objects.new('vucone', me)); cone_.location = (*P(cx, cy), VZ + 0.05)
+    C.cut(ring_, cone_)
+    lip_ = C.cyl('vulip', cx, cy, 70.5, VZ + 0.118, VZ + 0.128, C.CHROME, bev=0.4, segs=128)   # a polished chrome lip at the glass
+    C.cut(lip_, C.cyl('vulipc', cx, cy, 68.2, VZ - 0.1, VZ + 0.3, C.CHROME, segs=128))
+    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 2.2; bulb.color = (1.0, 0.62, 0.28); bulb.shadow_soft_size = 0.12
+    bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, cy + 46), VZ + 0.06)
+    rub = C.cyl('vurub', cx, cy, 64, VZ, VZ + 0.03, C.mat('rubber', hexc('#0c0c0d'), 0.75), segs=128)
+    C.cut(rub, C.cyl('vurubc', cx, cy, 60.5, VZ - 0.1, VZ + 0.2, C.BEZEL, segs=128))
+    fz = VZ + 0.012
+    C.cyl('vuface', cx, cy, 61, VZ, fz, VUFACE, segs=128)
+    py = cy + 34       # the needle pivot, low on the dial
+    zt = fz + 0.0005
+    for ang in range(-48, 49, 2):          # the scale's base arc
+        vu_tick(cx, py, ang, 57.5, 58.6, 2.1, VURED if ang >= 25 else VUINK, zt)
+    for a_ in range(25, 49, 2):            # the red band
+        vu_tick(cx, py, a_, 58.6, 62.0, 2.2, VURED, zt)
+    for db, ang in VUDB.items():
+        major = db in (-20, -10, -7, -5, -3, 0, 3)
+        vu_tick(cx, py, ang, 58.6, 65 if major else 62.5, 1.1, VURED if db >= 0 else VUINK, zt)
+        if major:
+            th = math.radians(ang)
+            C.text(('+' if db > 0 else '') + str(db), cx + 72 * math.sin(th), py - 72 * math.cos(th) + 3, 8, BAR, VURED if db >= 0 else VUINK, zt, align='CENTER', rot=-ang)
+    C.text('VU', cx, py - 26, 17, BAR, VUINK, zt, align='CENTER', spacing=1.1)
+    for k_ in range(11):                   # the percent scale under the dB arc
+        ang = -48 + k_ * 9.6
+        vu_tick(cx, py, ang, 50.5, 53.5 if k_ % 5 else 55, 0.9, VUINK, zt)
+    for k_, lab in ((0, '0'), (5, '50'), (10, '100')):
+        th = math.radians(-48 + k_ * 9.6)
+        C.text(lab, cx + 45 * math.sin(th), py - 45 * math.cos(th) + 3, 6, BAR, VUINK, zt, align='CENTER', rot=-(-48 + k_ * 9.6))
+    C.text('KR-01', cx, py - 12, 6, BAR, VUINK, zt, align='CENTER', spacing=1.3)
+    C.text('−', cx - 44, py - 12, 10, BAR, VUINK, zt, align='CENTER')
+    C.text('+', cx + 44, py - 12, 10, BAR, VURED, zt, align='CENTER')
+    # the movement's shroud: a dark moulded half-disc over the bottom of the dial, the needle rises out of it
+    shr = C.cyl('vushroud', cx, cy + 60, 26, fz, fz + 0.03, C.mat('vushr', hexc('#17181b'), 0.4, coat=0.3), bev=1.2, segs=96)
+    C.cut(shr, C.rbox('vushrc', cx - 80, cy + 63, cx + 80, cy + 140, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
+    if not APP:
+        vu_tick(cx, py, -12, 14, 66, 1.6, C.DARKINK, zt + 0.01)
 
 # ───────────────────────────── deck controls
-for nm, cx, ic in (('play', 186, 'PLAY'), ('heart', 820, 'HEART')):
+# toggle: a knurled black-anodised flange, a dark spun plate engraved IJRO / PAUZA, a keyed chrome washer, a hex nut,
+# a threaded bushing and a thick tapered chrome lever with a ball tip
+C.cyl('tgw', 186, 912, 51, -0.06, 0.0005, C.TRAY)
+TGK = C.knurl_bump(C.mat('tgknurl', hexc('#1c1e22'), 0.36, coat=0.35, spec=0.5), 380, 0.35)
+C.knurl_z('tgflange', 186, 912, 47, 45.6, -0.06, 0.04, TGK, n=200)
+C.cyl('tgplate', 186, 912, 44.5, 0.03, 0.05, C.mat('tgplate', hexc('#17191c'), 0.3, coat=0.5, spec=0.5, bump=(2200, 0.02)), bev=1.2, segs=128)
+C.text('IJRO', 186, 878, 8, BAR, C.mat('tgeng', hexc('#c9ccd2'), 0.5), 0.0505, align='CENTER', spacing=1.35)
+C.text('PAUZA', 186, 954, 8, BAR, C.mat('tgeng2', hexc('#c9ccd2'), 0.5), 0.0505, align='CENTER', spacing=1.35)
+wsh = C.cyl('tgwash', 186, 912, 23, 0.05, 0.06, C.CHROME, bev=0.6, segs=96)
+C.rbox('tgtab', 182, 884, 190, 892, 0.05, 0.06, 1, 0.3, C.CHROME)
+C.cyl('tgnut', 186, 912, 19, 0.06, 0.105, C.CHROME, bev=2.0, segs=6)
+for k_ in range(4):   # threads on the bushing
+    C.cyl('tgthr', 186, 912, 11.2 if k_ % 2 == 0 else 10.3, 0.105 + k_ * 0.008, 0.113 + k_ * 0.008, C.CHROME, bev=0.3, segs=64)
+TG_UP = APP and DOWN
+th_ = math.radians(-46 if TG_UP else 46)    # tilt about X: toward the top of the screen or the bottom
+bm = bmesh.new()
+bmesh.ops.create_cone(bm, cap_ends=True, segments=48, radius1=0.082, radius2=0.056, depth=0.72)
+for v in bm.verts:
+    v.co.z += 0.36
+me = bpy.data.meshes.new('tglever'); bm.to_mesh(me); bm.free()
+for p_ in me.polygons:
+    p_.use_smooth = True
+lv = C.link(bpy.data.objects.new('tglever', me)); lv.data.materials.append(C.CHROME)
+bx0, by0 = P(186, 912); lv.location = (bx0, by0, 0.135); lv.rotation_euler = (th_, 0, 0)
+bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=32, radius=0.112)
+me = bpy.data.meshes.new('tgball'); bm.to_mesh(me); bm.free()
+for p_ in me.polygons:
+    p_.use_smooth = True
+bl = C.link(bpy.data.objects.new('tgball', me)); bl.data.materials.append(C.CHROME)
+bl.location = (bx0, by0 - 0.74 * math.sin(th_), 0.135 + 0.74 * math.cos(th_))
+C.text('IJRO', 186, 866, 9, BAR, INKS, -0.06 + 0.001, align='CENTER', spacing=1.2) if False else None
+for nm, cx, ic in (('heart', 820, 'HEART'),):
     C.cyl(nm + 'w', cx, 912, 51, -0.06, 0.0005, C.TRAY)
     pd = APP and DOWN
     top = 0.06 if pd else 0.12
@@ -797,8 +923,24 @@ if '--glassov' in argv:
     strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
     strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
     pane('g_tv', 156, 196, 592, 628, 14, 0.05)
+    RAIL = C.mat('rail', hexc('#1d1f23'), 0.34, coat=0.4, spec=0.5, bump=(2400, 0.02))
+    GEARM = C.mat('gearm', hexc('#34373c'), 0.3, metal=1.0)
+    for (ry0, ry1) in ((190, 208), (616, 634)):
+        C.rbox('rail', 150, ry0, 598, ry1, 0.3, 0.36, 4, 1.2, RAIL)
+        yc_ = (ry0 + ry1) / 2
+        for gx_ in (214, 534):
+            C.cyl('gear', gx_, yc_, 13, 0.36, 0.38, GEARM, bev=0.6, segs=24)
+            for k_ in range(12):
+                a_ = k_ * math.pi / 6
+                C.rbox('gt', gx_ + 13 * math.cos(a_) - 1.6, yc_ + 13 * math.sin(a_) - 1.6, gx_ + 13 * math.cos(a_) + 1.6, yc_ + 13 * math.sin(a_) + 1.6, 0.36, 0.38, 0.5, 0, GEARM)
+            C.cyl('gearhub', gx_, yc_, 5, 0.38, 0.395, C.CHROME, bev=0.6)
+        for sx_ in (166, 374, 582):
+            C.cyl('rscrew', sx_, yc_, 4.5, 0.36, 0.375, C.CHROME, bev=1.0)
+            C.rbox('rslot', sx_ - 3.2, yc_ - 0.6, sx_ + 3.2, yc_ + 0.6, 0.374, 0.376, 0, 0, C.BEZEL)
+    pane('g_vu1', 177, 690, 303, 816, 63, 0.06)
+    pane('g_vu2', 405, 690, 531, 816, 63, 0.06)
     pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)
-    pane('g_lcd', 133, 677, 1387, 829, 18, 0.035)
+    pane('g_lcd', 595, 677, 1387, 829, 18, 0.035)
     pane('g_drum', 256, 866, 750, 958, 18, 0.028)
     pane('g_chat', 1436, 602, 1878, 994, 32, 0.04)
     sc.render.film_transparent = True

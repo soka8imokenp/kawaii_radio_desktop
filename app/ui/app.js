@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.5.10';
+const VERSION = '0.6.0';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -86,7 +86,7 @@ const navKeys = NAV.map(([n, id], k) => Object.assign(ctl('nav' + k, 20, 22 + k 
 }), { _id: id }));
 on(navKeys[0], true);
 const gearKey = ctl('gear', 20, 978, 108, 1058, { title: 'Sozlamalar', click: () => (screen === 5 ? openScreen(0) : openSettings()) });
-const meter = Array.from({ length: 18 }, (_, j) => led('m' + j, 64, 548 + j * 22, 10));
+const lvlTube = ctl('lvl', 46, 532, 82, 936, { cls: 'noclick tube' });   // IN-9 bargraph tube: the neon column is the lit render, clipped to the level
 
 // band selector (RADIO / O'Z TANLOVIM)
 const slider = ctl('slider', 836, 34, 1368, 102, { title: "Radio / O'z tanlovim", click: () => toggleMode() });
@@ -99,7 +99,7 @@ const stKeys = STATIONS.map(([key, freq], i) => ctl('st' + i, 152 + i * 216, 112
 
 
 // deck
-const playKey = ctl('play', 126, 852, 246, 972, { cls: 'round', title: 'Ijro / pauza', click: () => togglePlay() });
+const playKey = ctl('play', 130, 836, 242, 992, { title: 'Ijro / pauza', click: () => togglePlay() });   // a toggle: lever up = playing
 const heartKey = ctl('heart', 769, 861, 871, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
 const tavsifKey = ctl('tavsif', 128, 982, 498, 1058, { title: 'Tavsif', click: () => printReceipt() });
 const saveKey = ctl('saqlash', 508, 982, 878, 1058, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
@@ -495,6 +495,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /* ───────────── the big LCD: title, time, waveform, footer */
 const lcd = $('#lcd').getContext('2d');
+const LW = 792, WV = LW - 54;   // the LCD is narrower since the VU meters took the left of the deck; the waveform runs 27..LW-27
 // O'Z TANLOVIM: the waveform is the timeline — click or drag on it to seek, hovering shows the time under the cursor.
 // (Live radio can't be seeked: everyone hears the same second.)
 const trackDur = () => (cur && cur.track && cur.track.duration) || (isFinite(audio.duration) ? audio.duration : 0);
@@ -502,8 +503,8 @@ const canSeek = () => S.mode === 'pick' && trackDur() > 0;
 let lcdHover = null, lcdScrub = false;
 function lcdFrac(e) {
   const r = $('#lcd').getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width * 1254;          // in canvas units; the waveform runs 27..1227
-  return Math.max(0, Math.min(1, (x - 27) / 1200));
+  const x = (e.clientX - r.left) / r.width * LW;          // in canvas units
+  return Math.max(0, Math.min(1, (x - 27) / WV));
 }
 function lcdSeek(e) { audio.currentTime = lcdFrac(e) * trackDur(); }
 $('#lcd').addEventListener('mousedown', (e) => {
@@ -528,38 +529,38 @@ function waveOf(id) {
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 let drawLcd = function drawLcd() {
-  const c = lcd, W = 1254, H = 152;
+  const c = lcd, W = LW, H = 152;
   c.clearRect(0, 0, W * 4, H * 4);
   const ink = '#232b1b', ghost = 'rgba(35,43,27,.18)';
   c.fillStyle = ink;
   const t = cur ? cur.track : null;
   c.font = '20px Dot';
-  c.fillText(t ? `♫ ${t.title} · ${t.artist}` : '♫ KAWAII RADIO · ulanmoqda…', 28, 34);
+  c.fillText(t ? `♫ ${t.title} · ${t.artist}` : '♫ KAWAII RADIO · ulanmoqda…', 28, 34, LW - 250);
   const pos = audio.currentTime || 0, dur = t ? (t.duration || trackDur()) : 0;
   c.font = '46px VT'; c.textAlign = 'right';
-  c.fillStyle = ghost; c.fillText('8:88', 1166, 44);
-  c.fillStyle = ink; c.fillText(fmt(pos), 1166, 44);
-  c.font = '22px VT'; c.fillStyle = 'rgba(35,43,27,.45)'; c.fillText('/ ' + fmt(dur), 1234, 44);
+  c.fillStyle = ghost; c.fillText('8:88', LW - 88, 44);
+  c.fillStyle = ink; c.fillText(fmt(pos), LW - 88, 44);
+  c.font = '22px VT'; c.fillStyle = 'rgba(35,43,27,.45)'; c.fillText('/ ' + fmt(dur), LW - 20, 44);
   c.textAlign = 'left';
   const frac = dur ? Math.min(1, pos / dur) : 0;
   const n = wave.length || 180;
   for (let i = 0; i < n; i++) {
-    const x = 27 + i * (1200 / n), h = wave[i] || 6;
+    const x = 27 + i * (WV / n), h = wave[i] || 6;
     c.fillStyle = i / n < frac ? ink : ghost;
-    c.fillRect(x, 77 - h / 2, 3.8, h);
+    c.fillRect(x, 77 - h / 2, WV / n * 0.62, h);
   }
-  c.fillStyle = ink; c.fillRect(27 + frac * 1200, 47, 3, 62);
-  c.fillStyle = 'rgba(35,43,27,.18)'; c.fillRect(27, 117, 1200, 1);
+  c.fillStyle = ink; c.fillRect(27 + frac * WV, 47, 3, 62);
+  c.fillStyle = 'rgba(35,43,27,.18)'; c.fillRect(27, 117, WV, 1);
   c.font = '22px VT'; c.fillStyle = ink;
   const foot = t ? `${S.mode === 'pick' ? "O'Z TANLOVIM" : stationName()} · ${t.category.toUpperCase()} · ${t.bpm || '—'} BPM · ENERGIYA ${t.energy || 0}%` : '';
   c.fillText(foot, 29, 141);
   // seek preview: a ghost head and the time it would jump to
   if (lcdHover != null && dur) {
-    const hx = 27 + lcdHover * 1200;
+    const hx = 27 + lcdHover * WV;
     c.fillStyle = 'rgba(35,43,27,.45)'; c.fillRect(hx - 1, 50, 2, 56);
     const label = fmt(lcdHover * dur);
     c.font = '22px VT'; const w = c.measureText(label).width + 14;
-    const bx = Math.max(27, Math.min(1227 - w, hx - w / 2));
+    const bx = Math.max(27, Math.min(27 + WV - w, hx - w / 2));
     c.fillStyle = ink; c.fillRect(bx, 118, w, 26);
     c.fillStyle = '#c9d4a0'; c.fillText(label, bx + 7, 138);
   }
@@ -688,7 +689,7 @@ addEventListener('mousemove', (e) => { if (dragY == null) return; setVolume(S.vo
 setVolume(S.volume);
 
 /* ───────────── level meter: the real signal through an analyser */
-let analyser, abuf;
+let analyser, abuf, vuA = null;
 function ensureAnalyser() {
   if (analyser) return;
   try {
@@ -696,6 +697,10 @@ function ensureAnalyser() {
     const src = actx.createMediaElementSource(audio);
     analyser = actx.createAnalyser(); analyser.fftSize = 1024;
     src.connect(analyser); analyser.connect(actx.destination);
+    // stereo for the VU meters: left and right through their own analysers
+    const sp = actx.createChannelSplitter(2);
+    src.connect(sp);
+    vuA = [0, 1].map((ch) => { const a = actx.createAnalyser(); a.fftSize = 1024; sp.connect(a, ch); return a; });
     abuf = new Float32Array(analyser.fftSize);
     if (actx.state === 'suspended') actx.resume();
   } catch (e) { console.warn('analyser', e); }
@@ -709,14 +714,47 @@ let drawMeter = function drawMeter() {
     v = Math.min(1, Math.sqrt(s / abuf.length) * 3.2);
   }
   level = v > level ? v : level * 0.9 + v * 0.1;
-  // analogue LEDs: the top one glows partly, each fades with a short afterglow instead of snapping off
-  const x = level * 18;
-  meter.forEach((m, j) => {
-    const want = Math.max(0, Math.min(1, x - (17 - j)));
-    const lit = m._lit || (m._lit = m.querySelector('.lit'));
-    m._b = want > (m._b || 0) ? want : (m._b || 0) * 0.82;
-    if (lit) { lit.style.transition = 'none'; lit.style.opacity = m._b < 0.02 ? 0 : (0.25 + 0.75 * m._b).toFixed(3); }
-    m.classList.toggle('on', m._b > 0.35);
+  setTube(level);
+  drawVU();
+}
+// the neon column rises from the bottom (the cathode runs 552..916 inside the 532..936 hit box), with a faint shimmer
+const tubeLit = lvlTube.querySelector('.lit');
+let tubeH = 0;
+function setTube(v) {
+  tubeH = v > tubeH ? v : tubeH * 0.86 + v * 0.14;
+  const top = 552 + (1 - tubeH) * 364 - 532;          // px from the hit box top
+  const flick = tubeH > 0.01 ? 0.94 + Math.random() * 0.06 : 0;
+  tubeLit.style.transition = 'none';
+  tubeLit.style.opacity = flick.toFixed(3);
+  tubeLit.style.clipPath = `inset(${Math.max(0, top - 6).toFixed(1)}px 0 0 0 round 6px 6px 0 0)`;
+  lvlTube.classList.toggle('on', tubeH > 0.01);
+}
+// VU meters: real ballistics — about 300 ms to rise, a little overshoot, they rest left of -20 when silent
+const VU_DB = [[-20, -48], [-10, -28], [-7, -17], [-5, -8], [-3, 3], [-2, 10], [-1, 17], [0, 25], [1, 32], [2, 40], [3, 48]];
+const vuAng = (db) => {
+  if (db <= -20) return Math.max(-54, -48 - (-20 - db) * 0.4);
+  for (let i = 1; i < VU_DB.length; i++) if (db <= VU_DB[i][0]) {
+    const [d0, a0] = VU_DB[i - 1], [d1, a1] = VU_DB[i];
+    return a0 + (a1 - a0) * (db - d0) / (d1 - d0);
+  }
+  return 50;
+};
+const vuEl = [$('#vuL'), $('#vuR')], vuS = [{ a: -54, v: 0 }, { a: -54, v: 0 }];
+let vbuf;
+function drawVU() {
+  vuEl.forEach((el, ch) => {
+    let want = -54;
+    if (vuA && S.playing) {
+      vbuf = vbuf || new Float32Array(vuA[ch].fftSize);
+      vuA[ch].getFloatTimeDomainData(vbuf);
+      let s2 = 0; for (let i = 0; i < vbuf.length; i++) s2 += vbuf[i] * vbuf[i];
+      const rms = Math.sqrt(s2 / vbuf.length) * (S.volume == null ? 1 : 1);
+      want = vuAng(20 * Math.log10(Math.max(1e-5, rms)) + 14);
+    }
+    // a damped spring: the needle has mass
+    const st = vuS[ch];
+    st.v += (want - st.a) * 0.045; st.v *= 0.78; st.a += st.v;
+    el.style.transform = `rotate(${st.a.toFixed(2)}deg)`;
   });
 }
 
@@ -1204,7 +1242,7 @@ $('#pList').addEventListener('click', (e) => {
 /* ───────────── polish pass: sharp canvases, window keys, shutter transitions */
 function sharpen() {
   const k = Math.min(3, (parseFloat(stage.dataset.scale) || 1) * (devicePixelRatio || 1));
-  for (const [cv, w, h] of [[$('#lcd'), 1254, 152], [$('#drum'), 494, 92]]) {
+  for (const [cv, w, h] of [[$('#lcd'), LW, 152], [$('#drum'), 494, 92]]) {
     const W = Math.round(w * k), H = Math.round(h * k);
     if (cv.width !== W) { cv.width = W; cv.height = H; cv.getContext('2d').setTransform(k, 0, 0, k, 0, 0); }
   }
@@ -1313,7 +1351,6 @@ document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
 });
 
 // LED colours: every lens blooms in its own light
-meter.forEach((m, j) => m.style.setProperty('--g', j < 2 ? 'rgba(255,70,40,.7)' : j < 5 ? 'rgba(255,170,64,.65)' : 'rgba(70,230,120,.6)'));
 ring.forEach((r, i) => r.style.setProperty('--g', i >= 18 ? 'rgba(255,70,40,.7)' : 'rgba(255,175,70,.6)'));
 printerLed.style.setProperty('--g', 'rgba(80,240,160,.75)');
 
@@ -1406,7 +1443,7 @@ drawLcd = () => {
     c.font = '46px VT'; c.fillText('KR-01 DESK', 28, 70);
     c.font = '22px VT'; c.fillText('KAWAII RADIO · ISHGA TUSHMOQDA', 30, 104);
     const n = 40;
-    for (let i = 0; i < n; i++) { c.fillStyle = i / n < k ? '#232b1b' : 'rgba(35,43,27,.16)'; c.fillRect(30 + i * 30, 120, 24, 10); }
+    for (let i = 0; i < n; i++) { c.fillStyle = i / n < k ? '#232b1b' : 'rgba(35,43,27,.16)'; c.fillRect(30 + i * (LW - 60) / n, 120, (LW - 60) / n - 5, 10); }
     return;
   }
   _drawLcd();
@@ -1416,7 +1453,7 @@ drawMeter = () => {
   const now = performance.now();
   if (now < bootUntil) {
     const k = 1 - (bootUntil - now) / 1700, n = Math.round(Math.sin(k * Math.PI) * 18);
-    meter.forEach((m, j) => on(m, 17 - j < n));
+    setTube(n / 18); drawVU();
     ring.forEach((r, i) => on(r, i < Math.round(Math.sin(k * Math.PI) * 21)));
     return;
   }
@@ -1472,10 +1509,10 @@ drawLcd = () => {
     const k = (retuneUntil - now) / 450;
     for (let i = 0; i < 260 * k; i++) {
       c.fillStyle = `rgba(35,43,27,${(Math.random() * 0.5).toFixed(2)})`;
-      c.fillRect(Math.random() * 1254, Math.random() * 152, 2 + Math.random() * 10, 2);
+      c.fillRect(Math.random() * LW, Math.random() * 152, 2 + Math.random() * 10, 2);
     }
     c.fillStyle = `rgba(207,216,170,${(0.5 * k).toFixed(2)})`;
-    c.fillRect(0, (now / 3) % 152, 1254, 6);
+    c.fillRect(0, (now / 3) % 152, LW, 6);
   }
 };
 const _onTrack2 = onTrack;
