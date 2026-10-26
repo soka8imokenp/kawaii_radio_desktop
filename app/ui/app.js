@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.1';
+const VERSION = '0.6.2';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -86,7 +86,7 @@ const navKeys = NAV.map(([n, id], k) => Object.assign(ctl('nav' + k, 20, 22 + k 
 }), { _id: id }));
 on(navKeys[0], true);
 const gearKey = ctl('gear', 20, 978, 108, 1058, { title: 'Sozlamalar', click: () => (screen === 5 ? openScreen(0) : openSettings()) });
-const lvlTube = ctl('lvl', 46, 532, 82, 936, { cls: 'noclick tube' });   // IN-9 bargraph tube: the neon column is the lit render, clipped to the level
+const meter = Array.from({ length: 18 }, (_, j) => led('m' + j, 64, 548 + j * 22, 10));
 
 // band selector (RADIO / O'Z TANLOVIM)
 const slider = ctl('slider', 836, 34, 1368, 102, { title: "Radio / O'z tanlovim", click: () => toggleMode() });
@@ -354,15 +354,15 @@ function toggleLike() {
   toast(S.liked.has(id) ? 'SEVIMLILARGA QO\'SHILDI' : 'SEVIMLILARDAN OLINDI');
 }
 
-/* ───────────── trivision: 24 three-sided slats, a wave of 120° turns */
+/* ───────────── trivision: 15 three-sided slats (convex printed faces, a dark gap between), a wave of 120° turns */
 const tv = $('#tv');
-const NS = 24, TW = 436, SW = TW / NS, AP = SW / (2 * Math.tan(Math.PI / 3));
+const NS = 15, TW = 436, SW = TW / NS, AP = SW / (2 * Math.tan(Math.PI / 3));
 let tvStep = 0;
 const slats = [];
 for (let i = 0; i < NS; i++) {
   const s = document.createElement('div');
   s.className = 'slat';
-  s.style.transitionDelay = (i * 22) + 'ms';
+  s.style.transitionDelay = (i * 38) + 'ms';
   const faces = [0, 1, 2].map((k) => {
     const f = document.createElement('div');
     f.className = 'face';
@@ -714,20 +714,16 @@ let drawMeter = function drawMeter() {
     v = Math.min(1, Math.sqrt(s / abuf.length) * 3.2);
   }
   level = v > level ? v : level * 0.9 + v * 0.1;
-  setTube(level);
+  // analogue LEDs: the top one glows partly, each fades with a short afterglow instead of snapping off
+  const x = level * 18;
+  meter.forEach((m, j) => {
+    const want = Math.max(0, Math.min(1, x - (17 - j)));
+    const lit = m._lit || (m._lit = m.querySelector('.lit'));
+    m._b = want > (m._b || 0) ? want : (m._b || 0) * 0.82;
+    if (lit) { lit.style.transition = 'none'; lit.style.opacity = m._b < 0.02 ? 0 : (0.25 + 0.75 * m._b).toFixed(3); }
+    m.classList.toggle('on', m._b > 0.35);
+  });
   drawVU();
-}
-// the neon column rises from the bottom (the cathode runs 552..916 inside the 532..936 hit box), with a faint shimmer
-const tubeLit = lvlTube.querySelector('.lit');
-let tubeH = 0;
-function setTube(v) {
-  tubeH = v > tubeH ? v : tubeH * 0.86 + v * 0.14;
-  const top = 552 + (1 - tubeH) * 364 - 532;          // px from the hit box top
-  const flick = tubeH > 0.01 ? 0.94 + Math.random() * 0.06 : 0;
-  tubeLit.style.transition = 'none';
-  tubeLit.style.opacity = flick.toFixed(3);
-  tubeLit.style.clipPath = `inset(${Math.max(0, top - 6).toFixed(1)}px 0 0 0 round 6px 6px 0 0)`;
-  lvlTube.classList.toggle('on', tubeH > 0.01);
 }
 // VU meters: real ballistics — about 300 ms to rise, a little overshoot, they rest left of -20 when silent
 const VU_DB = [[-20, -48], [-10, -28], [-7, -17], [-5, -8], [-3, 3], [-2, 10], [-1, 17], [0, 25], [1, 32], [2, 40], [3, 48]];
@@ -1351,6 +1347,7 @@ document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
 });
 
 // LED colours: every lens blooms in its own light
+meter.forEach((m, j) => m.style.setProperty('--g', j < 2 ? 'rgba(255,70,40,.7)' : j < 5 ? 'rgba(255,170,64,.65)' : 'rgba(70,230,120,.6)'));
 ring.forEach((r, i) => r.style.setProperty('--g', i >= 18 ? 'rgba(255,70,40,.7)' : 'rgba(255,175,70,.6)'));
 printerLed.style.setProperty('--g', 'rgba(80,240,160,.75)');
 
@@ -1453,7 +1450,7 @@ drawMeter = () => {
   const now = performance.now();
   if (now < bootUntil) {
     const k = 1 - (bootUntil - now) / 1700, n = Math.round(Math.sin(k * Math.PI) * 18);
-    setTube(n / 18); drawVU();
+    meter.forEach((m, j) => on(m, 17 - j < n)); drawVU();
     ring.forEach((r, i) => on(r, i < Math.round(Math.sin(k * Math.PI) * 21)));
     return;
   }

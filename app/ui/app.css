@@ -569,3 +569,25 @@ body.full #rz { display: none; }
 #paper .ink .soft { color: #4a443e !important; font-size: 12px !important; }
 #paper .ink .sec { font: 700 12px RMono !important; letter-spacing: .12em; color: #2a2522 !important; }
 #paper .ink .bar { color: #3a3530 !important; }
+/* v0.6.2: trivision slats as real prisms — each printed face bulges a little: a bright left rim, a soft specular
+   strip down the middle, falling into shadow on the right; a dark gap between slats (contact shadow) */
+#tv .face { inset: 0 1.3px !important; }
+#tv .face::after { background:
+    linear-gradient(90deg, rgba(0,0,0,.42) 0, rgba(255,255,255,.16) 5%, rgba(255,255,255,.05) 16%,
+      rgba(255,255,255,.13) 36%, rgba(255,255,255,.02) 50%, rgba(0,0,0,0) 62%, rgba(0,0,0,.18) 86%, rgba(0,0,0,.45) 100%) !important; }
+/* VU lamps: an incandescent bulb behind each dial — a warm bloom that spills onto the bezel, breathes very slightly
+   like a filament, a dusty curved glass reflection on top */
+.vulamp { position: absolute; top: 678px; width: 150px; height: 150px; border-radius: 50%; z-index: 5; pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 58%, rgba(255,160,70,.13) 0, rgba(255,130,45,.07) 34%, transparent 56%),
+    radial-gradient(circle at 50% 50%, transparent 74%, rgba(255,130,40,.20) 79%, rgba(255,120,30,.06) 86%, transparent 92%);
+  mix-blend-mode: screen; animation: filament 6.5s infinite; }
+.vulamp::after { content: ""; position: absolute; inset: 12px; border-radius: 50%;
+  background:
+    radial-gradient(ellipse 58% 30% at 36% 20%, rgba(255,255,255,.16), transparent 70%),
+    radial-gradient(circle at 50% 50%, transparent 88%, rgba(255,255,255,.18) 90.5%, transparent 93%);
+  -webkit-mask-image: linear-gradient(150deg, #000 0, rgba(0,0,0,.35) 45%, rgba(0,0,0,.08) 100%);
+  opacity: .9; mix-blend-mode: screen; }
+@keyframes filament { 0%, 100% { opacity: .92; } 17% { opacity: 1; } 31% { opacity: .9; } 46% { opacity: .97; } 63% { opacity: .88; } 80% { opacity: 1; } }
+#stage.light .vulamp { opacity: .8; }
+.vulamp::before { content: ""; position: absolute; inset: 14px; border-radius: 50%; background: var(--noise); background-size: 140px 140px; opacity: .07; mix-blend-mode: overlay; }

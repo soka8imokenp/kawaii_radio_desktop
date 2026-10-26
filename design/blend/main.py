@@ -80,37 +80,21 @@ for i, (ic, lab) in enumerate(NAV):
     C.text(lab, 64, y + 72, 11.5, BAR, INKD if (down or not DARK) else INK, zt + 0.001, align='CENTER', spacing=1.16)   # light keys need the darker ink to read
     C.cyl('lp%d' % i, 91, y + 11, 3.2, zt - 0.01, zt + 0.004, C.LEDG if down else C.LEDOFF)
     y += 104
-# LEVEL: an IN-9 style bargraph tube lying in the channel — smoked glass, a nickel cathode wire, chrome end caps.
-# --down lights the whole neon column (warm orange), the app reveals it bottom-up to the signal level.
+# a vertical level meter of real LEDs
 C.rbox('lvch', 50, 534, 78, 932, navz - 0.004, navz + 0.008, 13, 1.5, C.BEZEL)          # the channel
-
-
-def tube_y(name, x, y0, y1, rad, z, m, segs=48):
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=segs, radius1=rad / 100, radius2=rad / 100, depth=(y1 - y0) / 100)
-    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
-    for p_ in me.polygons:
-        p_.use_smooth = True
-    o = C.link(bpy.data.objects.new(name, me))
-    wx, wy = P(x, (y0 + y1) / 2)
-    o.location = (wx, wy, z); o.rotation_euler = (math.radians(90), 0, 0)
-    o.data.materials.append(m)
-    return o
-
-
-TUBEZ = navz + 0.008 + 0.09
-NEON = C.mat('neon', hexc('#ff6a14'), 0.4, emit=hexc('#ff5408'), estr=6.0)
-NEOFF = C.mat('neoff', hexc('#2a1a12'), 0.5)
-tube_y('lvcath', 64, 552, 916, 2.2, TUBEZ - 0.02, NEON if (DOWN if APP else True) else NEOFF, segs=16)
-if not APP:
-    pass
-tube_y('lvglass', 64, 548, 920, 9.5, TUBEZ, C.mat('lvglass', hexc('#d8e4e0'), 0.04, trans=1.0, ior=1.5, spec=0.6, coat=1.0))
-for yc in (544, 924):
-    tube_y('lvcap', 64, yc - 7, yc + 7, 10.5, TUBEZ, C.CHROME)
-    tube_y('lvcapr', 64, yc - 1.2, yc + 1.2, 11.2, TUBEZ, C.STEEL)
-for j in range(10):   # a printed scale beside the tube
-    yy = 556 + j * 40
-    C.rbox('lvtk', 52, yy, 55, yy + 1.2, navz + 0.008, navz + 0.0095, 0, 0, C.INKS)
+for j in range(18):
+    yy = 548 + j * 22
+    lit = DOWN if APP else j >= 9
+    if j < 2:
+        m = C.LED_HOT if lit else C.LED_DIMR
+    elif j < 5:
+        m = C.LED_ON if lit else C.LED_DIM
+    else:
+        m = C.LED_GRN if lit else C.LED_DIMG
+    C.cyl('mb%d' % j, 64, yy, 7.2, navz + 0.002, navz + 0.012, C.WELL, segs=32)
+    C.dome('md%d' % j, 64, yy, 5.4, navz + 0.012, m)
+    if j < 17:   # dark dividers so no light bleeds into the next lens
+        C.rbox('mdiv', 54, yy + 10, 74, yy + 12, navz + 0.008, navz + 0.016, 1, 0, C.BEZEL)
 C.text('LEVEL', 64, 962, 10, MI, INKS, navz + 0.001, align='CENTER')
 k, zt = C.key('gear', 26, 984, 102, 1052, 20, APP and DOWN, z=navz)
 C.icon('GEAR', 64, 1018, 2.2, INK, zt)
@@ -167,7 +151,7 @@ TV = arg('--tv', 0.0, float)          # 0 = the current cover, 1 = the next one
 TV_COVERS = ['jpop-kenshi-yonezu-kick-back-3kheep-mvdvifuv', 'jpop-yoasobi-yoru-ni-kake-ru-3dptxh-mvdsi3h0', 'kenshi-yonezu-lemon-mv84iyp8']
 TX0, TY0, TX1, TY1 = 156, 196, 592, 628
 tz = bwell('tv', TX0 - 6, TY0 - 6, TX1 + 6, TY1 + 6, 20, 0.16)
-C.rbox('tvlip', TX0 - 6, TY0 - 6, TX1 + 6, TY1 + 6, tz, tz + 0.02, 20, 2, C.ALU)
+C.rbox('tvlip', TX0 - 6, TY0 - 6, TX1 + 6, TY1 + 6, tz, tz + 0.02, 20, 2, C.plastic(C.mat('tvframe', hexc('#101113'), 0.5, coat=0.12, spec=0.35), 0.1, 0.06, 140))   # a thick black frame, like the reference
 C.rbox('tvback', TX0, TY0, TX1, TY1, tz + 0.02, tz + 0.025, 16, 0, C.WELL)
 
 
@@ -440,15 +424,17 @@ for cx in (240, 468):
 # ───────────────────────────── deck controls
 # toggle: an old industrial bat-handle switch — a black rubber boot ring, a big satin-steel hex nut on a keyed washer,
 # a thick round satin lever with a domed end (no mirror chrome: brushed, a little worn, it catches soft light)
-C.cyl('tgw', 186, 912, 51, -0.06, 0.0005, C.TRAY)
 C.cyl('tgbase', 186, 912, 46, -0.06, 0.035, C.mat('tgbase', hexc('#121315'), 0.55, coat=0.1, spec=0.35), bev=3.5, segs=128)
 RUB = C.mat('tgrub', hexc('#0a0a0b'), 0.8, spec=0.25)
 C.cyl('tgboot', 186, 912, 34, 0.035, 0.06, RUB, bev=2.5, segs=128)
-SAT = C.brushed('tgsat', hexc('#7a7d82'), 0.3, 0.42, kind='steel', aniso=0.4)
-SATD = C.brushed('tgsatd', hexc('#5a5d62'), 0.34, 0.46, kind='steel', aniso=0.3)
-C.cyl('tgwash', 186, 912, 27, 0.06, 0.07, SATD, bev=0.8, segs=96)
-C.cyl('tgnut', 186, 912, 25, 0.07, 0.125, SAT, bev=3.0, segs=6)
-C.cyl('tgbush', 186, 912, 12, 0.125, 0.15, SATD, bev=1.2, segs=64)
+# machined nickel-plated steel: fine lathe/brush lines, a little wear (a smudged roughness), crisp machined facets
+SAT = C.brushed('tgsat', hexc('#8e9196'), 0.18, 0.36, kind='steel', aniso=0.65, bump=0.14)
+SATD = C.brushed('tgsatd', hexc('#6a6d72'), 0.24, 0.42, kind='steel', aniso=0.5, bump=0.14)
+C.knurl_z('tgwash', 186, 912, 28.5, 27.6, 0.06, 0.072, C.knurl_bump(SATD, 520, 0.3), n=160)   # a toothed lock washer
+C.cyl('tgnut', 186, 912, 25, 0.072, 0.125, SAT, bev=1.0, segs=6)
+C.cyl('tgnutc', 186, 912, 20.5, 0.1245, 0.1265, SATD, bev=0.4, segs=64)   # the turned chamfer ring on the nut face
+for k_ in range(5):   # threads on the bushing
+    C.cyl('tgthr', 186, 912, 12.4 if k_ % 2 == 0 else 11.4, 0.126 + k_ * 0.006, 0.132 + k_ * 0.006, SATD, bev=0.25, segs=64)
 TG_UP = APP and DOWN
 th_ = math.radians(-44 if TG_UP else 44)    # tilt about X: toward the top of the screen or the bottom
 L_LEN = 0.66
@@ -933,22 +919,22 @@ if '--glassov' in argv:
     strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
     strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
     pane('g_tv', 156, 196, 592, 628, 14, 0.05)
-    # the trivision's housing: the cover sits INSIDE the device — a dark moulded lip overhangs its top and bottom edge
-    # (the slats' axles hide behind it); small steel clamps with screws hold the top lip, the bottom lip shows the
-    # bearing blocks of the 24 slats
-    HOUS = C.mat('tvhous', hexc('#141518'), 0.5, coat=0.15, spec=0.35, bump=(2400, 0.015))
-    C.rbox('tvlipT', 150, 190, 598, 210, 0.3, 0.37, 6, 2.0, HOUS)
-    C.rbox('tvlipB', 150, 618, 598, 634, 0.3, 0.36, 6, 2.0, HOUS)
-    CLAMP = C.brushed('tvclamp', hexc('#8a8d92'), 0.28, 0.4, kind='steel', aniso=0.4)
-    for cx_ in (232, 374, 516):
-        C.rbox('tvclamp', cx_ - 15, 191, cx_ + 15, 207, 0.37, 0.385, 2, 0.8, CLAMP)
-        for sx_ in (cx_ - 9, cx_ + 9):
-            C.cyl('tvscr', sx_, 199, 2.6, 0.385, 0.392, C.mat('tvscrm', hexc('#2a2c30'), 0.4, metal=1.0), bev=0.5)
-    BEAR = C.mat('tvbear', hexc('#26282c'), 0.4, metal=0.6)
-    for k_ in range(24):
-        x_ = 156 + (k_ + 0.5) * (436 / 24)
-        C.rbox('tvbear', x_ - 4.5, 619, x_ + 4.5, 627, 0.36, 0.372, 1.5, 0.6, BEAR)
-        C.cyl('tvaxle', x_, 623, 1.4, 0.372, 0.376, C.mat('tvax', hexc('#8a8d92'), 0.3, metal=1.0))
+    # the trivision's mechanism (it lives in the overlay, over the live cover): a black anodised retention bracket at
+    # the top centre with two slotted screws and the drive hub under it; at the bottom a shelf across the whole width
+    # (the slats' pivot pins disappear into it) with a stepped centre bracket and screws
+    BLK = C.smudge(C.mat('tvblk', hexc('#15161a'), 0.38, metal=0.6, coat=0.2), 2.5, 0.12, 0.3)
+    SCR = C.mat('tvscr', hexc('#3a3c40'), 0.32, metal=1.0)
+    def screw(x_, y_, r_, z_):
+        C.cyl('tvscr', x_, y_, r_, z_, z_ + 0.012, SCR, bev=0.6)
+        C.rbox('tvslot', x_ - r_ * 0.75, y_ - 0.55, x_ + r_ * 0.75, y_ + 0.55, z_ + 0.011, z_ + 0.0135, 0, 0, C.BEZEL)
+    C.rbox('tvbrT', 326, 192, 422, 207, 0.3, 0.37, 3, 1.4, BLK)
+    screw(342, 199.5, 3.6, 0.37); screw(406, 199.5, 3.6, 0.37)
+    C.rbox('tvbrT2', 352, 205, 396, 213, 0.3, 0.355, 2, 1.0, BLK)
+    C.dome('tvhub', 374, 216, 10, 0.3, C.mat('tvhubm', hexc('#0e0f11'), 0.22, coat=0.6, spec=0.6), h=0.8)
+    C.rbox('tvshelf', 152, 620, 596, 634, 0.3, 0.36, 4, 1.4, BLK)
+    C.rbox('tvbrB', 300, 612, 448, 634, 0.3, 0.375, 3, 1.4, BLK)
+    C.rbox('tvbrB2', 330, 606, 418, 616, 0.3, 0.385, 2, 1.0, BLK)
+    screw(318, 624, 3.4, 0.375); screw(430, 624, 3.4, 0.375); screw(352, 611, 2.6, 0.385); screw(396, 611, 2.6, 0.385)
     pane('g_vu1', 177, 690, 303, 816, 63, 0.06)
     pane('g_vu2', 405, 690, 531, 816, 63, 0.06)
     pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)
