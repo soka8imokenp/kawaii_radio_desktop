@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.2';
+const VERSION = '0.6.3';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -788,8 +788,11 @@ function layoutPaper() {
   const full = p.scrollHeight;
   const maxScroll = Math.max(0, full - 432);
   paperScroll = Math.max(0, Math.min(maxScroll, paperScroll));
-  p.style.transform = `translate3d(0, ${(-paperScroll).toFixed(2)}px, 0)`;
-  p.style.setProperty('--out', Math.min(full, paperOut + paperScroll) + 'px');
+  // a real feed: the paper itself slides out of the head's slot (it prints the receipt bottom-up, so when it is done
+  // the header sits at the slot and reads top-down); what is still inside the printer is above the window
+  const inside = Math.max(0, full - paperOut);
+  p.style.transform = `translate3d(0, ${(-inside - paperScroll).toFixed(2)}px, 0)`;
+  p.style.setProperty('--out', full + 'px');
   const lines = Math.max(1, Math.round(full / 21)), line = Math.min(lines, Math.round(paperScroll / 21) + 1);
   $('#qator').textContent = `QATOR ${String(line).padStart(2, '0')}/${String(lines).padStart(2, '0')}`;
 }
@@ -802,11 +805,13 @@ $('#paperWin').addEventListener('wheel', (e) => {
 }, { passive: false });
 function stepPaper(dt) {
   if (printing != null) {
-    // the head feeds in little steps
-    const t = (performance.now() - printing) / 1000;
-    const steps = Math.floor(t * 30);
-    paperOut = steps * 7;
-    if (paperOut > $('#paper').scrollHeight) { printing = null; paperOut = 1e6; on(printerLed, false); }
+    // a stepper motor: 3 px steps, a printed line (21 px) = 7 steps, then a tiny dwell while the head burns the next one
+    const ms = performance.now() - printing;
+    const LINE = 7 * 9 + 14;                               // ms per line: steps + dwell
+    const ln = Math.floor(ms / LINE), inLine = Math.min(7, Math.floor((ms % LINE) / 9));
+    paperOut = ln * 21 + inLine * 3;
+    $('#paperWin').classList.toggle('feeding', true);
+    if (paperOut >= $('#paper').scrollHeight) { printing = null; paperOut = 1e6; on(printerLed, false); $('#paperWin').classList.remove('feeding'); }
     layoutPaper();
   }
   if (paperGoal != null) {
@@ -1327,7 +1332,7 @@ click = () => sfx('up');
 // physical keys: sink on press, spring back with a small overshoot on release
 document.querySelectorAll('.ctl:not(.led)').forEach((k) => {
   k.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || k.id === 'knob') return;
+    if (e.button !== 0 || k.id === 'knob' || k.id === 'play') return;   // the toggle flips, it does not sink
     k.classList.add('press');
     sfx('down');
   });
@@ -1400,11 +1405,11 @@ buildReceipt = (t, animate) => {
   _build(t, animate);
   if (animate) {
     const p = $('#paper');
-    const dur = Math.min(4, p.scrollHeight / 210);
+    const dur = p.scrollHeight / 21 * 0.077;
     kindArg = dur; sfx('print');
-    p.classList.add('printing');
+    const pw = $('#paperWin'); pw.classList.add('printing');   // the motor's buzz shakes the printer, not the paper's feed
     let blink = setInterval(() => on(printerLed, !printerLed.classList.contains('on')), 120);
-    setTimeout(() => { p.classList.remove('printing'); clearInterval(blink); on(printerLed, true); setTimeout(() => on(printerLed, false), 600); }, dur * 1000);
+    setTimeout(() => { pw.classList.remove('printing'); clearInterval(blink); on(printerLed, true); setTimeout(() => on(printerLed, false), 600); }, dur * 1000);
   }
 };
 $('#paperWin').addEventListener('dblclick', () => {

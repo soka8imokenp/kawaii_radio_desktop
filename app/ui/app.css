@@ -591,3 +591,21 @@ body.full #rz { display: none; }
 @keyframes filament { 0%, 100% { opacity: .92; } 17% { opacity: 1; } 31% { opacity: .9; } 46% { opacity: .97; } 63% { opacity: .88; } 80% { opacity: 1; } }
 #stage.light .vulamp { opacity: .8; }
 .vulamp::before { content: ""; position: absolute; inset: 14px; border-radius: 50%; background: var(--noise); background-size: 140px 140px; opacity: .07; mix-blend-mode: overlay; }
+/* v0.6.3: keys only move (the pressed look is the rendered pressed key) — no shadow box, no shrink, no colour */
+.ctl.press::before { opacity: 0 !important; }
+.ctl.press { transform: none !important; }
+/* the toggle flips on click, it does not show the other position while the button is held */
+#play:active .lit { opacity: 0; }
+#play.on:active .lit { opacity: 1; }
+/* VU: only the lamp's warm bloom stays live — no painted rings or reflections (the glass is rendered) */
+.vulamp { background: radial-gradient(circle at 50% 58%, rgba(255,160,70,.12) 0, rgba(255,130,45,.06) 34%, transparent 56%) !important; }
+.vulamp::after, .vulamp::before { display: none; }
+/* thermal paper develops: the line just burnt at the head is paler and darkens within a moment */
+#paperWin::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 64px; z-index: 2; pointer-events: none; opacity: 0;
+  background: linear-gradient(180deg, rgba(244,241,234,.62) 0, rgba(244,241,234,.3) 22px, rgba(244,241,234,0) 64px); transition: opacity .3s; }
+#paperWin.feeding::after { opacity: 1; }
+#paperWin.printing { animation: buzz .05s steps(2) infinite; }
+/* the needle: a thin stamped blade with a round counterweight at the pivot, held ~1 mm off the dial (soft shadow) */
+.vun::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #4a4038, #15110d 70%); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+.vun { filter: drop-shadow(3px 4px 1.6px rgba(60,30,0,.45)) !important; }
