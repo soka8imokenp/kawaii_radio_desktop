@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.5.8';
+const VERSION = '0.5.9';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -35,6 +35,7 @@ function fit() {
   if (r < 0.92 || r > 1.09) { sx = sy = Math.min(sx, sy); }
   stage.style.transform = `translate(${(W - 1920 * sx) / 2}px, ${(H - 1080 * sy) / 2}px) scale(${sx}, ${sy})`;
   stage.dataset.scale = Math.max(sx, sy);
+  stage.style.setProperty('--px', (1 / (sy * (devicePixelRatio || 1))).toFixed(4) + 'px');
 }
 addEventListener('resize', fit);
 fit();
@@ -432,13 +433,13 @@ function renderLyrics(force) {
       if (k < 0 || k >= L.length) return;
       want.push({ key: 'l' + k, cls: 'ln ' + cls, top, style: `font-size:${size}px;color:${color}`, html: cls === 'now' ? `<span class="k">${esc(L[k].s)}</span>` : esc(L[k].s) });
     };
-    at(i - 2, 6, 24, '#3f4730'); at(i - 1, 44, 28, '#5f6b44');
-    // the sung line always fits in two lines: long lines get a smaller size (VT323 is ~0.5em wide, the box ~676px)
+    at(i - 2, 8, 19, '#5d6446'); at(i - 1, 46, 21, '#8c9367');
+    // the sung line always fits in two lines: long lines get a smaller size (Roboto Mono is 0.6em wide, the box ~640px)
     const len = L[i] ? [...L[i].s].length : 0;
-    const size = Math.min(52, Math.max(30, Math.floor(2600 / Math.max(1, len))));
-    const wrap = len * size * 0.5 > 660 ? 2 : 1;
-    const h = wrap * size * 0.98;
-    if (i >= 0) at(i, 104, size, '#e6ff9a', 'now'); else want.push({ key: 'wait', cls: 'ln', top: 104, style: 'font-size:40px;color:#5f6b44', html: '♪ ♪ ♪' });
+    const size = Math.min(42, Math.max(25, Math.floor(1980 / Math.max(1, len))));
+    const wrap = len * size * 0.6 > 652 ? 2 : 1;
+    const h = wrap * size * 1.22;
+    if (i >= 0) at(i, 104, size, '#f2e49c', 'now'); else want.push({ key: 'wait', cls: 'ln', top: 104, style: 'font-size:34px;color:#6d7450', html: '♪ ♪ ♪' });
     // translation under the sung line
     let hasTr = false;
     if (i >= 0 && S.lang !== 'uz' && lines.uz.length) {
@@ -446,7 +447,7 @@ function renderLyrics(force) {
       if (ti >= 0) { hasTr = true; want.push({ key: 't' + ti, cls: 'tr', top: Math.round(104 + h + 10), style: '', html: esc(lines.uz[ti].s) }); }
     }
     const nb = Math.round(104 + (i >= 0 ? h : 40) + (hasTr ? 52 : 40));
-    at(i + 1, nb, 30, '#6f7c4c'); at(i + 2, nb + 42, 26, '#4f5838'); at(i + 3, nb + 80, 22, '#373e28');
+    at(i + 1, nb, 22, '#cdc98b'); at(i + 2, nb + 42, 20, '#9a9f72'); at(i + 3, nb + 78, 17, '#5c6247');
     if (force) box.innerHTML = '';
     const keep = new Set(want.map((w) => w.key));
     for (const el of [...box.children]) {

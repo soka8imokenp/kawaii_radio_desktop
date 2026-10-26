@@ -465,3 +465,65 @@ body.full #rz { display: none; }
 #lyLines { left: 42px !important; right: 66px !important; top: 72px !important; bottom: 26px !important; }
 #lyRail { right: 32px !important; }
 #viz { left: 42px !important; }
+
+/* ── v0.5.9: the lyrics display rebuilt as a real green-phosphor CRT, in two physical layers like the chat tube:
+   1) the phosphor backplate (#lyr::before): charcoal-olive, never grey, brighter only in the middle of the tube;
+   2) the glass lens in front (#lyr::after + #lyrIn::after): a deep cavity shadow at the walls, razor-fine
+      scanlines and aperture grille (in device pixels via --px, so no moire), a crisp rim catching the light along
+      the top edge, one faint reflection — no smudge, no haze. The rendered glass overlay skips this screen. */
+@font-face { font-family: RMono; src: url(fonts/RobotoMono.ttf); font-weight: 100 700; }
+#glassOv {
+  -webkit-mask: linear-gradient(#000 0 0) 0 0 / 100% 100% no-repeat, linear-gradient(#000 0 0) 618px 198px / 744px 428px no-repeat;
+  -webkit-mask-composite: xor; }
+#lyr::before { inset: 12px !important; border-radius: 17px !important; z-index: 0;
+  background:
+    radial-gradient(70% 60% at 42% 46%, rgba(150,170,90,.075), transparent 72%),
+    radial-gradient(135% 125% at 50% 44%, #20271b 0%, #171d14 42%, #0d110b 72%, #050705 100%) !important; }
+#lyr::after { inset: 12px !important; border-radius: 17px !important; z-index: 6 !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,.95),
+    inset 0 0 0 4px rgba(4,6,4,.85),
+    inset 0 12px 22px -4px rgba(0,0,0,.7),
+    inset 0 0 46px 8px rgba(0,0,0,.62) !important;
+  background:
+    linear-gradient(180deg, rgba(225,240,255,.085), rgba(225,240,255,.02) 7%, transparent 16%),
+    radial-gradient(34% 30% at 84% 16%, rgba(200,215,225,.055), transparent 70%),
+    radial-gradient(60% 18% at 50% 0%, rgba(255,255,255,.035), transparent 100%),
+    repeating-linear-gradient(180deg, rgba(0,0,0,.30) 0 var(--px, 1px), transparent var(--px, 1px) calc(var(--px, 1px) * 3)),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 var(--px, 1px), transparent var(--px, 1px) calc(var(--px, 1px) * 3)),
+    radial-gradient(118% 112% at 50% 46%, transparent 58%, rgba(0,0,0,.5) 100%) !important; }
+/* the glass rim: a 1.5 px edge, bright along the top and the top-right corner, dark at the bottom */
+#lyrIn::after { content: ""; position: absolute; inset: 12px; border-radius: 17px; pointer-events: none; z-index: 7;
+  border: 1.5px solid transparent;
+  background: linear-gradient(172deg, rgba(235,245,255,.42), rgba(235,245,255,.10) 22%, rgba(255,255,255,.02) 55%, rgba(0,0,0,.4) 100%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude; }
+/* the header row and its hairline, like the reference terminal */
+#lyrIn::before { content: ""; position: absolute; left: 30px; right: 30px; top: 60px; height: 1px; z-index: 2; pointer-events: none;
+  background: linear-gradient(90deg, rgba(160,180,110,.05), rgba(160,180,110,.2) 12%, rgba(160,180,110,.16) 80%, rgba(160,180,110,.04)); }
+#lyr .lh { left: 34px !important; top: 24px !important; z-index: 2; font: 600 16px RMono !important; letter-spacing: 0; color: #eef0e6;
+  text-shadow: 0 0 6px rgba(230,240,210,.25); }
+#lyr .lh span { font: 400 15px RMono; color: #7b8263; }
+#lyr .lh .dotled { width: 6px; height: 6px; background: #4be38f; box-shadow: 0 0 6px #4be38f, 0 0 2px #b5ffd3; }
+#lyLines, #lyRail, #viz { z-index: 2; }
+#lyLines { left: 40px !important; right: 64px !important; top: 76px !important; }
+/* phosphor text: a crisp core and a soft bleed, like Fog Glow at a low mix */
+#lyLines .ln { font-family: RMono; font-weight: 500; letter-spacing: 0;
+  text-shadow: 0 0 1px currentColor, 0 0 7px rgba(205,215,130,.32), 0 0 18px rgba(205,215,130,.12); }
+#lyLines .ln.now { font-weight: 600; line-height: 1.22; }
+#lyLines .ln.now .k { background: linear-gradient(90deg, #f6e8a2 0, #f6e8a2 var(--p, 0%), #b4b67c var(--p, 0%));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 1px rgba(246,232,162,.5)) drop-shadow(0 0 9px rgba(230,220,130,.32)); }
+#lyLines .tr { font: 400 17px RMono; color: #a3a978; text-shadow: 0 0 6px rgba(190,200,120,.28); }
+#lyLines .none { font: 500 20px RMono !important; letter-spacing: .12em; color: #7c8456 !important; }
+#lyRail { right: 30px !important; }
+#lyRail i { width: 4px; height: 4px; border-radius: 1px; left: 1px; background: #3c4430; }
+#lyRail i.on { width: 5px; left: .5px; height: 13px; border-radius: 1.5px; background: #f0e7a0; box-shadow: 0 0 6px rgba(240,231,160,.75); }
+#viz { filter: drop-shadow(0 0 4px rgba(205,215,130,.35)); }
+/* the bezel around the tube: matte dark housing plastic (not the grey render ring), a thin highlight on its top lip,
+   then a black gasket where the glass sits */
+#lyr { border-radius: 26px; background:
+    linear-gradient(180deg, rgba(255,255,255,.035), transparent 30%),
+    linear-gradient(180deg, #222528, #1a1c1f 60%, #16181a) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.55); }
+#lyr::before { box-shadow: 0 0 0 3px #060706, 0 0 0 4px rgba(0,0,0,.6), 0 1px 0 4.5px rgba(255,255,255,.06); }
