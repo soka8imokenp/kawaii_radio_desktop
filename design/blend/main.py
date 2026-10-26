@@ -360,15 +360,28 @@ C.rbox('vuplate', 128, 672, 580, 834, LZ0, LZ0 + 0.02, 22, 1.5, VUPL)
 for bx_, by_ in ((146, 690), (562, 690), (146, 816), (562, 816)):
     C.cyl('vubolt', bx_, by_, 7.5, LZ0 + 0.02, LZ0 + 0.04, C.CHROME, bev=1.5)
     C.cyl('vuhex', bx_, by_, 3.4, LZ0 + 0.035, LZ0 + 0.0405, C.BEZEL, segs=6)
-VUBZ = C.plastic(C.mat('vubez', hexc('#1d1f23'), 0.45, coat=0.15, spec=0.4), 0.1, 0.06, 140)
-VUFACE = C.mat('vuface', hexc('#ecc98f'), 0.62, emit=hexc('#ff962e'), estr=1.0)
-nt_ = VUFACE.node_tree; bs_ = nt_.nodes['Principled BSDF']
-tc_ = nt_.nodes.new('ShaderNodeTexCoord'); sx_ = nt_.nodes.new('ShaderNodeSeparateXYZ')
-mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = -0.62; mr_.inputs['From Max'].default_value = 0.62
-mr_.inputs['To Min'].default_value = 1.0; mr_.inputs['To Max'].default_value = 0.2   # the bulb sits under the scale: warm at the bottom
-nt_.links.new(tc_.outputs['Object'], sx_.inputs['Vector']); nt_.links.new(sx_.outputs['Y'], mr_.inputs['Value'])
-nt_.links.new(mr_.outputs['Result'], bs_.inputs['Emission Strength'])
-VUINK = C.mat('vuink', hexc('#2b2520'), 0.6)
+VUBZ = C.plastic(C.mat('vubez', hexc('#111214'), 0.5, coat=0.12, spec=0.35), 0.1, 0.06, 140)   # matte black moulding
+VUFACE = C.mat('vuface', hexc('#e2ad62'), 0.65, emit=hexc('#ff8c2a'), estr=1.0)
+nt_ = VUFACE.node_tree; bs_ = nt_.nodes['Principled BSDF']; L_ = nt_.links.new
+tc_ = nt_.nodes.new('ShaderNodeTexCoord')
+sub_ = nt_.nodes.new('ShaderNodeVectorMath'); sub_.operation = 'SUBTRACT'; sub_.inputs[1].default_value = (0.0, -0.16, 0.0)
+ln_ = nt_.nodes.new('ShaderNodeVectorMath'); ln_.operation = 'LENGTH'
+L_(tc_.outputs['Object'], sub_.inputs[0]); L_(sub_.outputs['Vector'], ln_.inputs[0])
+mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = 0.0; mr_.inputs['From Max'].default_value = 0.66
+L_(ln_.outputs['Value'], mr_.inputs['Value'])
+cr_ = nt_.nodes.new('ShaderNodeValToRGB'); el_ = cr_.color_ramp.elements
+el_[0].position = 0.0; el_[0].color = (1.0, 0.66, 0.30, 1)
+el_[1].position = 1.0; el_[1].color = (0.22, 0.08, 0.02, 1)
+mid_ = el_.new(0.5); mid_.color = (0.80, 0.42, 0.14, 1)
+L_(mr_.outputs['Result'], cr_.inputs['Fac'])
+L_(cr_.outputs['Color'], bs_.inputs['Base Color']); L_(cr_.outputs['Color'], bs_.inputs['Emission Color'])
+pw_ = nt_.nodes.new('ShaderNodeMath'); pw_.operation = 'SUBTRACT'; pw_.inputs[0].default_value = 1.0
+L_(mr_.outputs['Result'], pw_.inputs[1])
+sq_ = nt_.nodes.new('ShaderNodeMath'); sq_.operation = 'POWER'; sq_.inputs[1].default_value = 1.6
+L_(pw_.outputs[0], sq_.inputs[0])
+st_ = nt_.nodes.new('ShaderNodeMath'); st_.operation = 'MULTIPLY_ADD'; st_.inputs[1].default_value = 0.85; st_.inputs[2].default_value = 0.05
+L_(sq_.outputs[0], st_.inputs[0]); L_(st_.outputs[0], bs_.inputs['Emission Strength'])
+VUINK = C.mat('vuink', hexc('#3a2410'), 0.6)
 VURED = C.mat('vured', hexc('#c7362a'), 0.55)
 VUDB = {-20: -48, -10: -28, -7: -17, -5: -8, -3: 3, -2: 10, -1: 17, 0: 25, 1: 32, 2: 40, 3: 48}
 VZ = LZ0 + 0.02
@@ -391,10 +404,8 @@ for cx in (240, 468):
     me = bpy.data.meshes.new('vucone'); bm.to_mesh(me); bm.free()
     cone_ = C.link(bpy.data.objects.new('vucone', me)); cone_.location = (*P(cx, cy), VZ + 0.05)
     C.cut(ring_, cone_)
-    lip_ = C.cyl('vulip', cx, cy, 70.5, VZ + 0.118, VZ + 0.128, C.CHROME, bev=0.4, segs=128)   # a polished chrome lip at the glass
-    C.cut(lip_, C.cyl('vulipc', cx, cy, 68.2, VZ - 0.1, VZ + 0.3, C.CHROME, segs=128))
-    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 2.2; bulb.color = (1.0, 0.62, 0.28); bulb.shadow_soft_size = 0.12
-    bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, cy + 46), VZ + 0.06)
+    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 1.6; bulb.color = (1.0, 0.48, 0.14); bulb.shadow_soft_size = 0.3
+    bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, cy + 20), VZ + 0.07)
     rub = C.cyl('vurub', cx, cy, 64, VZ, VZ + 0.03, C.mat('rubber', hexc('#0c0c0d'), 0.75), segs=128)
     C.cut(rub, C.cyl('vurubc', cx, cy, 60.5, VZ - 0.1, VZ + 0.2, C.BEZEL, segs=128))
     fz = VZ + 0.012
@@ -411,54 +422,53 @@ for cx in (240, 468):
         if major:
             th = math.radians(ang)
             C.text(('+' if db > 0 else '') + str(db), cx + 72 * math.sin(th), py - 72 * math.cos(th) + 3, 8, BAR, VURED if db >= 0 else VUINK, zt, align='CENTER', rot=-ang)
-    C.text('VU', cx, py - 26, 17, BAR, VUINK, zt, align='CENTER', spacing=1.1)
-    for k_ in range(11):                   # the percent scale under the dB arc
-        ang = -48 + k_ * 9.6
-        vu_tick(cx, py, ang, 50.5, 53.5 if k_ % 5 else 55, 0.9, VUINK, zt)
-    for k_, lab in ((0, '0'), (5, '50'), (10, '100')):
-        th = math.radians(-48 + k_ * 9.6)
-        C.text(lab, cx + 45 * math.sin(th), py - 45 * math.cos(th) + 3, 6, BAR, VUINK, zt, align='CENTER', rot=-(-48 + k_ * 9.6))
-    C.text('KR-01', cx, py - 12, 6, BAR, VUINK, zt, align='CENTER', spacing=1.3)
-    C.text('−', cx - 44, py - 12, 10, BAR, VUINK, zt, align='CENTER')
-    C.text('+', cx + 44, py - 12, 10, BAR, VURED, zt, align='CENTER')
-    # the movement's shroud: a dark moulded half-disc over the bottom of the dial, the needle rises out of it
-    shr = C.cyl('vushroud', cx, cy + 60, 26, fz, fz + 0.03, C.mat('vushr', hexc('#17181b'), 0.4, coat=0.3), bev=1.2, segs=96)
-    C.cut(shr, C.rbox('vushrc', cx - 80, cy + 63, cx + 80, cy + 140, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
+    C.text('VU', cx, py - 24, 16, BAR, VUINK, zt, align='CENTER', spacing=1.1)
+    C.text('−', cx - 44, py - 8, 10, BAR, VUINK, zt, align='CENTER')
+    C.text('+', cx + 44, py - 8, 10, BAR, VURED, zt, align='CENTER')
+    # the bottom of the dial: a dark moulded panel across the chord, and in its top edge a small arched window
+    # where the movement shows — a copper coil lit by the same lamp; the needle rises out of it
+    pan = C.cyl('vupanel', cx, cy, 61, fz, fz + 0.02, C.mat('vupan', hexc('#140f0b'), 0.45, coat=0.2), segs=128)
+    C.cut(pan, C.rbox('vupanc', cx - 80, cy - 80, cx + 80, py + 1, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
+    COIL = C.mat('vucoil', hexc('#8a4a1c'), 0.4, metal=1.0, emit=hexc('#ff7a20'), estr=0.12)
+    win = C.cyl('vuwin', cx, py + 1, 17, fz, fz + 0.014, COIL, segs=96)
+    C.cut(win, C.rbox('vuwinc', cx - 30, py + 1, cx + 30, py + 30, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
+    for k_ in range(7):   # coil windings
+        C.rbox('vuwind', cx - 13 + k_ * 4.3, py - 11, cx - 11.6 + k_ * 4.3, py + 1, fz + 0.014, fz + 0.016, 0.5, 0, C.mat('vuwd', hexc('#5a2c10'), 0.5))
     if not APP:
         vu_tick(cx, py, -12, 14, 66, 1.6, C.DARKINK, zt + 0.01)
 
 # ───────────────────────────── deck controls
-# toggle: a knurled black-anodised flange, a dark spun plate engraved IJRO / PAUZA, a keyed chrome washer, a hex nut,
-# a threaded bushing and a thick tapered chrome lever with a ball tip
+# toggle: an old industrial bat-handle switch — a black rubber boot ring, a big satin-steel hex nut on a keyed washer,
+# a thick round satin lever with a domed end (no mirror chrome: brushed, a little worn, it catches soft light)
 C.cyl('tgw', 186, 912, 51, -0.06, 0.0005, C.TRAY)
-TGK = C.knurl_bump(C.mat('tgknurl', hexc('#1c1e22'), 0.36, coat=0.35, spec=0.5), 380, 0.35)
-C.knurl_z('tgflange', 186, 912, 47, 45.6, -0.06, 0.04, TGK, n=200)
-C.cyl('tgplate', 186, 912, 44.5, 0.03, 0.05, C.mat('tgplate', hexc('#17191c'), 0.3, coat=0.5, spec=0.5, bump=(2200, 0.02)), bev=1.2, segs=128)
-C.text('IJRO', 186, 878, 8, BAR, C.mat('tgeng', hexc('#c9ccd2'), 0.5), 0.0505, align='CENTER', spacing=1.35)
-C.text('PAUZA', 186, 954, 8, BAR, C.mat('tgeng2', hexc('#c9ccd2'), 0.5), 0.0505, align='CENTER', spacing=1.35)
-wsh = C.cyl('tgwash', 186, 912, 23, 0.05, 0.06, C.CHROME, bev=0.6, segs=96)
-C.rbox('tgtab', 182, 884, 190, 892, 0.05, 0.06, 1, 0.3, C.CHROME)
-C.cyl('tgnut', 186, 912, 19, 0.06, 0.105, C.CHROME, bev=2.0, segs=6)
-for k_ in range(4):   # threads on the bushing
-    C.cyl('tgthr', 186, 912, 11.2 if k_ % 2 == 0 else 10.3, 0.105 + k_ * 0.008, 0.113 + k_ * 0.008, C.CHROME, bev=0.3, segs=64)
+C.cyl('tgbase', 186, 912, 46, -0.06, 0.035, C.mat('tgbase', hexc('#121315'), 0.55, coat=0.1, spec=0.35), bev=3.5, segs=128)
+RUB = C.mat('tgrub', hexc('#0a0a0b'), 0.8, spec=0.25)
+C.cyl('tgboot', 186, 912, 34, 0.035, 0.06, RUB, bev=2.5, segs=128)
+SAT = C.brushed('tgsat', hexc('#7a7d82'), 0.3, 0.42, kind='steel', aniso=0.4)
+SATD = C.brushed('tgsatd', hexc('#5a5d62'), 0.34, 0.46, kind='steel', aniso=0.3)
+C.cyl('tgwash', 186, 912, 27, 0.06, 0.07, SATD, bev=0.8, segs=96)
+C.cyl('tgnut', 186, 912, 25, 0.07, 0.125, SAT, bev=3.0, segs=6)
+C.cyl('tgbush', 186, 912, 12, 0.125, 0.15, SATD, bev=1.2, segs=64)
 TG_UP = APP and DOWN
-th_ = math.radians(-46 if TG_UP else 46)    # tilt about X: toward the top of the screen or the bottom
+th_ = math.radians(-44 if TG_UP else 44)    # tilt about X: toward the top of the screen or the bottom
+L_LEN = 0.66
 bm = bmesh.new()
-bmesh.ops.create_cone(bm, cap_ends=True, segments=48, radius1=0.082, radius2=0.056, depth=0.72)
+bmesh.ops.create_cone(bm, cap_ends=True, segments=64, radius1=0.085, radius2=0.075, depth=L_LEN)
 for v in bm.verts:
-    v.co.z += 0.36
+    v.co.z += L_LEN / 2
 me = bpy.data.meshes.new('tglever'); bm.to_mesh(me); bm.free()
 for p_ in me.polygons:
     p_.use_smooth = True
-lv = C.link(bpy.data.objects.new('tglever', me)); lv.data.materials.append(C.CHROME)
-bx0, by0 = P(186, 912); lv.location = (bx0, by0, 0.135); lv.rotation_euler = (th_, 0, 0)
-bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=32, radius=0.112)
-me = bpy.data.meshes.new('tgball'); bm.to_mesh(me); bm.free()
+lv = C.link(bpy.data.objects.new('tglever', me)); lv.data.materials.append(SAT)
+bx0, by0 = P(186, 912); lv.location = (bx0, by0, 0.15); lv.rotation_euler = (th_, 0, 0)
+bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=32, radius=0.08)
+for v in bm.verts:
+    v.co.z *= 0.75
+me = bpy.data.meshes.new('tgtip'); bm.to_mesh(me); bm.free()
 for p_ in me.polygons:
     p_.use_smooth = True
-bl = C.link(bpy.data.objects.new('tgball', me)); bl.data.materials.append(C.CHROME)
-bl.location = (bx0, by0 - 0.74 * math.sin(th_), 0.135 + 0.74 * math.cos(th_))
-C.text('IJRO', 186, 866, 9, BAR, INKS, -0.06 + 0.001, align='CENTER', spacing=1.2) if False else None
+tp = C.link(bpy.data.objects.new('tgtip', me)); tp.data.materials.append(SAT)
+tp.location = (bx0, by0 - L_LEN * math.sin(th_), 0.15 + L_LEN * math.cos(th_)); tp.rotation_euler = (th_, 0, 0)
 for nm, cx, ic in (('heart', 820, 'HEART'),):
     C.cyl(nm + 'w', cx, 912, 51, -0.06, 0.0005, C.TRAY)
     pd = APP and DOWN
@@ -923,20 +933,22 @@ if '--glassov' in argv:
     strip('refl_b', 4.5, -1.6, 18, 0.35, 32, 2.4)     # a thin second line, like a window frame
     strip('refl_c', -6.5, 3.6, 7, 3.0, 0, 0.6)        # a broad soft box, upper left
     pane('g_tv', 156, 196, 592, 628, 14, 0.05)
-    RAIL = C.mat('rail', hexc('#1d1f23'), 0.34, coat=0.4, spec=0.5, bump=(2400, 0.02))
-    GEARM = C.mat('gearm', hexc('#34373c'), 0.3, metal=1.0)
-    for (ry0, ry1) in ((190, 208), (616, 634)):
-        C.rbox('rail', 150, ry0, 598, ry1, 0.3, 0.36, 4, 1.2, RAIL)
-        yc_ = (ry0 + ry1) / 2
-        for gx_ in (214, 534):
-            C.cyl('gear', gx_, yc_, 13, 0.36, 0.38, GEARM, bev=0.6, segs=24)
-            for k_ in range(12):
-                a_ = k_ * math.pi / 6
-                C.rbox('gt', gx_ + 13 * math.cos(a_) - 1.6, yc_ + 13 * math.sin(a_) - 1.6, gx_ + 13 * math.cos(a_) + 1.6, yc_ + 13 * math.sin(a_) + 1.6, 0.36, 0.38, 0.5, 0, GEARM)
-            C.cyl('gearhub', gx_, yc_, 5, 0.38, 0.395, C.CHROME, bev=0.6)
-        for sx_ in (166, 374, 582):
-            C.cyl('rscrew', sx_, yc_, 4.5, 0.36, 0.375, C.CHROME, bev=1.0)
-            C.rbox('rslot', sx_ - 3.2, yc_ - 0.6, sx_ + 3.2, yc_ + 0.6, 0.374, 0.376, 0, 0, C.BEZEL)
+    # the trivision's housing: the cover sits INSIDE the device — a dark moulded lip overhangs its top and bottom edge
+    # (the slats' axles hide behind it); small steel clamps with screws hold the top lip, the bottom lip shows the
+    # bearing blocks of the 24 slats
+    HOUS = C.mat('tvhous', hexc('#141518'), 0.5, coat=0.15, spec=0.35, bump=(2400, 0.015))
+    C.rbox('tvlipT', 150, 190, 598, 210, 0.3, 0.37, 6, 2.0, HOUS)
+    C.rbox('tvlipB', 150, 618, 598, 634, 0.3, 0.36, 6, 2.0, HOUS)
+    CLAMP = C.brushed('tvclamp', hexc('#8a8d92'), 0.28, 0.4, kind='steel', aniso=0.4)
+    for cx_ in (232, 374, 516):
+        C.rbox('tvclamp', cx_ - 15, 191, cx_ + 15, 207, 0.37, 0.385, 2, 0.8, CLAMP)
+        for sx_ in (cx_ - 9, cx_ + 9):
+            C.cyl('tvscr', sx_, 199, 2.6, 0.385, 0.392, C.mat('tvscrm', hexc('#2a2c30'), 0.4, metal=1.0), bev=0.5)
+    BEAR = C.mat('tvbear', hexc('#26282c'), 0.4, metal=0.6)
+    for k_ in range(24):
+        x_ = 156 + (k_ + 0.5) * (436 / 24)
+        C.rbox('tvbear', x_ - 4.5, 619, x_ + 4.5, 627, 0.36, 0.372, 1.5, 0.6, BEAR)
+        C.cyl('tvaxle', x_, 623, 1.4, 0.372, 0.376, C.mat('tvax', hexc('#8a8d92'), 0.3, metal=1.0))
     pane('g_vu1', 177, 690, 303, 816, 63, 0.06)
     pane('g_vu2', 405, 690, 531, 816, 63, 0.06)
     pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)

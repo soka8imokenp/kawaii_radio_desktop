@@ -551,3 +551,21 @@ body.full #rz { display: none; }
   background: linear-gradient(180deg, #100d0a 0, #1d1915 70%, #2b2520 100%);
   clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%); }
 .ctl.tube .lit { -webkit-mask-image: linear-gradient(90deg, transparent 0, rgba(0,0,0,.55) 22%, #000 40%, #000 60%, rgba(0,0,0,.55) 78%, transparent 100%); }
+/* v0.6.1: the cover sits INSIDE the device: the housing lips (in the glass render) overhang top and bottom and throw
+   a deep shadow, the side walls darken it, every slat is a prism with a dark gap and a soft edge highlight */
+#tv::after { box-shadow:
+    inset 0 28px 22px -12px rgba(0,0,0,.88), inset 0 -22px 18px -12px rgba(0,0,0,.82),
+    inset 16px 0 16px -12px rgba(0,0,0,.65), inset -16px 0 16px -12px rgba(0,0,0,.65) !important;
+  background: radial-gradient(125% 115% at 50% 50%, transparent 55%, rgba(0,0,0,.45) 100%) !important; }
+#tv .face { inset: 0 .7px; }
+#tv .face::after { background: linear-gradient(90deg, rgba(0,0,0,.24) 0, rgba(0,0,0,.05) 10%, rgba(255,255,255,.05) 40%, rgba(255,255,255,0) 70%, rgba(0,0,0,.14) 100%); }
+#tvShade { background: linear-gradient(125deg, rgba(255,255,255,.06), rgba(255,255,255,0) 30%) !important; }
+/* v0.6.1: the receipt must be readable at every window size: a crisp monospaced receipt face (Roboto Mono), dense
+   dark ink, no dot-threshold filter and no head-row mask (they turned small letters into mush when scaled down) */
+#paper .ink { filter: none !important; -webkit-mask-image: none !important; mask-image: none !important;
+  font: 500 15px/1.5 RMono !important; color: #1b1815 !important; letter-spacing: 0; text-shadow: 0 0 .5px rgba(27,24,21,.55); }
+#paper .ink .artist { font: 500 17px RMono !important; color: #2a2521 !important; }
+#paper .ink .kv { font-size: 15px !important; }
+#paper .ink .soft { color: #4a443e !important; font-size: 12px !important; }
+#paper .ink .sec { font: 700 12px RMono !important; letter-spacing: .12em; color: #2a2522 !important; }
+#paper .ink .bar { color: #3a3530 !important; }
