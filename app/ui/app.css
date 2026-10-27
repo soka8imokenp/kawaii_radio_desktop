@@ -634,3 +634,5 @@ body.full #rz { display: none; }
   background: linear-gradient(0deg, rgba(0,0,0,.55) 0, rgba(0,0,0,.24) 6px, rgba(255,255,255,.16) 12px, rgba(0,0,0,.05) 18px, transparent 26px) !important; }
 #paperShade { position: absolute; left: 1478px; top: 104px; width: 358px; height: 432px; pointer-events: none; z-index: 3;
   background: linear-gradient(90deg, rgba(0,0,0,.14), rgba(0,0,0,.03) 8%, rgba(255,255,255,.06) 36%, transparent 55%, rgba(0,0,0,.04) 88%, rgba(0,0,0,.16)); }
+/* v0.6.5: bigger dials (pivot at y 793, scale arc radius ~66-71 px) */
+.vun { top: 723px !important; height: 70px !important; }

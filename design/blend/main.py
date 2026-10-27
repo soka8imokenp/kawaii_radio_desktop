@@ -398,19 +398,19 @@ for bx_, by_ in ((146, 690), (562, 690), (146, 816), (562, 816)):
     # socket head cap screws: a domed steel head with a real hex socket cut into it, grime in the socket
     hd = C.cyl('vubolt', bx_, by_, 10, LZ0 + 0.02, LZ0 + 0.05, VUBOLT, bev=3.2)
     C.cut(hd, C.cyl('vuhexc', bx_, by_, 4.2, LZ0 + 0.03, LZ0 + 0.2, C.BEZEL, segs=6))
-VUBZ = C.mat('vubez', hexc('#0c0c0e'), 0.3, coat=0.7, spec=0.5)   # a glossy black moulded ring
-VUFACE = C.mat('vuface', hexc('#e9cf98'), 0.8, emit=hexc('#ff8c2a'), estr=1.0, bump=(900, 0.03))
+VUBZ = C.mat('vubez', hexc('#141416'), 0.42, coat=0.5, spec=0.45)   # glossy black moulded bezel
+VUFACE = C.mat('vuface', hexc('#e2a868'), 0.8, emit=hexc('#ff8c2a'), estr=1.0, bump=(900, 0.03))
 nt_ = VUFACE.node_tree; bs_ = nt_.nodes['Principled BSDF']; L_ = nt_.links.new
 tc_ = nt_.nodes.new('ShaderNodeTexCoord')
 sub_ = nt_.nodes.new('ShaderNodeVectorMath'); sub_.operation = 'SUBTRACT'; sub_.inputs[1].default_value = (0.0, -0.16, 0.0)
 ln_ = nt_.nodes.new('ShaderNodeVectorMath'); ln_.operation = 'LENGTH'
 L_(tc_.outputs['Object'], sub_.inputs[0]); L_(sub_.outputs['Vector'], ln_.inputs[0])
-mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = 0.0; mr_.inputs['From Max'].default_value = 0.78
+mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = 0.0; mr_.inputs['From Max'].default_value = 0.7
 L_(ln_.outputs['Value'], mr_.inputs['Value'])
 cr_ = nt_.nodes.new('ShaderNodeValToRGB'); el_ = cr_.color_ramp.elements
-el_[0].position = 0.0; el_[0].color = (1.0, 0.8, 0.48, 1)
-el_[1].position = 1.0; el_[1].color = (0.42, 0.16, 0.03, 1)
-mid_ = el_.new(0.62); mid_.color = (0.95, 0.62, 0.26, 1)
+el_[0].position = 0.0; el_[0].color = (1.0, 0.64, 0.27, 1)
+el_[1].position = 1.0; el_[1].color = (0.26, 0.07, 0.012, 1)
+mid_ = el_.new(0.56); mid_.color = (0.82, 0.37, 0.08, 1)
 L_(mr_.outputs['Result'], cr_.inputs['Fac'])
 L_(cr_.outputs['Color'], bs_.inputs['Base Color']); L_(cr_.outputs['Color'], bs_.inputs['Emission Color'])
 pw_ = nt_.nodes.new('ShaderNodeMath'); pw_.operation = 'SUBTRACT'; pw_.inputs[0].default_value = 1.0
@@ -419,14 +419,14 @@ sq_ = nt_.nodes.new('ShaderNodeMath'); sq_.operation = 'POWER'; sq_.inputs[1].de
 L_(pw_.outputs[0], sq_.inputs[0])
 st_ = nt_.nodes.new('ShaderNodeMath'); st_.operation = 'MULTIPLY_ADD'; st_.inputs[1].default_value = 0.85; st_.inputs[2].default_value = 0.05
 L_(sq_.outputs[0], st_.inputs[0]); L_(st_.outputs[0], bs_.inputs['Emission Strength'])
-st_.inputs[1].default_value = 1.05; st_.inputs[2].default_value = 0.1   # a faint translucency glow only — the bulb does the lighting
+st_.inputs[1].default_value = 1.15; st_.inputs[2].default_value = 0.1   # a faint translucency glow only — the bulb does the lighting
 # paper fibre: low-contrast mottling in the base colour
 fn_ = nt_.nodes.new('ShaderNodeTexNoise'); fn_.inputs['Scale'].default_value = 140.0; fn_.inputs['Detail'].default_value = 8.0
 L_(tc_.outputs['Object'], fn_.inputs['Vector'])
 fm_ = nt_.nodes.new('ShaderNodeMapRange'); fm_.inputs['To Min'].default_value = 0.9; fm_.inputs['To Max'].default_value = 1.0
 L_(fn_.outputs['Fac'], fm_.inputs['Value'])
 pc_ = nt_.nodes.new('ShaderNodeMix'); pc_.data_type = 'RGBA'; pc_.blend_type = 'MULTIPLY'; pc_.inputs['Factor'].default_value = 1.0
-pc_.inputs[6].default_value = (*hexc('#e9cf98'), 1)
+pc_.inputs[6].default_value = (*hexc('#6e4318'), 1)
 L_(fm_.outputs['Result'], pc_.inputs[7]); L_(pc_.outputs[2], bs_.inputs['Base Color'])
 VUINK = C.mat('vuink', hexc('#3a2410'), 0.6)
 VURED = C.mat('vured', hexc('#c7362a'), 0.55)
@@ -443,45 +443,66 @@ def vu_tick(cx, py, ang, r0, r1, w, m, z):
     return t
 
 
+def lathe(name, cx, cy, prof, m, segs=160):
+    """A ring turned on a lathe: prof = [(radius_px, z), ...] swept round (cx, cy)."""
+    bm = bmesh.new(); rings = []
+    for i in range(segs):
+        th = 2 * math.pi * i / segs
+        rings.append([bm.verts.new((r_ / 100 * math.cos(th), r_ / 100 * math.sin(th), z_)) for r_, z_ in prof])
+    for i in range(segs):
+        a_, b_ = rings[i], rings[(i + 1) % segs]
+        for j in range(len(prof) - 1):
+            bm.faces.new((a_[j], b_[j], b_[j + 1], a_[j + 1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new(name); bm.to_mesh(me); bm.free()
+    for p_ in me.polygons:
+        p_.use_smooth = True
+    o = C.link(bpy.data.objects.new(name, me)); o.data.materials.append(m)
+    o.location = (*P(cx, cy), 0)
+    return o
+
+
+# the meter: a big dial almost the height of the plate, held by a fat rounded glossy-black bezel (a torus in
+# section: it rolls over from the plate into the dial, so it catches one soft ring of light all the way round)
+VR, VRO, VRI = 68, 80, 66            # dial radius, bezel outer / inner radius (px)
 for cx in (240, 468):
     cy = 753
-    ring_ = C.cyl('vubz', cx, cy, 71, VZ, VZ + 0.13, VUBZ, bev=4.0, segs=128)
-    bm = bmesh.new()   # the opening flares outward: a conical wall the dial's warm light falls on
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=128, radius1=0.655, radius2=0.675, depth=0.22)
-    me = bpy.data.meshes.new('vucone'); bm.to_mesh(me); bm.free()
-    cone_ = C.link(bpy.data.objects.new('vucone', me)); cone_.location = (*P(cx, cy), VZ + 0.05)
-    C.cut(ring_, cone_)
     fz = VZ + 0.012
-    C.cyl('vuface', cx, cy, 65, VZ, fz, VUFACE, segs=128)
-    py = cy + 34       # the needle pivot, low on the dial
-    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 70.0; bulb.color = hexc('#ffa036'); bulb.shadow_soft_size = 0.05
-    bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, py + 9), fz + 0.04)
+    prof = [(VRI - 1, fz - 0.002), (VRI, fz + 0.03)]
+    for k_ in range(0, 25):
+        t_ = math.pi * k_ / 24
+        prof.append(((VRI + VRO) / 2 - (VRO - VRI) / 2 * math.cos(t_), fz + 0.03 + 0.1 * math.sin(t_) ** 0.8))
+    prof += [(VRO, VZ)]
+    lathe('vubz', cx, cy, prof, VUBZ)
+    C.cyl('vuface', cx, cy, VR, VZ, fz, VUFACE, segs=128)
+    py = cy + 40       # the needle pivot, low on the dial
+    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 45.0; bulb.color = hexc('#ffa036'); bulb.shadow_soft_size = 0.05
+    bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, py + 9), fz + 0.045)
     zt = fz + 0.0005
+    R0 = 66            # the scale arc radius around the pivot
     for ang in range(-48, 49, 2):          # the scale's base arc
-        vu_tick(cx, py, ang, 57.5, 58.6, 2.1, VURED if ang >= 25 else VUINK, zt)
+        vu_tick(cx, py, ang, R0, R0 + 1.2, 2.3, VURED if ang >= 25 else VUINK, zt)
     for a_ in range(25, 49, 2):            # the red band
-        vu_tick(cx, py, a_, 58.6, 62.0, 2.2, VURED, zt)
+        vu_tick(cx, py, a_, R0 + 1.2, R0 + 5, 2.4, VURED, zt)
     for db, ang in VUDB.items():
         major = db in (-20, -10, -7, -5, -3, 0, 3)
-        vu_tick(cx, py, ang, 58.6, 65 if major else 62.5, 1.1, VURED if db >= 0 else VUINK, zt)
+        vu_tick(cx, py, ang, R0 + 1.2, R0 + (8 if major else 5), 1.2, VURED if db >= 0 else VUINK, zt)
         if major:
             th = math.radians(ang)
-            C.text(('+' if db > 0 else '') + str(db), cx + 72 * math.sin(th), py - 72 * math.cos(th) + 3, 8, BAR, VURED if db >= 0 else VUINK, zt, align='CENTER', rot=-ang)
-    C.text('VU', cx, py - 24, 16, BAR, VUINK, zt, align='CENTER', spacing=1.1)
-    C.text('−', cx - 44, py - 8, 10, BAR, VUINK, zt, align='CENTER')
-    C.text('+', cx + 44, py - 8, 10, BAR, VURED, zt, align='CENTER')
-    # the bottom of the dial: a dark moulded panel across the chord, and in its top edge a small arched window
-    # where the movement shows — a copper coil lit by the same lamp; the needle rises out of it
-    # the bottom shield is a hood: a dark plate standing above the dial, open toward the scale; the bulb hides under it
-    pan = C.cyl('vupanel', cx, cy, 65, fz + 0.06, fz + 0.072, C.mat('vupan', hexc('#140f0b'), 0.45, coat=0.2), bev=0.5, segs=128)
-    C.cut(pan, C.rbox('vupanc', cx - 80, cy - 80, cx + 80, py + 1, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
+            C.text(('+' if db > 0 else '') + str(db), cx + (R0 + 15) * math.sin(th), py - (R0 + 15) * math.cos(th) + 3, 9, BAR, VURED if db >= 0 else VUINK, zt, align='CENTER', rot=-ang)
+    C.text('VU', cx, py - 26, 19, BAR, VUINK, zt, align='CENTER', spacing=1.1)
+    C.text('−', cx - 50, py - 10, 11, BAR, VUINK, zt, align='CENTER')
+    C.text('+', cx + 50, py - 10, 11, BAR, VURED, zt, align='CENTER')
+    # the bottom shield: a dark hood over the chord with an arched window to the copper movement; the bulb hides under it
+    pan = C.cyl('vupanel', cx, cy, VR, fz + 0.06, fz + 0.072, C.mat('vupan', hexc('#140f0b'), 0.45, coat=0.2), bev=0.5, segs=128)
+    C.cut(pan, C.rbox('vupanc', cx - 90, cy - 90, cx + 90, py + 1, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
     COIL = C.mat('vucoil', hexc('#9a5a2a'), 0.42, metal=1.0)
-    win = C.cyl('vuwin', cx, py + 1, 17, fz, fz + 0.014, COIL, segs=96)
+    win = C.cyl('vuwin', cx, py + 1, 19, fz, fz + 0.014, COIL, segs=96)
     C.cut(win, C.rbox('vuwinc', cx - 30, py + 1, cx + 30, py + 30, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
-    for k_ in range(7):   # coil windings
-        C.rbox('vuwind', cx - 13 + k_ * 4.3, py - 11, cx - 11.6 + k_ * 4.3, py + 1, fz + 0.014, fz + 0.016, 0.5, 0, C.mat('vuwd', hexc('#5a2c10'), 0.5))
+    for k_ in range(8):   # coil windings
+        C.rbox('vuwind', cx - 15 + k_ * 4.3, py - 13, cx - 13.6 + k_ * 4.3, py + 1, fz + 0.014, fz + 0.016, 0.5, 0, C.mat('vuwd', hexc('#5a2c10'), 0.5))
     if not APP:
-        vu_tick(cx, py, -12, 14, 66, 1.6, C.DARKINK, zt + 0.01)
+        vu_tick(cx, py, -12, 14, 74, 1.6, C.DARKINK, zt + 0.01)
 
 # ───────────────────────────── deck controls
 # toggle: a vintage panel-mount bat-handle switch (Carling / NKK style), five concentric parts —
@@ -1074,7 +1095,7 @@ if '--glassov' in argv:
     C.rbox('tvbrB', 300, 612, 448, 634, 0.3, 0.375, 3, 1.4, BLK)
     C.rbox('tvbrB2', 330, 606, 418, 616, 0.3, 0.385, 2, 1.0, BLK)
     screw(318, 624, 3.4, 0.375); screw(430, 624, 3.4, 0.375); screw(352, 611, 2.6, 0.385); screw(396, 611, 2.6, 0.385)
-    GLV = C.mat('vuglass', (1, 1, 1), 0.04, trans=1.0, ior=1.515, spec=0.6)
+    GLV = C.mat('vuglass', (1, 1, 1), 0.04, trans=1.0, ior=1.515, spec=0.45)
     gnt = GLV.node_tree; gb = gnt.nodes['Principled BSDF']; GL_ = gnt.links.new
     gtc = gnt.nodes.new('ShaderNodeTexCoord'); dn = gnt.nodes.new('ShaderNodeTexNoise'); dn.inputs['Scale'].default_value = 260.0; dn.inputs['Detail'].default_value = 6.0
     GL_(gtc.outputs['Object'], dn.inputs['Vector'])
@@ -1087,8 +1108,8 @@ if '--glassov' in argv:
     GL_(lw.outputs['Facing'], lr.inputs['Fac'])
     if 'Specular Tint' in gb.inputs:
         GL_(lr.outputs['Color'], gb.inputs['Specular Tint'])
-    for nm_, x0_ in (('g_vu1', 172), ('g_vu2', 400)):
-        o_ = pane(nm_, x0_, 685, x0_ + 136, 821, 68, 0.07)
+    for nm_, x0_ in (('g_vu1', 174), ('g_vu2', 402)):
+        o_ = pane(nm_, x0_ - 0, 687, x0_ + 136, 819, 66, 0.12)
         o_.data.materials[0] = GLV
     pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)
     pane('g_lcd', 595, 677, 1387, 829, 18, 0.035)
