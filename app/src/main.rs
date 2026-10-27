@@ -70,6 +70,14 @@ fn start_resize(window: WebviewWindow, dir: String) {
     if let Ok(h) = window.hwnd() {
         let hw = h.0 as isize;
         let _ = window.run_on_main_thread(move || native::resize_drag(hw, &dir));
+    }    #[cfg(not(windows))]
+    {
+        use tauri_runtime::ResizeDirection as R;
+        let d = match dir.as_str() {
+            "n" => R::North, "s" => R::South, "e" => R::East, "w" => R::West,
+            "ne" => R::NorthEast, "nw" => R::NorthWest, "se" => R::SouthEast, _ => R::SouthWest,
+        };
+        let _ = window.as_ref().window().start_resize_dragging(d);
     }
 }
 

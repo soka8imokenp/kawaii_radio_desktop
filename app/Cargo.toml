@@ -1,6 +1,6 @@
 [package]
 name = "kawaii-radio-desk"
-version = "0.6.8"
+version = "0.6.9"
 description = "Kawaii Radio KR-01 DESK — the desktop radio"
 edition = "2021"
 
@@ -29,3 +29,6 @@ strip = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
+
+[target.'cfg(not(windows))'.dependencies]
+tauri-runtime = "2"

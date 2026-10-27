@@ -1,11 +1,15 @@
 {
-  "version": "0.6.8",
-  "notes": "VU-o'lchagichlar shishasi endi silliq gumbaz: chetidagi notekis yorug' halqa yo'qoldi.",
-  "pub_date": "2026-10-27T16:10:56Z",
+  "version": "0.6.9",
+  "notes": "Tugmalar bosilganda atrofida soya yoki yorug'lik o'zgarmaydi — faqat tugma o'zi bosiladi. Chek chop etish ovozi olib tashlandi. Profilda avatar va RANK rangli va kattaroq. Linux uchun ham versiya.",
+  "pub_date": "2026-10-27T16:38:26Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjc4V1BZbG5FMUpjbzhSZXp5ZlBBb0RuM1FHeTR2ZVJjSkRlYXNDMmFHT29saWlEYm41UmRkMHc5bUlDTndMMUh5c0FvYXhDdFNsckZIR3RxWEZrUGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTE3NDU2CWZpbGU6S2F3YWlpIFJhZGlvXzAuNi44X3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjYuOApiMWgvWUxNSTVtK294SDFGNEFtSUtiRitYaWVpRTJjVHgyRzIxVEkzbUJjU1RydjY4b2crcjBuYkNEWUZDbE1oaEZrdzl3Uzd2UEwzeGMreVZmclZBUT09Cg==",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.6.8-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycit5NGxLSHBIMUJvUStiOFptTUdBQWtTa1U0Y0lBcVl6VHNvWXZUMzdGVDM2MG9oeDZOVnB4SXJwY3FCdkEwbUFtQ05DZXV6ZjgrK3lqQjg4emJpbFFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTE5MTA2CWZpbGU6S2F3YWlpIFJhZGlvXzAuNi45X3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjYuOQpQd2N0RmJTVWRkUEtWM3lsaW9kTUNsc3VTbGdVNS9nUlNpb3VTeUI3WmY3dmFnTnFMbUF2VzBXckVVVEFHaU1NUkNaMmY5dnp2NkhOZnZEejAzU0xDUT09Cg==",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.6.9-setup.exe"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjBSRzhYRTlGTzloRWQ1cElaeVR3SlZhakZ1WE50NFVYYmFYNkpTV0hVd3NURXRSdnp2aU5KaGNYK3Y3WStxSTBnb0ZyRmZLSGMzTEl3LzNucGtCcmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTE5OTY2CWZpbGU6S2F3YWlpIFJhZGlvXzAuNi45X2FtZDY0LkFwcEltYWdlCXZlcnNpb246MC42LjkKaGpqQWtJcE5iY3JIRDFFb0xLNG51T1lJZWx4bEtPeVhOWHVod1VCQWtMWGFrOUFta2hhVDRpR25IS3MxeTlZVUxES2I0bmJVUmNmSGtkaTBFaEpyQkE9PQo=",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.6.9_amd64.AppImage"
     }
   }
 }

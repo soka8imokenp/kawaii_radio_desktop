@@ -443,6 +443,18 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
 - Не проверено вживую: полный вход Kawaii ID (нужен пароль пользователя) и реальное обновление (первое —
   при следующей версии после 0.6.6).
 
+### v0.6.9 (2026-10-27) — нажатия без ореола, тишина при печати, Linux
+- Нажатия: `.lit` (кусок down-плиты) обрезан `clip-path` строго по форме клавиши (`#navN/#gear/#stN/#tavsif/...`
+  в конце app.css) — колодец вокруг и соседи больше не меняют тень/свет. Тумблер `play` — круглая зона r46.
+- Звуки протяжки и печати чека убраны (мешали музыке). Остались только щелчки клавиш.
+- Профиль: аватар 104 px без зелёного фильтра, эмблема RANK 96 px.
+- **Linux**: `wsl -d Ubuntu -- bash /mnt/d/kawaii_radio_exe/app/release_linux.sh` (после `python release.py` на
+  Windows): собирает в `~/kr-desk-build` .deb и AppImage, кладёт в `dist/`, добавляет `linux-x86_64` (AppImage) в
+  `dist/latest.json`. Автообновление на Linux работает только у AppImage (deb обновляется новым .deb).
+  Изменение размера окна за край на Linux — `start_resize_dragging` (зависимость `tauri-runtime` только не-Windows).
+  AppImage ~90 MB — близко к лимиту GitHub 100 MB на файл; если вырастет — перейти на GitHub Releases.
+  Вживую на настоящем Linux не проверялось (только сборка в WSL).
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —

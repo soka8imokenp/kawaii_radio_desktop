@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.8';
+const VERSION = '0.6.9';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -99,7 +99,7 @@ const stKeys = STATIONS.map(([key, freq], i) => ctl('st' + i, 152 + i * 216, 112
 
 
 // deck
-const playKey = ctl('play', 130, 836, 242, 992, { title: 'Ijro / pauza', click: () => togglePlay() });   // a toggle: lever up = playing
+const playKey = ctl('play', 140, 866, 232, 958, { cls: 'round', title: 'Ijro / pauza', click: () => togglePlay() });   // a toggle: lever up = playing
 const heartKey = ctl('heart', 769, 861, 871, 963, { cls: 'round', title: 'Sevimli', click: () => toggleLike() });
 const tavsifKey = ctl('tavsif', 128, 982, 498, 1058, { title: 'Tavsif', click: () => printReceipt() });
 const saveKey = ctl('saqlash', 508, 982, 878, 1058, { title: 'Saqlash', click: () => toast('SAQLASH · TEZ ORADA') });
@@ -839,7 +839,7 @@ function stepPaper(dt) {
     const steps = Math.floor((now - feed.t0) / STEP_MS);
     tapeY = Math.max(0, feed.from - steps * STEP_PX);
     $('#paperWin').classList.add('feeding');
-    if (!feed.snd) { feed.snd = true; kindArg = feed.from / STEP_PX * STEP_MS / 1000; sfx('feed'); }
+    if (!feed.snd) { feed.snd = true; }   // silent: a music app must not buzz over the song
     if (tapeY <= 0) { feed = null; $('#paperWin').classList.remove('feeding'); if (burn) burn.t0 = now; }
     layoutPaper();
   }
@@ -849,7 +849,7 @@ function stepPaper(dt) {
     const ln = Math.floor((now - burn.t0) / LINE_MS), sub = Math.min(1, ((now - burn.t0) % LINE_MS) / (LINE_MS * 0.7));
     const rev = Math.min(burn.h, ln * LINE_H + sub * LINE_H);
     burn.blk.style.setProperty('--rev', rev.toFixed(1) + 'px');
-    if (!burn.snd) { burn.snd = true; kindArg = burn.h / LINE_H * LINE_MS / 1000; sfx('print'); $('#paperWin').classList.add('printing'); }
+    if (!burn.snd) { burn.snd = true; $('#paperWin').classList.add('printing'); }
     if (rev >= burn.h) { burn.blk.classList.add('done'); burn = null; $('#paperWin').classList.remove('printing'); on(printerLed, false); }
   }
   if (tapeGoal != null) {

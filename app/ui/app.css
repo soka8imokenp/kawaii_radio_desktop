@@ -659,3 +659,18 @@ body.full #rz { display: none; }
 @keyframes upBlink { 50% { opacity: .45; box-shadow: 0 0 3px 1px rgba(255,154,46,.4); } }
 /* the update lamp sits inside the gear key's top-right corner (the key is 26..102 x 984..1052, corner radius 20) */
 #upLamp { left: 84px !important; top: 993px !important; width: 8px !important; height: 8px !important; }
+/* v0.6.9: the pressed / lit look is cut from the "down" plate to the KEY ITSELF only — the well around it, the
+   neighbours and the chassis never change (that changing shadow / light around a pressed key was the halo) */
+#nav0 .lit, #nav1 .lit, #nav2 .lit, #nav3 .lit, #gear .lit { clip-path: inset(6px round 20px); }
+#st0 .lit, #st1 .lit, #st2 .lit { clip-path: inset(6px 4px round 15px); }
+#tavsif .lit, #saqlash .lit { clip-path: inset(0 round 24px); }
+#prev .lit { clip-path: inset(6px 6px 4px 6px round 18px); }
+#next .lit { clip-path: inset(6px round 18px); }
+#heart .lit { clip-path: circle(47px at 50% 50%); }
+#play .lit { clip-path: circle(46px at 50% 50%); border-radius: 0; }
+#slider .lit { clip-path: inset(7px round 15px); }
+/* the account card: avatar and RANK in full colour and bigger */
+.kid { grid-template-columns: 104px 1fr !important; }
+.kav { width: 104px !important; height: 104px !important; border-radius: 16px !important; filter: none !important;
+  box-shadow: 0 0 0 2px rgba(196,224,120,.45), 0 4px 14px rgba(0,0,0,.5) !important; }
+#pList .krank img { width: 96px !important; height: 96px !important; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)) !important; }
