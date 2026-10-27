@@ -425,6 +425,24 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
 - Рендер: при остановке фоновых рендеров bash-циклы render4k/renderall выживают и плодят Blender —
   убивать через PowerShell по CommandLine (см. команду в истории) + `Stop-Process blender`.
 
+### v0.6.6 (2026-10-27) — автообновление, профиль Kawaii ID, чат
+- **Автообновление** (tauri-plugin-updater). Как выпускать версию:
+  1. поднять версию в `app/ui/app.js` (VERSION), `app/tauri.conf.json`, `app/Cargo.toml`;
+  2. `cd app && python release.py "заметки на узбекском"` — собирает подписанный NSIS, кладёт
+     `dist/KawaiiRadio-<v>-setup.exe` и `dist/latest.json`;
+  3. закоммитить `dist/` и запушить в main — установленные копии увидят версию (raw.githubusercontent.com,
+     проверка при старте и каждые 6 ч; лампочка на шестерёнке, кнопка YANGILASH в SOZLAMALAR, установка passive +
+     перезапуск).
+  Приватный ключ: `C:\Users\soka\kawaii-keys\desk-updater.key` (без пароля), публичный — в tauri.conf.json.
+  БЕЗ ЭТОГО КЛЮЧА ОБНОВЛЕНИЯ ВЫПУСКАТЬ НЕЛЬЗЯ (подпись не сойдётся) — не терять, не коммитить.
+  Версии до 0.6.6 обновлятора не имеют: 0.6.6 ставится руками один раз.
+- **Профиль:** после `/auth/me` приложение само берёт публичный профиль `id.kawaii.uz/api/v1/u/{username}`
+  (Rust-команда `kid_public`): LVL + полоса XP (`xp_into_level/xp_needed`), карточка сезонного RANK с эмблемой
+  (`image_url` или `static/img/ranks/{rank}.webp`) и полосой до следующего шага (`season_xp/next_xp -> next_label`).
+- **Чат:** последнее сообщение больше не обрезается (стикеры/аватарки догружаются после прокрутки — следим за низом).
+- Не проверено вживую: полный вход Kawaii ID (нужен пароль пользователя) и реальное обновление (первое —
+  при следующей версии после 0.6.6).
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —
