@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.5';
+const VERSION = '0.6.6';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -896,8 +896,13 @@ function nameInk(n) { let h = 0; for (const c of String(n || '')) h = (h * 31 + 
 function addMsgs(list, replace) {
   const box = $('#chMsgs');
   if (replace) box.innerHTML = '';
+  const atEnd = replace || box.scrollHeight - box.scrollTop - box.clientHeight < 60;
   box.insertAdjacentHTML('beforeend', list.map(msgHtml).join(''));
-  box.scrollTop = box.scrollHeight;
+  if (atEnd) {
+    box.scrollTop = box.scrollHeight;
+    // pictures arrive later and push the last line out of the tube: follow them while we are at the bottom
+    box.querySelectorAll('img').forEach((im) => { if (!im.complete) im.addEventListener('load', () => { if (box.scrollHeight - box.scrollTop - box.clientHeight < 260) box.scrollTop = box.scrollHeight; }, { once: true }); });
+  }
 }
 const stickers = new Map();
 async function loadStickers() {
@@ -1043,11 +1048,31 @@ async function kidMe() {
   const id = chatId();
   try {
     const [st, body] = await invoke('kid_api', { path: '/auth/me', token: kid.token, uid: id.uid, key: id.key });
-    if (st === 200) { const j = JSON.parse(body); if (j.ok && j.account) { kid.acc = j.account; store.set('kidAcc', kid.acc); } }
+    if (st === 200) { const j = JSON.parse(body); if (j.ok && j.account) { kid.acc = j.account; await kidProgress(); store.set('kidAcc', kid.acc); } }
     else if (st === 401) { kid.token = null; kid.acc = null; store.set('kidToken', null); store.set('kidAcc', null); toast('KAWAII ID · QAYTA KIRING'); }
   } catch {}
   composeUi();
   if (screen === 4) fillScreen(4);
+}
+// the public Kawaii ID profile has the LEVEL bar and the season RANK (with its emblem and the next step)
+async function kidProgress() {
+  const a = kid.acc;
+  if (!a || !a.username) return;
+  try {
+    const [st, body] = await invoke('kid_public', { username: a.username });
+    if (st !== 200) return;
+    const j = JSON.parse(body), v = j.profile || j;
+    const into = Number(v.xp_into_level), need = Number(v.xp_needed);
+    if (isFinite(into) && isFinite(need) && need > 0) { a.xpInto = into; a.xpNeeded = need; }
+    if (v.level != null) a.level = Number(v.level);
+    const rk = v.rank;
+    if (rk && typeof rk === 'object' && rk.rank) {
+      a.rank = rk.rank; a.seasonXp = Number(rk.season_xp || 0); a.nextXp = Number(rk.next_xp || 0);
+      a.nextLabel = rk.next_label || null; a.displayRank = rk.display_rank || rk.rank;
+      a.displayLabel = rk.display_label || rk.label || null; a.rankImg = rk.image_url || a.rankImg || null;
+      if (rk.season_xp != null) a.seasonXp = Number(rk.season_xp);
+    }
+  } catch {}
 }
 let kidPoll = null;
 async function kidLogin() {
@@ -1166,12 +1191,20 @@ function fillScreen(i) {
     $('#pTitle').textContent = 'PROFIL'; $('#pSub').textContent = 'KR-01 DESK';
     const mins = Math.round(store.get('listened', 0) / 60);
     const a = kid.acc;
+    const pct = (x, n) => Math.max(0, Math.min(100, Math.round(100 * (x || 0) / n)));
+    const rankName = a && (a.displayLabel || a.displayRank || a.rank || '');
+    if (a && !a.rankImg && (a.displayRank || a.rank)) a.rankImg = `https://id.kawaii.uz/static/img/ranks/${String(a.displayRank || a.rank).toLowerCase()}.webp`;
     const card = a ? `<div class="kid">
         <div class="kav" style="background-image:url('${esc(a.avatar || '')}')"></div>
-        <div class="kin"><b>${esc(a.name || a.username)}</b><span>@${esc(a.username)} · LVL ${a.level ?? '—'}${a.kpUntil && a.kpUntil > Date.now() ? ' · KAWAII PASS' : ''}</span>
-          ${a.xpNeeded ? `<div class="kxp"><i style="width:${Math.min(100, Math.round(100 * (a.xpInto || 0) / a.xpNeeded))}%"></i></div><span>${a.xpInto || 0} / ${a.xpNeeded} XP</span>` : ''}</div>
-        ${a.rankImg ? `<div class="krk"><img src="${esc(a.rankImg)}" alt=""><em>${esc(a.displayLabel || a.displayRank || a.rank || '')}</em></div>` : ''}
+        <div class="kin"><b>${esc(a.name || a.username)}</b><span>@${esc(a.username)}${a.kpUntil && a.kpUntil > Date.now() ? ' · KAWAII PASS' : ''}</span>
+          <div class="klv"><em>LVL ${a.level ?? '—'}</em>${a.xpNeeded ? `<div class="kxp"><i style="width:${pct(a.xpInto, a.xpNeeded)}%"></i></div><small>${a.xpInto || 0} / ${a.xpNeeded} XP</small>` : ''}</div>
+        </div>
       </div>
+      ${rankName || a.rankImg ? `<div class="krank">
+        ${a.rankImg ? `<img src="${esc(a.rankImg)}" alt="">` : ''}
+        <div><span>SEZON RANKI</span><b>${esc(String(rankName).toUpperCase())}</b>
+          ${a.nextXp ? `<div class="kxp"><i style="width:${pct(a.seasonXp, a.nextXp)}%"></i></div><small>${a.seasonXp || 0} / ${a.nextXp} XP${a.nextLabel ? ' → ' + esc(String(a.nextLabel).toUpperCase()) : ''}</small>` : `<small>${a.seasonXp || 0} XP</small>`}</div>
+      </div>` : ''}
       <div class="kbtn" id="kidOut">[ CHIQISH ]</div>`
       : `<div class="kbtn" id="kidIn">[ KAWAII ID BILAN KIRISH ]</div><div class="note">Kirgandan keyin chatda yozish, stikerlar va LEVEL ochiladi.</div>`;
     list.innerHTML = `${card}<div class="stat"><div><b>${mins}</b><span>DAQIQA</span></div><div><b>${S.liked.size}</b><span>SEVIMLI</span></div><div><b>${store.get('songs', 0)}</b><span>QO'SHIQ</span></div></div>`;
@@ -1185,6 +1218,8 @@ function rows(list, empty) {
 }
 $('#pList').addEventListener('click', (e) => {
   if (e.target.closest('#kidIn')) { click(); kidLogin(); return; }
+  if (e.target.closest('#upGo')) { click(); updateInstall(); return; }
+  if (e.target.closest('#upCheck')) { click(); updateCheck(true); return; }
   if (e.target.closest('#kidOut')) { click(); kidLogout(); return; }
   const r = e.target.closest('.row');
   if (!r) return;
@@ -1263,7 +1298,8 @@ function fillSettings() {
     <div class="set"><div><b>Mavzu</b><span>Kunduzgi bo'r yoki tungi grafit korpus</span></div>${seg('theme', [['light', 'KUN'], ['dark', 'TUN']], S.theme)}</div>
     <div class="set"><div><b>Stansiya</b><span>Ilova ochilganda qaysi efir</span></div>${seg('station', [['jpop', 'J-POP'], ['ost', 'OST'], ['riot', 'RIOT']], S.station)}</div>
     <div class="set"><div><b>Oyna hajmi</b><span>Tez tanlov; chetidan tortib ham o'zgartiriladi</span></div>${seg('size', [['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']], '')}</div>
-    <div class="set"><div><b>To'liq ekran</b><span>F11 — kino rejimi kabi</span></div>${seg('full', [['on', 'F11']], '')}</div>`;
+    <div class="set"><div><b>To'liq ekran</b><span>F11 — kino rejimi kabi</span></div>${seg('full', [['on', 'F11']], '')}</div>
+    ${updateHtml()}`;
 }
 $('#pList').addEventListener('click', (e) => {
   const i = e.target.closest('.seg i');
@@ -1277,6 +1313,43 @@ $('#pList').addEventListener('click', (e) => {
   if (name !== 'full') fillSettings();
 });
 
+
+/* ───────────── updates (dist/latest.json in the GitHub repo; the installer is signed, see main.rs update_*) */
+let upd = null, updBusy = false, updPct = 0;
+function updateHtml() {
+  if (updBusy) return `<div class="set upd"><div><b>Yangilanmoqda… ${updPct}%</b><span>Yuklab olinmoqda, keyin ilova o'zi qayta ishga tushadi</span></div><div class="kxp up"><i style="width:${updPct}%"></i></div></div>`;
+  if (upd) return `<div class="set upd on"><div><b>Yangi versiya: v${esc(upd.version)}</b><span>${esc((upd.notes || '').split('\n')[0].slice(0, 220)) || 'Yangilanish tayyor'}</span></div><div class="kbtn" id="upGo">[ YANGILASH ]</div></div>`;
+  return `<div class="set upd"><div><b>Versiya v${VERSION}</b><span>Eng so'nggi versiya o'rnatilgan</span></div><div class="kbtn" id="upCheck">[ TEKSHIRISH ]</div></div>`;
+}
+async function updateCheck(loud) {
+  if (!tauri || updBusy) return;
+  try {
+    const u = await invoke('update_check');
+    const was = upd && upd.version;
+    upd = u || null;
+    $('#upLamp').hidden = !upd;
+    if (upd && upd.version !== was) toast(`YANGI VERSIYA v${upd.version} · SOZLAMALAR`);
+    else if (loud && !upd) toast('ENG SOʻNGGI VERSIYA');
+  } catch (e) { if (loud) toast('YANGILANISH · TEKSHIRIB BOʻLMADI'); }
+  if (screen === 5) fillSettings();
+}
+async function updateInstall() {
+  if (!upd || updBusy) return;
+  updBusy = true; updPct = 0; fillSettings();
+  let un = null;
+  try {
+    un = await tauri.event.listen('update-progress', (e) => {
+      const { got, total } = e.payload || {};
+      const p = total ? Math.round(100 * got / total) : 0;
+      if (p !== updPct) { updPct = p; if (screen === 5) fillSettings(); }
+    });
+    await invoke('update_install');          // restarts the app when it is done
+  } catch (e) {
+    updBusy = false; toast('YANGILANISH · XATO'); if (screen === 5) fillSettings();
+  } finally { if (un) un(); }
+}
+setTimeout(() => updateCheck(false), 8000);
+setInterval(() => updateCheck(false), 6 * 3600 * 1000);
 
 /* ───────────── polish pass: sharp canvases, window keys, shutter transitions */
 function sharpen() {

@@ -636,3 +636,24 @@ body.full #rz { display: none; }
   background: linear-gradient(90deg, rgba(0,0,0,.14), rgba(0,0,0,.03) 8%, rgba(255,255,255,.06) 36%, transparent 55%, rgba(0,0,0,.04) 88%, rgba(0,0,0,.16)); }
 /* v0.6.5: bigger dials (pivot at y 793, scale arc radius ~66-71 px) */
 .vun { top: 723px !important; height: 70px !important; }
+
+/* ── v0.6.6: Kawaii ID card (LEVEL + season RANK), updates */
+#pList .kid .klv { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+#pList .kid .klv em { font: 700 15px RMono; color: #e6ff9a; font-style: normal; white-space: nowrap; }
+#pList .kid .klv small, #pList .krank small { font: 13px RMono; color: #9fb070; white-space: nowrap; }
+#pList .kxp { flex: 1; height: 8px; border-radius: 4px; background: rgba(159,176,112,.18); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+#pList .kxp i { display: block; height: 100%; background: linear-gradient(90deg, #8fbf5a, #e6ff9a); box-shadow: 0 0 8px rgba(230,255,154,.5); }
+#pList .krank { display: flex; align-items: center; gap: 16px; margin: 10px 0 4px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 1px rgba(159,176,112,.18); }
+#pList .krank img { width: 64px; height: 64px; object-fit: contain; filter: drop-shadow(0 0 8px rgba(230,255,154,.25)); }
+#pList .krank > div { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+#pList .krank span { font: 700 11px RMono; letter-spacing: .16em; color: #7c8456; }
+#pList .krank b { font: 700 20px RMono; color: #f2e49c; letter-spacing: .04em; }
+#pList .krank .kxp { flex: none; width: 100%; }
+#pList .set.upd.on b { color: #f2e49c; }
+#pList .kxp.up { flex: none; width: 160px; }
+/* a small amber lamp on the gear key when a new version is out */
+#upLamp { position: absolute; left: 90px; top: 990px; width: 9px; height: 9px; border-radius: 50%; z-index: 6; pointer-events: none;
+  background: radial-gradient(circle at 40% 35%, #fff1d6, #ff9a2e 60%, #b85a10); box-shadow: 0 0 8px 2px rgba(255,154,46,.7);
+  animation: upBlink 1.6s ease-in-out infinite; }
+@keyframes upBlink { 50% { opacity: .45; box-shadow: 0 0 3px 1px rgba(255,154,46,.4); } }

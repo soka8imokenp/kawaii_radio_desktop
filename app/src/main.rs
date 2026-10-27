@@ -255,6 +255,59 @@ async fn kid_api(path: String, token: String, uid: String, key: String, body: Op
     .map_err(|e| format!("{e}"))?
 }
 
+/// The public Kawaii ID profile (LEVEL / XP / season RANK): https://id.kawaii.uz/api/v1/u/{username}.
+#[tauri::command]
+async fn kid_public(username: String) -> Result<(u16, String), String> {
+    if username.is_empty() || username.len() > 64 || !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-') {
+        return Err("bad username".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let tls = native_tls::TlsConnector::new().map_err(|e| format!("{e}"))?;
+        let agent = ureq::AgentBuilder::new().tls_connector(Arc::new(tls)).timeout(std::time::Duration::from_secs(15)).build();
+        match agent.get(&format!("https://id.kawaii.uz/api/v1/u/{username}")).set("User-Agent", "KawaiiRadioDesk").call() {
+            Ok(r) => { let st = r.status(); Ok((st, r.into_string().unwrap_or_default())) }
+            Err(ureq::Error::Status(st, r)) => Ok((st, r.into_string().unwrap_or_default())),
+            Err(e) => Err(format!("{e}")),
+        }
+    })
+    .await
+    .map_err(|e| format!("{e}"))?
+}
+
+/* ───────── updates: dist/latest.json in the GitHub repo, the installer signed with our updater key */
+
+/// Is there a newer version? Some({version, notes}) or None.
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let up = app.updater().map_err(|e| format!("{e}"))?;
+    match up.check().await.map_err(|e| format!("{e}"))? {
+        Some(u) => Ok(Some(serde_json::json!({ "version": u.version, "current": u.current_version, "notes": u.body.clone().unwrap_or_default() }))),
+        None => Ok(None),
+    }
+}
+
+/// Download, verify the signature, install (the passive NSIS installer) and start the new version.
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle, window: WebviewWindow) -> Result<(), String> {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+    let up = app.updater().map_err(|e| format!("{e}"))?;
+    let Some(u) = up.check().await.map_err(|e| format!("{e}"))? else { return Ok(()) };
+    let mut got: u64 = 0;
+    let w = window.clone();
+    u.download_and_install(
+        move |chunk, total| {
+            got += chunk as u64;
+            let _ = w.emit("update-progress", serde_json::json!({ "got": got, "total": total.unwrap_or(0) }));
+        },
+        || {},
+    )
+    .await
+    .map_err(|e| format!("{e}"))?;
+    app.restart();
+}
+
 /// Lets the device be dragged by its chassis. Runs Windows' own move loop on the window's thread with the real
 /// cursor position, so Aero Snap (edges, corners, the Snap Layouts bar at the top) works like on a normal window.
 #[tauri::command]
@@ -403,7 +456,8 @@ fn main() {
             for a in &argv { kid_link(a); }
             if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
         }))
-        .invoke_handler(tauri::generate_handler![window_action, start_drag, start_resize, is_maximized, set_size, kid_login, kid_take, kid_open, kid_api])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![window_action, start_drag, start_resize, is_maximized, set_size, kid_login, kid_take, kid_open, kid_api, kid_public, update_check, update_install])
         .setup(|app| {
             if let Some(w) = app.get_webview_window("main") {
                 // the window is transparent and the device rounds its own corners (Windows does not round borderless windows)
