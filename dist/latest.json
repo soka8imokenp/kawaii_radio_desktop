@@ -1,11 +1,11 @@
 {
-  "version": "0.6.6",
-  "notes": "Ilova endi o'zi yangilanadi: yangi versiya chiqsa sozlamalar tugmasida chiroq yonadi. Profilda Kawaii ID LEVEL va sezon RANKI, chatda oxirgi xabar endi kesilmaydi.",
-  "pub_date": "2026-10-27T15:56:45Z",
+  "version": "0.6.7",
+  "notes": "Yangilanish chirog'i endi sozlamalar tugmasining ichida, chetidan chiqmaydi.",
+  "pub_date": "2026-10-27T16:01:41Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycnd6akFIaXBaK0drVWVNNldFY3NsTURMalVhYmVrYitoNC91dmg0NmVLUGcxZGRHbHlFenBlUXovbnI4VUx6bktHMG92T1lUUHFsbG4rUWVJK3hhZmdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTE2NjA1CWZpbGU6S2F3YWlpIFJhZGlvXzAuNi42X3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjYuNgpnSUZzbHpLZnNjTGxUaUJYaVFEWFd5bkhCTWtlOW12VElMbE1TVXlNb2ZOVlBhNmpTNFlqZ2xXRHYrL3p2UTdvbUNQUjlVQ2VPeTA2NEtHVkUvL0RCZz09Cg==",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.6.6-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycnd5Z1h2YUtONDF1MUV1WmlnWDI4U2VPNm9MSGxtV1d2RU9vMXNVYk9yeGZZcTIxS0cvbThRVkxUYTlTV2pGZHdwU1FRY2JUY1VNNDM0K0pOeFN4MFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTE2OTAxCWZpbGU6S2F3YWlpIFJhZGlvXzAuNi43X3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjYuNwpFaFhYWkVqVGRVWDVza2FyRktCWG42WHRwWVpzS3BZWFkzenppckJjMHN4UUN0WmprMTg5UHBMTnZrVThzN3VKckxBeDlIMHFyRzAzUlY2bGc1QStDQT09Cg==",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.6.7-setup.exe"
     }
   }
 }

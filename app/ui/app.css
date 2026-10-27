@@ -657,3 +657,5 @@ body.full #rz { display: none; }
   background: radial-gradient(circle at 40% 35%, #fff1d6, #ff9a2e 60%, #b85a10); box-shadow: 0 0 8px 2px rgba(255,154,46,.7);
   animation: upBlink 1.6s ease-in-out infinite; }
 @keyframes upBlink { 50% { opacity: .45; box-shadow: 0 0 3px 1px rgba(255,154,46,.4); } }
+/* the update lamp sits inside the gear key's top-right corner (the key is 26..102 x 984..1052, corner radius 20) */
+#upLamp { left: 84px !important; top: 993px !important; width: 8px !important; height: 8px !important; }
