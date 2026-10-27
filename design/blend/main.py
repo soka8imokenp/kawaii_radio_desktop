@@ -1108,9 +1108,29 @@ if '--glassov' in argv:
     GL_(lw.outputs['Facing'], lr.inputs['Fac'])
     if 'Specular Tint' in gb.inputs:
         GL_(lr.outputs['Color'], gb.inputs['Specular Tint'])
-    for nm_, x0_ in (('g_vu1', 174), ('g_vu2', 402)):
-        o_ = pane(nm_, x0_ - 0, 687, x0_ + 136, 819, 66, 0.12)
-        o_.data.materials[0] = GLV
+    # the VU glass: a smooth thin dome (a spherical cap), no thick pane edge — a pane's rim rendered as a jagged bright
+    # ring; the bezel's own rounded lip already gives the rim its light
+    for nm_, cx_ in (('g_vu1', 240), ('g_vu2', 468)):
+        bm = bmesh.new(); RR, HH, NR, NS_ = 0.665, 0.09, 40, 192
+        top = bm.verts.new((0, 0, HH))
+        rings = []
+        for j in range(1, NR + 1):
+            r_ = RR * j / NR
+            z_ = HH * (1 - (r_ / RR) ** 2)
+            rings.append([bm.verts.new((r_ * math.cos(2 * math.pi * i / NS_), r_ * math.sin(2 * math.pi * i / NS_), z_)) for i in range(NS_)])
+        for i in range(NS_):
+            bm.faces.new((top, rings[0][i], rings[0][(i + 1) % NS_]))
+        for j in range(NR - 1):
+            for i in range(NS_):
+                bm.faces.new((rings[j][i], rings[j + 1][i], rings[j + 1][(i + 1) % NS_], rings[j][(i + 1) % NS_]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        me = bpy.data.meshes.new(nm_); bm.to_mesh(me); bm.free()
+        for p_ in me.polygons:
+            p_.use_smooth = True
+        o_ = C.link(bpy.data.objects.new(nm_, me)); o_.data.materials.append(GLV)
+        o_.location = (*P(cx_, 753), 0.3)
+        if o_.data.polygons[0].normal.z < 0:
+            o_.data.flip_normals()
     pane('g_lyr', 624, 204, 1356, 620, 19, 0.075)
     pane('g_lcd', 595, 677, 1387, 829, 18, 0.035)
     pane('g_drum', 256, 866, 750, 958, 18, 0.028)
