@@ -609,3 +609,28 @@ body.full #rz { display: none; }
 .vun::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #4a4038, #15110d 70%); box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
 .vun { filter: drop-shadow(3px 4px 1.6px rgba(60,30,0,.45)) !important; }
+
+/* ── v0.6.4: the continuous chart-recorder tape (see the TAVSIF block in app.js) */
+#paperEmpty { display: none !important; }
+#paper { clip-path: none !important; padding: 0 !important; box-shadow: none !important;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9 .06' numOctaves='3' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .43 0 0 0 0 .4 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E"),
+    #f3f1ea !important; }
+#paper::after { display: none !important; }
+#paper .blk { position: relative; min-height: 432px; padding: 30px 18px 34px; }
+#paper .blk + .blk { border-top: 1px dashed rgba(60,56,50,.18); }
+#paper .blk .ink { -webkit-clip-path: inset(0 0 calc(100% - var(--rev, 100%)) 0); clip-path: inset(0 0 calc(100% - var(--rev, 100%)) 0); }
+#paper .blk.done .ink { -webkit-clip-path: none; clip-path: none; }
+/* the line just burnt is paler for a moment (thermal paper develops) */
+#paper .blk:not(.done)::after { content: ""; position: absolute; left: 0; right: 0; height: 26px; top: calc(30px + var(--rev, 0px) - 26px);
+  pointer-events: none; background: linear-gradient(180deg, rgba(243,241,234,0), rgba(243,241,234,.55)); }
+#paper .ink { font-size: 16px !important; line-height: 1.5 !important; color: #161514 !important; }
+#paper .ink .h1 { font: 17px Dela !important; letter-spacing: .06em; color: #161514 !important; }
+#paper .ink .title { font: 700 24px/1.15 RMono !important; color: #161514 !important; margin-top: 6px; }
+/* the platen bows the paper a little: darker at both edges, one soft vertical sheen */
+#paperWin { box-shadow: none; }
+#paperWin::before { height: 30px !important; background: linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.14) 40%, transparent) !important; }
+#paperWin::after { top: auto !important; bottom: 0 !important; height: 26px !important; opacity: 1 !important;
+  background: linear-gradient(0deg, rgba(0,0,0,.55) 0, rgba(0,0,0,.24) 6px, rgba(255,255,255,.16) 12px, rgba(0,0,0,.05) 18px, transparent 26px) !important; }
+#paperShade { position: absolute; left: 1478px; top: 104px; width: 358px; height: 432px; pointer-events: none; z-index: 3;
+  background: linear-gradient(90deg, rgba(0,0,0,.14), rgba(0,0,0,.03) 8%, rgba(255,255,255,.06) 36%, transparent 55%, rgba(0,0,0,.04) 88%, rgba(0,0,0,.16)); }

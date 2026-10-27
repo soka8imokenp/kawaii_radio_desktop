@@ -343,7 +343,6 @@ def gunmetal(name, color, r0=0.24, r1=0.38, lathe=True):
     and micro-abrasions in the normal, crevice grime from AO that darkens AND roughens the valleys."""
     m = C.mat(name, hexc(color), (r0 + r1) / 2, metal=1.0, aniso=0.4)
     nt = m.node_tree; L = nt.links.new; b = nt.nodes['Principled BSDF']
-    r0, r1 = 0.18, 0.38
     tc = nt.nodes.new('ShaderNodeTexCoord')
     n1 = nt.nodes.new('ShaderNodeTexNoise'); n1.inputs['Scale'].default_value = 400.0; n1.inputs['Detail'].default_value = 12.0; n1.inputs['Roughness'].default_value = 0.7
     L(tc.outputs['Object'], n1.inputs['Vector'])
@@ -394,24 +393,24 @@ def gunmetal(name, color, r0=0.24, r1=0.38, lathe=True):
 
 VUPL = C.plastic(C.mat('vuplate', hexc('#1f2125') if DARK else hexc('#2c2f34'), 0.38, coat=0.25, spec=0.45), 0.08, 0.05, 160)   # dark anodised, satin
 C.rbox('vuplate', 128, 672, 580, 834, LZ0, LZ0 + 0.02, 22, 1.5, VUPL)
-VUBOLT = gunmetal('vubolt', '#6a6e74')
+VUBOLT = gunmetal('vubolt', '#9a9ea4', 0.2, 0.32)
 for bx_, by_ in ((146, 690), (562, 690), (146, 816), (562, 816)):
     # socket head cap screws: a domed steel head with a real hex socket cut into it, grime in the socket
-    hd = C.cyl('vubolt', bx_, by_, 7.5, LZ0 + 0.02, LZ0 + 0.045, VUBOLT, bev=2.2)
-    C.cut(hd, C.cyl('vuhexc', bx_, by_, 3.6, LZ0 + 0.03, LZ0 + 0.2, C.BEZEL, segs=6))
-VUBZ = C.plastic(C.mat('vubez', hexc('#111214'), 0.5, coat=0.12, spec=0.35), 0.1, 0.06, 140)   # matte black moulding
-VUFACE = C.mat('vuface', hexc('#6e5a3a'), 0.85, emit=hexc('#ff8c2a'), estr=1.0, bump=(900, 0.03))
+    hd = C.cyl('vubolt', bx_, by_, 10, LZ0 + 0.02, LZ0 + 0.05, VUBOLT, bev=3.2)
+    C.cut(hd, C.cyl('vuhexc', bx_, by_, 4.2, LZ0 + 0.03, LZ0 + 0.2, C.BEZEL, segs=6))
+VUBZ = C.mat('vubez', hexc('#0c0c0e'), 0.3, coat=0.7, spec=0.5)   # a glossy black moulded ring
+VUFACE = C.mat('vuface', hexc('#e9cf98'), 0.8, emit=hexc('#ff8c2a'), estr=1.0, bump=(900, 0.03))
 nt_ = VUFACE.node_tree; bs_ = nt_.nodes['Principled BSDF']; L_ = nt_.links.new
 tc_ = nt_.nodes.new('ShaderNodeTexCoord')
 sub_ = nt_.nodes.new('ShaderNodeVectorMath'); sub_.operation = 'SUBTRACT'; sub_.inputs[1].default_value = (0.0, -0.16, 0.0)
 ln_ = nt_.nodes.new('ShaderNodeVectorMath'); ln_.operation = 'LENGTH'
 L_(tc_.outputs['Object'], sub_.inputs[0]); L_(sub_.outputs['Vector'], ln_.inputs[0])
-mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = 0.0; mr_.inputs['From Max'].default_value = 0.66
+mr_ = nt_.nodes.new('ShaderNodeMapRange'); mr_.inputs['From Min'].default_value = 0.0; mr_.inputs['From Max'].default_value = 0.78
 L_(ln_.outputs['Value'], mr_.inputs['Value'])
 cr_ = nt_.nodes.new('ShaderNodeValToRGB'); el_ = cr_.color_ramp.elements
-el_[0].position = 0.0; el_[0].color = (1.0, 0.66, 0.30, 1)
-el_[1].position = 1.0; el_[1].color = (0.22, 0.08, 0.02, 1)
-mid_ = el_.new(0.5); mid_.color = (0.80, 0.42, 0.14, 1)
+el_[0].position = 0.0; el_[0].color = (1.0, 0.8, 0.48, 1)
+el_[1].position = 1.0; el_[1].color = (0.42, 0.16, 0.03, 1)
+mid_ = el_.new(0.62); mid_.color = (0.95, 0.62, 0.26, 1)
 L_(mr_.outputs['Result'], cr_.inputs['Fac'])
 L_(cr_.outputs['Color'], bs_.inputs['Base Color']); L_(cr_.outputs['Color'], bs_.inputs['Emission Color'])
 pw_ = nt_.nodes.new('ShaderNodeMath'); pw_.operation = 'SUBTRACT'; pw_.inputs[0].default_value = 1.0
@@ -420,14 +419,14 @@ sq_ = nt_.nodes.new('ShaderNodeMath'); sq_.operation = 'POWER'; sq_.inputs[1].de
 L_(pw_.outputs[0], sq_.inputs[0])
 st_ = nt_.nodes.new('ShaderNodeMath'); st_.operation = 'MULTIPLY_ADD'; st_.inputs[1].default_value = 0.85; st_.inputs[2].default_value = 0.05
 L_(sq_.outputs[0], st_.inputs[0]); L_(st_.outputs[0], bs_.inputs['Emission Strength'])
-st_.inputs[1].default_value = 0.8; st_.inputs[2].default_value = 0.04   # a faint translucency glow only — the bulb does the lighting
+st_.inputs[1].default_value = 1.05; st_.inputs[2].default_value = 0.1   # a faint translucency glow only — the bulb does the lighting
 # paper fibre: low-contrast mottling in the base colour
 fn_ = nt_.nodes.new('ShaderNodeTexNoise'); fn_.inputs['Scale'].default_value = 140.0; fn_.inputs['Detail'].default_value = 8.0
 L_(tc_.outputs['Object'], fn_.inputs['Vector'])
 fm_ = nt_.nodes.new('ShaderNodeMapRange'); fm_.inputs['To Min'].default_value = 0.9; fm_.inputs['To Max'].default_value = 1.0
 L_(fn_.outputs['Fac'], fm_.inputs['Value'])
 pc_ = nt_.nodes.new('ShaderNodeMix'); pc_.data_type = 'RGBA'; pc_.blend_type = 'MULTIPLY'; pc_.inputs['Factor'].default_value = 1.0
-pc_.inputs[6].default_value = (*hexc('#6e5a3a'), 1)
+pc_.inputs[6].default_value = (*hexc('#e9cf98'), 1)
 L_(fm_.outputs['Result'], pc_.inputs[7]); L_(pc_.outputs[2], bs_.inputs['Base Color'])
 VUINK = C.mat('vuink', hexc('#3a2410'), 0.6)
 VURED = C.mat('vured', hexc('#c7362a'), 0.55)
@@ -446,16 +445,16 @@ def vu_tick(cx, py, ang, r0, r1, w, m, z):
 
 for cx in (240, 468):
     cy = 753
-    ring_ = C.cyl('vubz', cx, cy, 72, VZ, VZ + 0.15, VUBZ, bev=6.5, segs=128)
+    ring_ = C.cyl('vubz', cx, cy, 71, VZ, VZ + 0.13, VUBZ, bev=4.0, segs=128)
     bm = bmesh.new()   # the opening flares outward: a conical wall the dial's warm light falls on
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=128, radius1=0.645, radius2=0.685, depth=0.22)
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=128, radius1=0.655, radius2=0.675, depth=0.22)
     me = bpy.data.meshes.new('vucone'); bm.to_mesh(me); bm.free()
     cone_ = C.link(bpy.data.objects.new('vucone', me)); cone_.location = (*P(cx, cy), VZ + 0.05)
     C.cut(ring_, cone_)
     fz = VZ + 0.012
     C.cyl('vuface', cx, cy, 65, VZ, fz, VUFACE, segs=128)
     py = cy + 34       # the needle pivot, low on the dial
-    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 160.0; bulb.color = hexc('#ffa036'); bulb.shadow_soft_size = 0.05
+    bulb = bpy.data.lights.new('vubulb', 'POINT'); bulb.energy = 70.0; bulb.color = hexc('#ffa036'); bulb.shadow_soft_size = 0.05
     bo = bpy.data.objects.new('vubulb', bulb); sc.collection.objects.link(bo); bo.location = (*P(cx, py + 9), fz + 0.04)
     zt = fz + 0.0005
     for ang in range(-48, 49, 2):          # the scale's base arc
@@ -476,7 +475,7 @@ for cx in (240, 468):
     # the bottom shield is a hood: a dark plate standing above the dial, open toward the scale; the bulb hides under it
     pan = C.cyl('vupanel', cx, cy, 65, fz + 0.06, fz + 0.072, C.mat('vupan', hexc('#140f0b'), 0.45, coat=0.2), bev=0.5, segs=128)
     C.cut(pan, C.rbox('vupanc', cx - 80, cy - 80, cx + 80, py + 1, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
-    COIL = C.mat('vucoil', hexc('#8a4a1c'), 0.4, metal=1.0, emit=hexc('#ff7a20'), estr=0.12)
+    COIL = C.mat('vucoil', hexc('#9a5a2a'), 0.42, metal=1.0)
     win = C.cyl('vuwin', cx, py + 1, 17, fz, fz + 0.014, COIL, segs=96)
     C.cut(win, C.rbox('vuwinc', cx - 30, py + 1, cx + 30, py + 30, fz - 0.1, fz + 0.2, 0, 0, C.BEZEL))
     for k_ in range(7):   # coil windings
@@ -496,15 +495,19 @@ for cx in (240, 468):
 TX, TY = 186, 912
 
 
-GM = gunmetal('tggm', '#7a7e84')
-GMD = gunmetal('tggmd', '#62666c')
-GML = gunmetal('tggml', '#80848a', lathe=False)   # the lever: no lathe rings across it
+GM = gunmetal('tggm', '#6c7075', 0.22, 0.42)
+GMD = gunmetal('tggmd', '#484c50', 0.26, 0.44)
+GML = gunmetal('tggml', '#5e6267', 0.24, 0.4, lathe=False)   # the lever: no lathe rings across it
 # 1) the well
-c_ = C.cyl('cut_tgwell', TX, TY, 44, -0.07, 0.3, C.CHALK, segs=128); C.cut(chassis, c_)
-C.cyl('tgfloor', TX, TY, 45, -0.075, -0.069, C.plastic(C.mat('tgfloor', hexc('#1a1b1e'), 0.55, spec=0.35), 0.08, 0.06, 160), segs=128)
-wb = C.cyl('tgwallbev', TX, TY, 47, -0.01, 0.0, C.CHALK, segs=128); C.cut(wb, C.cyl('tgwbc', TX, TY, 44, -0.1, 0.1, C.CHALK, segs=128))
+bm = bmesh.new()   # a drafted cutter: the wall slopes in ~15 deg toward the floor
+bmesh.ops.create_cone(bm, cap_ends=True, segments=128, radius1=0.40, radius2=0.43, depth=0.5)
+me = bpy.data.meshes.new('cut_tgwell'); bm.to_mesh(me); bm.free()
+c_ = C.link(bpy.data.objects.new('cut_tgwell', me)); c_.location = (*P(TX, TY), -0.13 + 0.25); c_.hide_render = True
+C.cut(chassis, c_)
+C.cyl('tgfloor', TX, TY, 44, -0.135, -0.129, C.plastic(C.mat('tgfloor', hexc('#1a1b1e'), 0.55, spec=0.35), 0.08, 0.06, 160), segs=128)
+wb = C.cyl('tgwallbev', TX, TY, 45.5, -0.012, 0.0, C.CHALK, segs=128); C.cut(wb, C.cyl('tgwbc', TX, TY, 43, -0.1, 0.1, C.CHALK, segs=128))
 wb.modifiers.new('b', 'BEVEL').width = 0.008
-Z0 = -0.069
+Z0 = -0.129
 
 
 def ring_profile(name, prof, n, m, flute=None):
@@ -515,7 +518,7 @@ def ring_profile(name, prof, n, m, flute=None):
         k = flute(th) if flute else 1.0
         row = []
         for j, (r_, z_) in enumerate(prof):
-            rr = r_ * (k if j in (0, 1) else 1.0) / 100
+            rr = r_ * (k if j in (0, 1, 2, 3) else 1.0) / 100
             row.append(bm.verts.new((rr * math.cos(th), rr * math.sin(th), z_)))
         rings.append(row)
     for i in range(n):
@@ -533,25 +536,27 @@ def ring_profile(name, prof, n, m, flute=None):
 
 
 # 2) the fluted dress nut: outer wall, a small chamfer, the dished top sloping to the bushing
-flute = lambda th: 1.0 - 0.045 * max(0.0, math.cos(24 * th)) ** 2
-ring_profile('tgnut', [(27, Z0), (27, Z0 + 0.05), (26.3, Z0 + 0.0575), (25.4, Z0 + 0.06), (15.6, Z0 + 0.029), (14.2, Z0 + 0.027), (14.2, Z0)], 480, GM, flute)
+flute = lambda th: 1.0 - 0.055 * (0.5 - 0.5 * math.cos(10 * th)) ** 0.8      # 10 soft rounded lobes
+NZ = Z0 + 0.012
+ring_profile('tgnut', [(28, NZ), (28, NZ + 0.05), (27.2, NZ + 0.058), (26.0, NZ + 0.061), (16.5, NZ + 0.03), (15.2, NZ + 0.028), (15.2, NZ)], 500, GM, flute)
+C.cyl('tgwasher', TX, TY, 30.5, Z0, NZ, GMD, bev=0.6, segs=128)
 # 3) bushing: threads and the retaining collar, open on top (the socket)
-for k_ in range(4):
-    C.cyl('tgthr', TX, TY, 13.6 if k_ % 2 == 0 else 12.6, Z0 + 0.034 + k_ * 0.007, Z0 + 0.041 + k_ * 0.007, GMD, bev=0.25, segs=96)
-ring_profile('tgcollar', [(13.6, Z0 + 0.062), (13.6, Z0 + 0.08), (12.6, Z0 + 0.086), (9.6, Z0 + 0.084), (8.8, Z0 + 0.05), (8.8, Z0 + 0.03)], 96, GM)
-C.cyl('tgsock', TX, TY, 8.9, Z0 + 0.03, Z0 + 0.04, C.mat('tgsock', hexc('#050506'), 0.7), segs=64)
+for k_ in range(3):
+    C.cyl('tgthr', TX, TY, 15 if k_ % 2 == 0 else 14.2, NZ + 0.028 + k_ * 0.006, NZ + 0.034 + k_ * 0.006, GMD, bev=0.25, segs=96)
+ring_profile('tgcollar', [(16.5, NZ + 0.046), (16.5, NZ + 0.07), (15.6, NZ + 0.079), (13.4, NZ + 0.082), (11.6, NZ + 0.077), (10.8, NZ + 0.05), (10.8, NZ + 0.04)], 128, GM)
+C.cyl('tgsock', TX, TY, 10.9, NZ + 0.04, NZ + 0.05, C.mat('tgsock', hexc('#050506'), 0.7), segs=64)
 # 4) the pivot ball, half sunk in the collar
 bm = bmesh.new(); bmesh.ops.create_uvsphere(bm, u_segments=48, v_segments=24, radius=0.082)
-me = bpy.data.meshes.new('tgball'); bm.to_mesh(me); bm.free()
+me = bpy.data.meshes.new('tgball'); bm.to_mesh(me); bm.free()   # (radius set below)
 for p_ in me.polygons:
     p_.use_smooth = True
-PZ = Z0 + 0.064     # the ball sits deep in its cup
+PZ = NZ + 0.07     # the ball sits deep in its cup, a dark gap round it
 ball = C.link(bpy.data.objects.new('tgball', me)); ball.data.materials.append(GM); ball.location = (*P(TX, TY), PZ)
 # 5) the bat handle
 TG_UP = APP and DOWN
-th_ = math.radians(-40 if TG_UP else 40)    # tilt about X: toward the top of the screen or the bottom
-L_LEN = 0.62
-prof = [(0.0, 0.0), (0.05, 0.0), (0.058, 0.08), (0.074, 0.3), (0.078, 0.48), (0.074, L_LEN)]
+th_ = math.radians(-34 if TG_UP else 34)    # tilt about X: toward the top of the screen or the bottom
+L_LEN = 0.6
+prof = [(0.0, 0.0), (0.066, 0.0), (0.068, 0.08), (0.082, 0.28), (0.088, 0.44), (0.085, L_LEN)]
 bm = bmesh.new(); segs = 64; rows = []
 for (r_, z_) in prof:
     rows.append([bm.verts.new((r_ * math.cos(2 * math.pi * i / segs), r_ * math.sin(2 * math.pi * i / segs), z_)) for i in range(segs)])
@@ -560,7 +565,7 @@ for j in range(len(rows) - 1):
         bm.faces.new((rows[j][i], rows[j][(i + 1) % segs], rows[j + 1][(i + 1) % segs], rows[j + 1][i]))
 for t_ in range(1, 9):                       # the bullet dome
     a_ = math.pi / 2 * t_ / 8
-    rows.append([bm.verts.new((0.074 * math.cos(a_) * math.cos(2 * math.pi * i / segs), 0.074 * math.cos(a_) * math.sin(2 * math.pi * i / segs), L_LEN + 0.06 * math.sin(a_))) for i in range(segs)])
+    rows.append([bm.verts.new((0.085 * math.cos(a_) * math.cos(2 * math.pi * i / segs), 0.085 * math.cos(a_) * math.sin(2 * math.pi * i / segs), L_LEN + 0.075 * math.sin(a_))) for i in range(segs)])
     j = len(rows) - 2
     for i in range(segs):
         bm.faces.new((rows[j][i], rows[j][(i + 1) % segs], rows[j + 1][(i + 1) % segs], rows[j + 1][i]))
@@ -577,7 +582,7 @@ TGC = bpy.data.collections.new('tg_recv')
 for o_ in (lv, ball):
     TGC.objects.link(o_)
 for o_ in list(sc.objects):
-    if o_.name.startswith(('tgnut', 'tgcollar', 'tgthr')):
+    if o_.name.startswith(('tgnut', 'tgcollar', 'tgthr', 'tgwasher')):
         TGC.objects.link(o_)
 tl = bpy.data.lights.new('tgrim', 'AREA'); tl.energy = 7.0; tl.size = 0.22; tl.spread = math.radians(35); tl.color = (1.0, 0.97, 0.92)
 tlo = bpy.data.objects.new('tgrim', tl); sc.collection.objects.link(tlo)
@@ -748,13 +753,11 @@ for bx in (1440, 1856):
     for sy in (RY - 18, RY + 18):
         C.cyl('rsc', bx + 9, sy, 3.6, PZ + 0.16, PZ + 0.172, C.CHROME, bev=0.8, segs=24)
         C.rbox('rscs', bx + 6.6, sy - 0.6, bx + 11.4, sy + 0.6, PZ + 0.172, PZ + 0.1735, 0, 0, C.BEZEL)
-crank = bpy.data.objects.new('crank', None); C.link(crank)
-cx_, cy_ = P(1878, RY)
-crank.location = (cx_, cy_, 0)
-cb = C.rbox('carm', 1872, RY - 4, 1906, RY + 4, PZ + 0.11, PZ + 0.13, 4, 1, C.ALU)
-cb.data.transform(Matrix.Translation((-cx_, -cy_, 0))); cb.parent = crank
-kb = C.cyl('cknob', 1900, RY, 6, PZ + 0.11, PZ + 0.2, C.mat('knobred', hexc('#e0313f'), 0.3, coat=0.6), bev=1.5)
-kb.location.x -= cx_; kb.location.y -= cy_; kb.parent = crank
+crank = bpy.data.objects.new('crank', None); C.link(crank)   # (kept for the scroll animation code; no crank arm any more)
+cx_, cy_ = P(1878, RY); crank.location = (cx_, cy_, 0)
+REDSIL = C.mat('redsil', hexc('#c8322c'), 0.55, sss=0.1)
+for a_, b_ in ((1477, 1481), (1833, 1837)):
+    knurl('silring', a_, b_, 17.0, 17.0, 64, REDSIL)
 PZT = PZ + 0.02
 
 

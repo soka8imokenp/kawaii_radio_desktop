@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.3';
+const VERSION = '0.6.4';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -332,7 +332,7 @@ let onTrack = function onTrack(t) {
   renderLyrics(true);
   wave = waveOf(t.id);
   on(heartKey, S.liked.has(t.id));
-  buildReceipt(t, false);
+  buildReceipt(t, !!tv.dataset.ready);   // the first track at start-up appears quietly, later ones are printed
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: 'Kawaii Radio · ' + (S.mode === 'pick' ? "O'z tanlovim" : stationName()), artwork: [{ src: url(t.coverArt), sizes: '512x512' }] });
   }
@@ -755,8 +755,14 @@ function drawVU() {
 }
 
 /* ───────────── the receipt: printed song info, wound like a scroll */
-let paperOut = 0, paperScroll = 0, paperVel = 0, paperGoal = null, printing = null;
-let buildReceipt = function buildReceipt(t, animate) {
+/* ───────────── the TAVSIF chart recorder: one continuous tensioned paper tape
+ * The paper always runs from the head's slot (top) over the platen to the take-up roller (bottom). A new track:
+ * the roller turns (stepper, 3 px steps) and pulls the tape DOWN — the last receipt goes under the roller, clean
+ * paper comes out of the slot — then the head burns the new receipt line by line, top to bottom, on the standing
+ * paper. Nothing is torn off: the whole session is one tape, the mouse wheel winds it back and forth. */
+const WIN_H = 432, LINE_H = 21, MAX_BLK = 12;
+let tapeY = 0, tapeGoal = null, feed = null, burn = null;
+function receiptHtml(t) {
   const info = t.info || {};
   const d = new Date();
   const energy = Math.round((t.energy || 0) / 100 * 12);
@@ -769,13 +775,39 @@ let buildReceipt = function buildReceipt(t, animate) {
   for (const s of info.details || []) h += `<div class="sec">${esc(s.title).toUpperCase()}</div><div>${esc(s.text)}</div>`;
   h += `<div class="dash"></div><div class="soft">#${String(Math.abs(hashOf(t.id)) % 10000).padStart(4, '0')}   ${d.toLocaleDateString('uz')}   ${d.toTimeString().slice(0, 5)}</div>`;
   h += `<div class="barcode">${Array.from({ length: 70 }, (_, k) => `<i style="width:${[1.6, 1.6, 3.2, 4.8][(hashOf(t.id + k) >>> 0) % 4]}px"></i>`).join('')}</div>`;
-  const p = $('#paper');
-  p.innerHTML = `<div class="ink">${h}</div>`;
-  paperScroll = 0; paperVel = 0; paperGoal = null;
-  if (animate) { paperOut = 0; printing = performance.now(); on(printerLed, true); }
-  else { paperOut = 1e6; }
-  layoutPaper();
+  return h;
 }
+const tape = () => $('#paper');
+function blankTape() { if (!tape().children.length) tape().innerHTML = '<div class="blk blank"></div>'; }
+let buildReceipt = function buildReceipt(t, animate) {
+  blankTape();
+  const p = tape();
+  const blk = document.createElement('div');
+  blk.className = 'blk';
+  blk.innerHTML = `<div class="ink">${receiptHtml(t)}</div>`;
+  const top = p.firstElementChild;
+  if (!animate) {
+    // a quiet change (start-up): the newest receipt is simply there
+    if (top && top.classList.contains('blank')) top.remove();
+    p.prepend(blk); blk.classList.add('done');
+    trimTape(); tapeY = 0; tapeGoal = null; layoutPaper();
+    return;
+  }
+  if (feed || burn) {   // a print is still running: finish it at once
+    if (burn) { burn.blk.classList.add('done'); burn = null; }
+    feed = null; tapeY = 0;
+  }
+  p.prepend(blk);
+  blk.style.setProperty('--rev', '0px');
+  trimTape();
+  // the new stretch of paper is still inside the printer: the view stays where it was, then the roller pulls it down
+  tapeY += blk.offsetHeight; tapeGoal = null;
+  feed = { from: tapeY, t0: performance.now() };
+  burn = { blk, t0: null, h: blk.querySelector('.ink').offsetHeight };
+  on(printerLed, true);
+  layoutPaper();
+};
+function trimTape() { const p = tape(); while (p.children.length > MAX_BLK) p.lastElementChild.remove(); }
 function hashOf(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0; return h; }
 function printReceipt() {
   if (!cur) return;
@@ -784,40 +816,46 @@ function printReceipt() {
   buildReceipt(cur.track, true);
 }
 function layoutPaper() {
-  const p = $('#paper');
+  const p = tape();
   const full = p.scrollHeight;
-  const maxScroll = Math.max(0, full - 432);
-  paperScroll = Math.max(0, Math.min(maxScroll, paperScroll));
-  // a real feed: the paper itself slides out of the head's slot (it prints the receipt bottom-up, so when it is done
-  // the header sits at the slot and reads top-down); what is still inside the printer is above the window
-  const inside = Math.max(0, full - paperOut);
-  p.style.transform = `translate3d(0, ${(-inside - paperScroll).toFixed(2)}px, 0)`;
-  p.style.setProperty('--out', full + 'px');
-  const lines = Math.max(1, Math.round(full / 21)), line = Math.min(lines, Math.round(paperScroll / 21) + 1);
+  tapeY = Math.max(0, Math.min(Math.max(0, full - WIN_H), tapeY));
+  p.style.transform = `translate3d(0, ${(-tapeY).toFixed(2)}px, 0)`;
+  const lines = Math.max(1, Math.round(full / LINE_H)), line = Math.min(lines, Math.round(tapeY / LINE_H) + 1);
   $('#qator').textContent = `QATOR ${String(line).padStart(2, '0')}/${String(lines).padStart(2, '0')}`;
 }
 
 $('#paperWin').addEventListener('wheel', (e) => {
   e.preventDefault();
-  const step = e.deltaMode === 1 ? e.deltaY * 21 : e.deltaY * 0.5;   // a notch ~ 2.5 printed lines
-  const max = Math.max(0, $('#paper').scrollHeight - 432);
-  paperGoal = Math.max(0, Math.min(max, (paperGoal ?? paperScroll) + step));
+  if (feed) return;
+  const step = e.deltaMode === 1 ? e.deltaY * LINE_H : e.deltaY * 0.5;   // a notch ~ 2.5 printed lines
+  const max = Math.max(0, tape().scrollHeight - WIN_H);
+  tapeGoal = Math.max(0, Math.min(max, (tapeGoal ?? tapeY) + step));
 }, { passive: false });
+const STEP_PX = 3, STEP_MS = 7;          // the take-up roller's stepper: 3 px a step
 function stepPaper(dt) {
-  if (printing != null) {
-    // a stepper motor: 3 px steps, a printed line (21 px) = 7 steps, then a tiny dwell while the head burns the next one
-    const ms = performance.now() - printing;
-    const LINE = 7 * 9 + 14;                               // ms per line: steps + dwell
-    const ln = Math.floor(ms / LINE), inLine = Math.min(7, Math.floor((ms % LINE) / 9));
-    paperOut = ln * 21 + inLine * 3;
-    $('#paperWin').classList.toggle('feeding', true);
-    if (paperOut >= $('#paper').scrollHeight) { printing = null; paperOut = 1e6; on(printerLed, false); $('#paperWin').classList.remove('feeding'); }
+  const now = performance.now();
+  if (feed) {
+    // the roller pulls the tape down in crisp motor steps
+    const steps = Math.floor((now - feed.t0) / STEP_MS);
+    tapeY = Math.max(0, feed.from - steps * STEP_PX);
+    $('#paperWin').classList.add('feeding');
+    if (!feed.snd) { feed.snd = true; kindArg = feed.from / STEP_PX * STEP_MS / 1000; sfx('feed'); }
+    if (tapeY <= 0) { feed = null; $('#paperWin').classList.remove('feeding'); if (burn) burn.t0 = now; }
     layoutPaper();
   }
-  if (paperGoal != null) {
-    const d = paperGoal - paperScroll;
-    if (Math.abs(d) < 0.3) { paperScroll = paperGoal; paperGoal = null; }
-    else paperScroll += d * (1 - Math.exp(-(dt || 0.016) / 0.11));
+  if (burn && burn.t0 != null) {
+    // the head burns one text line (its dot rows sweep down), then the next one right under it
+    const LINE_MS = 80;
+    const ln = Math.floor((now - burn.t0) / LINE_MS), sub = Math.min(1, ((now - burn.t0) % LINE_MS) / (LINE_MS * 0.7));
+    const rev = Math.min(burn.h, ln * LINE_H + sub * LINE_H);
+    burn.blk.style.setProperty('--rev', rev.toFixed(1) + 'px');
+    if (!burn.snd) { burn.snd = true; kindArg = burn.h / LINE_H * LINE_MS / 1000; sfx('print'); $('#paperWin').classList.add('printing'); }
+    if (rev >= burn.h) { burn.blk.classList.add('done'); burn = null; $('#paperWin').classList.remove('printing'); on(printerLed, false); }
+  }
+  if (tapeGoal != null) {
+    const d = tapeGoal - tapeY;
+    if (Math.abs(d) < 0.3) { tapeY = tapeGoal; tapeGoal = null; }
+    else tapeY += d * (1 - Math.exp(-(dt || 0.016) / 0.11));
     layoutPaper();
   }
 }
@@ -1323,6 +1361,16 @@ function sfx(kind) {
       g.gain.setValueAtTime(0, t + dur);
       o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
     }
+    else if (kind === 'feed') {
+      // the take-up roller's stepper: a quick ticking whine
+      const o = actx.createOscillator(), g = actx.createGain(), lp = actx.createBiquadFilter();
+      o.type = 'square'; o.frequency.value = 142; lp.type = 'bandpass'; lp.frequency.value = 900; lp.Q.value = 2;
+      const dur = kindArg || 0.8;
+      g.gain.setValueAtTime(0, t);
+      for (let k = 0; k < dur * 140; k++) { g.gain.setValueAtTime(0.035, t + k / 140); g.gain.setValueAtTime(0.008, t + k / 140 + 0.003); }
+      g.gain.setValueAtTime(0, t + dur);
+      o.connect(lp).connect(g).connect(out); o.start(t); o.stop(t + dur + 0.05);
+    }
     else if (kind === 'tear') { burst(2400, 0.6, 0.22, 0.25); burst(5000, 1, 0.12, 0.12, 0.05); }
   } catch {}
 }
@@ -1397,28 +1445,8 @@ onTrack = (t) => { _onTrack(t); coverColor(url(t.coverArt)); };
 const _shutter = shutter;
 shutter = (swap) => { sfx('tick'); return _shutter(() => { sfx('up'); swap(); }); };
 
-// printing: buzz, jitter, the head LED blinks; double click tears the receipt off
-const _build = buildReceipt;
-buildReceipt = (t, animate) => {
-  $('#paper').classList.remove('tear');
-  $('#paperEmpty').hidden = true;
-  _build(t, animate);
-  if (animate) {
-    const p = $('#paper');
-    const dur = p.scrollHeight / 21 * 0.077;
-    kindArg = dur; sfx('print');
-    const pw = $('#paperWin'); pw.classList.add('printing');   // the motor's buzz shakes the printer, not the paper's feed
-    let blink = setInterval(() => on(printerLed, !printerLed.classList.contains('on')), 120);
-    setTimeout(() => { pw.classList.remove('printing'); clearInterval(blink); on(printerLed, true); setTimeout(() => on(printerLed, false), 600); }, dur * 1000);
-  }
-};
-$('#paperWin').addEventListener('dblclick', () => {
-  const p = $('#paper');
-  if (p.classList.contains('tear') || !p.innerHTML) return;
-  sfx('tear');
-  p.classList.add('tear');
-  setTimeout(() => { p.innerHTML = ''; p.classList.remove('tear'); $('#paperEmpty').hidden = false; $('#qator').textContent = 'QATOR --/--'; }, 700);
-});
+// (the paper is a continuous tape now: nothing is torn off)
+blankTape(); layoutPaper();
 
 // guests without a picture: a coloured disc with their initial
 const GLYPH = ['#cdbbff', '#b5efd3', '#ffcfa6', '#ff9aa8', '#a6d8ff', '#ffe08a'];
