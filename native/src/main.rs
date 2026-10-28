@@ -150,6 +150,7 @@ struct State {
 struct App {
     proxy: EventLoopProxy<Msg>,
     st: Option<State>,
+    next_frame: Instant,
 }
 
 fn tune(proxy: EventLoopProxy<Msg>, station: String) {
@@ -591,12 +592,15 @@ impl State {
                 down.quads.push(Quad::plate_cut(k.rect[0], k.rect[1], k.rect[2], k.rect[3], 1.0).rounded(k.radius));
             }
         }
+        let mut halos: Vec<Quad> = vec![];
         // LEDs: the lit lens from the down plate, with its brightness
         for j in 0..18 {
             let b = self.leds[j];
             if b > 0.02 {
                 let y = 548.0 + j as f32 * 22.0;
                 down.quads.push(Quad::plate_cut(54.0, y - 10.0, 74.0, y + 10.0, 0.25 + 0.75 * b).rounded(10.0));
+                let col = if j < 2 { [1.0, 0.27, 0.16, 0.30 * b] } else if j < 5 { [1.0, 0.67, 0.25, 0.26 * b] } else { [0.27, 0.9, 0.47, 0.24 * b] };
+                halos.push(Quad::glow(64.0, y, 17.0, col));
             }
         }
         // the volume ring around the knob
@@ -606,6 +610,7 @@ impl State {
                 let a = (225.0 - i as f32 * 13.5f32).to_radians();
                 let (x, y) = (1250.0 + a.cos() * 86.0, 958.0 - a.sin() * 86.0);
                 down.quads.push(Quad::plate_cut(x - 9.0, y - 9.0, x + 9.0, y + 9.0, 1.0).rounded(9.0));
+                halos.push(Quad::glow(x, y, 15.0, if i >= 18 { [1.0, 0.27, 0.16, 0.26] } else { [1.0, 0.69, 0.27, 0.2] }));
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
@@ -617,7 +622,7 @@ impl State {
             flat.quads.push(Quad::flat(cx - 1.2, 723.0, 2.4, 70.0, [0.07, 0.055, 0.045, 1.0]).rotated(piv, rot));
             flat.quads.push(Quad::flat(cx - 5.0, 788.0, 10.0, 10.0, [0.1, 0.08, 0.06, 1.0]).rounded(5.0));
         }
-        let mut cv = Canvas { batches: vec![base, down], texts: vec![], clip: None };
+        let mut cv = Canvas { batches: vec![base, down, Batch { tex: None, quads: halos, add: true, clip: None }], texts: vec![], clip: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
         let (pos, dur) = if self.pick {
@@ -1045,6 +1050,20 @@ impl ApplicationHandler<Msg> for App {
         }
     }
 
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        // ask for the next frame every turn of the loop (~60 fps): a paint Windows skipped while the window was
+        // minimized or covered must not stop the device for good
+        let now = Instant::now();
+        if now >= self.next_frame {
+            if let Some(st) = &self.st {
+                st.gfx.window.request_redraw();
+            }
+            // 60 fps: the next frame is due 1/60 s after this one (never falling behind more than a frame)
+            self.next_frame = (self.next_frame + Duration::from_micros(16_667)).max(now);
+        }
+        el.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+    }
+
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, ev: WindowEvent) {
         let Some(st) = self.st.as_mut() else { return };
         match ev {
@@ -1196,12 +1215,20 @@ impl ApplicationHandler<Msg> for App {
                         st.sync();
                     }
                 }
+                let t0 = Instant::now();
                 let batches = st.frame();
+                let t1 = Instant::now();
                 let over = std::mem::take(&mut st.over);
                 let texts = std::mem::take(&mut st.texts);
+                let nq: usize = batches.iter().chain(over.iter()).map(|b| b.quads.len()).sum();
                 st.gfx.render(&batches, Some((&mut st.text, &texts)), &over);
                 st.text.trim();
-                st.gfx.window.request_redraw();
+                if std::env::var_os("KR_DEBUG").is_some() {
+                    use std::io::Write;
+                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("kr_prof.log")) {
+                        let _ = writeln!(f, "frame {:.2}ms render {:.2}ms quads {} batches {} texts {}", (t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3, nq, batches.len() + over.len(), texts.len());
+                    }
+                }
             }
             _ => {}
         }
@@ -1215,6 +1242,6 @@ fn main() {
     }
     let event_loop = EventLoop::<Msg>::with_user_event().build().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App { proxy: event_loop.create_proxy(), st: None };
+    let mut app = App { proxy: event_loop.create_proxy(), st: None, next_frame: Instant::now() };
     event_loop.run_app(&mut app).expect("run");
 }

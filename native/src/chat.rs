@@ -175,12 +175,13 @@ impl Chat {
     pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas, tl: &mut text::TextLayer, tracks: &HashMap<String, crate::net::Track>, img: &mut dyn FnMut(&str) -> Option<usize>) {
         let [x0, y0, x1, y1] = TUBE;
         let (w, h) = (x1 - x0, y1 - y0);
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050806)).rounded(32.0));
-        cv.light(Quad::glow(x0 + w * 0.5, y0 + h * 0.45, w * 0.6, rgba(0x1d3a2a, 0.5)));
+        // the tube: radial(110% 95% at 50% 45%, rgba(40,70,52,.32), rgba(6,10,8,.55) 75%, rgba(0,0,0,.85))
+        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x0c120e)).rounded(32.0));
+        cv.flat(Quad::radial(x0, y0, w, h, rgb(0x223a2c), rgb(0x070a08)).rounded(32.0));
         let (px, inner) = (x0 + 22.0, w - 42.0);
         // header
         cv.light(Quad::glow(px + 60.0, y0 + 30.0, 50.0, rgba(0x6effaa, 0.12)));
-        cv.text(Txt::new("CH·01 CHAT", text::VT, 28.0, px, y0 + 14.0, c8(0x9dffc4, 1.0)));
+        cv.text(Txt::new("CH·01 CHAT", text::VT, 28.0, px, y0 + 14.0, c8(0x9dffc4, 1.0)).glow([110, 255, 170, 16], 3.0));
         let status = if self.up { format!("{} onlayn · {} radioda", self.online, self.live) } else { "qayta ulanmoqda…".into() };
         cv.text(Txt::new(status, text::VT, 19.0, px + 132.0, y0 + 21.0, c8(0x6f9c84, 1.0)).clip([x0, y0, x1 - 70.0, y1]));
         let blink = (self.started.elapsed().as_secs_f32() / 0.8) as i32 % 2 == 0;
@@ -247,7 +248,7 @@ impl Chat {
                     }));
                 }
                 _ => {
-                    let t = Txt::new(m.body.clone(), text::MR, 17.0, px + 42.0, 0.0, c8(0xe2f6e8, 1.0)).weight(500).wrap(inner - 42.0).line(23.5);
+                    let t = Txt::new(m.body.clone(), text::MR, 17.0, px + 42.0, 0.0, c8(0xe2f6e8, 1.0)).weight(500).wrap(inner - 42.0).line(23.5).glow([110, 255, 170, 4], 2.2);
                     let (_, th) = tl.measure2(&t);
                     body_h = th + 2.0;
                     body.push(Box::new(move |cv: &mut Canvas, by: f32| {
@@ -275,7 +276,8 @@ impl Chat {
                     cv.text(Txt::new(ini, text::VT, 22.0, px + 16.0, y + 6.0, c8(0x07140c, 1.0)).align(Align::Center).clip(clip));
                 }
                 cv.light(Quad::glow(px + 70.0, y + 10.0, 40.0, rgba(ink, 0.06)));
-                cv.text(Txt::new(m.name.clone(), text::MR, 15.0, px + 42.0, y, c8(ink, 1.0)).weight(700).clip([clip[0], clip[1], x1 - 70.0, clip[3]]));
+                let [ir, ig, ib, _] = c8(ink, 1.0);
+                cv.text(Txt::new(m.name.clone(), text::MR, 15.0, px + 42.0, y, c8(ink, 1.0)).weight(700).clip([clip[0], clip[1], x1 - 70.0, clip[3]]).glow([ir, ig, ib, 12], 2.6));
                 let tm = chrono_hm(m.ts);
                 cv.text(Txt::new(tm, text::VT, 16.0, x1 - 20.0, y + 2.0, c8(0x5f8a73, 1.0)).align(Align::Right).clip(clip));
                 let by = y + 22.0;
@@ -292,10 +294,8 @@ impl Chat {
         cv.clip = None;
         // the tube: scanlines, dark corners
         over.flat(Quad::scan(x0, y0, w, h, 0.28).rounded(32.0));
-        over.flat(Quad::grad(x0, y0, w, 40.0, rgba(0, 0.5), rgba(0, 0.0), true).rounded(32.0));
-        over.flat(Quad::grad(x0, y1 - 40.0, w, 40.0, rgba(0, 0.0), rgba(0, 0.55), true).rounded(32.0));
-        over.flat(Quad::grad(x0, y0, 36.0, h, rgba(0, 0.5), rgba(0, 0.0), false).rounded(32.0));
-        over.flat(Quad::grad(x1 - 36.0, y0, 36.0, h, rgba(0, 0.0), rgba(0, 0.5), false).rounded(32.0));
+        crate::scene::lens_light(over, TUBE, 32.0);
+
     }
 }
 

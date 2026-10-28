@@ -53,6 +53,8 @@ pub struct Txt {
     /// visible area, stage px [x0, y0, x1, y1]
     pub clip: [f32; 4],
     pub alpha: f32,
+    /// a soft halo: colour (rgba) and radius (stage px), like CSS text-shadow 0 0 r
+    pub glow: Option<([u8; 4], f32)>,
 }
 
 impl Txt {
@@ -68,6 +70,7 @@ impl Txt {
             align: Align::Left,
             clip: [0.0, 0.0, 1920.0, 1080.0],
             alpha: 1.0,
+            glow: None,
         }
     }
     pub fn weight(mut self, w: u16) -> Self {
@@ -90,6 +93,10 @@ impl Txt {
     }
     pub fn clip(mut self, c: [f32; 4]) -> Self {
         self.clip = c;
+        self
+    }
+    pub fn glow(mut self, color: [u8; 4], r: f32) -> Self {
+        self.glow = Some((color, r));
         self
     }
     pub fn alpha(mut self, a: f32) -> Self {
@@ -175,6 +182,28 @@ impl TextLayer {
     /// Lay the texts out for this frame (stage px -> window px with `fit` = (offset x, offset y, scale)).
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: (u32, u32), fit: (f32, f32, f32), texts: &[Txt]) {
         self.frame += 1;
+        // halos first: the same text in the glow colour, drawn around the glyphs on two rings (a cheap blur)
+        let mut all: Vec<Txt> = Vec::with_capacity(texts.len() * 2);
+        for t in texts {
+            if let (Some((gc, r)), false) = (t.glow, std::env::var_os("KR_NOGLOW").is_some()) {
+                let mut g = t.clone();
+                g.glow = None;
+                for sp in &mut g.spans {
+                    sp.color = [gc[0], gc[1], gc[2], ((gc[3] as f32) * (sp.color[3] as f32 / 255.0)) as u8];
+                }
+                for (k, rr) in [(8, r), (6, r * 0.5)] {
+                    for i in 0..k {
+                        let a = i as f32 / k as f32 * std::f32::consts::TAU;
+                        let mut gi = g.clone();
+                        gi.x += a.cos() * rr;
+                        gi.y += a.sin() * rr;
+                        all.push(gi);
+                    }
+                }
+            }
+        }
+        all.extend(texts.iter().cloned());
+        let texts = &all[..];
         let keys: Vec<String> = texts.iter().map(|t| t.key()).collect();
         for (t, k) in texts.iter().zip(&keys) {
             self.ensure(t, k);

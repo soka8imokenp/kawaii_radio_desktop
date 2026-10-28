@@ -94,14 +94,17 @@ impl Lyrics {
         self.last = Instant::now();
         let [x0, y0, x1, y1] = LY;
         let (w, h) = (x1 - x0, y1 - y0);
-        // the phosphor backplate: charcoal olive, brighter only in the middle of the tube
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x0b0e09)).rounded(37.0));
-        cv.light(Quad::glow(x0 + w * 0.46, y0 + h * 0.48, w * 0.62, rgba(0x2b3524, 0.55)));
+        // the phosphor backplate: radial(135% 125% at 50% 44%, #20271b, #171d14 42%, #0d110b 72%, #050705)
+        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050705)).rounded(37.0));
+        // (every radial quad is exactly the tube, rounded like it: nothing spills over the device)
+        cv.flat(Quad::radial(x0, y0, w, h, rgb(0x20271b), rgb(0x0b0f09)).rounded(37.0));
+        cv.flat(Quad::radial(x0, y0, w, h, rgba(0x96aa5a, 0.06), rgba(0x96aa5a, 0.0)).rounded(37.0));
+        cv.flat(Quad::dots(x0, y0, w, h, 5.0, 1.1, rgba(0x96af5f, 0.07)).rounded(37.0));
         // header: a green dot, the title, the artist, a hairline
         let hx = 610.0 + 34.0;
         cv.light(Quad::glow(hx + 3.0, 190.0 + 34.0, 8.0, rgba(0x4be38f, 0.9)));
         cv.flat(Quad::flat(hx, 190.0 + 31.0, 6.0, 6.0, rgb(0x7dffb8)).rounded(3.0));
-        let tt = Txt::new(title, text::MONO, 16.0, hx + 16.0, 190.0 + 23.0, c8(0xeef0e6, 1.0)).weight(600);
+        let tt = Txt::new(title, text::MONO, 16.0, hx + 16.0, 190.0 + 23.0, c8(0xeef0e6, 1.0)).weight(600).glow([230, 240, 210, 7], 2.2);
         let tw = tl.measure(&tt).min(430.0);
         cv.text(tt.clip([hx, y0, hx + 16.0 + 430.0, y1]));
         cv.text(Txt::new(artist, text::MONO, 15.0, hx + 28.0 + tw, 190.0 + 24.0, c8(0x7b8263, 1.0)).clip([hx, y0, x1 - 40.0, y1]));
@@ -160,7 +163,8 @@ impl Lyrics {
             for (idx, a) in &self.anim {
                 let s = &self.lines[*idx].s;
                 let now = Some(*idx) == i;
-                let mut tx = Txt::new(s.clone(), text::MONO, a.size, bx, by + a.y, c8(a.color, a.alpha)).weight(if now { 600 } else { 500 }).clip(clip);
+                let mut tx = Txt::new(s.clone(), text::MONO, a.size, bx, by + a.y, c8(a.color, a.alpha)).weight(if now { 600 } else { 500 }).clip(clip)
+                    .glow([205, 215, 130, if now { 9 } else { 5 }], if now { 3.0 } else { 2.2 });
                 if now {
                     // karaoke: the sung part bright, the rest dim (by time within the line)
                     let t0 = self.lines[*idx].t;
@@ -172,7 +176,7 @@ impl Lyrics {
                     tx.spans = vec![Span { text: a1, color: c8(0xf6e8a2, a.alpha), weight: 600 }, Span { text: a2, color: c8(0xb4b67c, a.alpha), weight: 600 }];
                     tx = tx.wrap(bw).line(a.size * 1.22);
                     // the phosphor glow behind the sung line
-                    cv.light(Quad::glow(bx + bw * 0.35, by + a.y + a.size * 0.7, bw * 0.45, rgba(0xc8d27a, 0.06 * a.alpha)));
+                    cv.light(Quad::glow(bx + bw * 0.3, by + a.y + a.size * 0.8, bw * 0.5, rgba(0xc8d27a, 0.05 * a.alpha)));
                 } else {
                     tx = tx.wrap(bw * 1.6).line(a.size * 1.25);
                 }
@@ -198,13 +202,36 @@ impl Lyrics {
             }
         }
         // the lens: scanlines, a deep shadow at the walls, a vignette, one faint reflection, the rim
-        over.flat(Quad::scan(x0, y0, w, h, 0.28).rounded(37.0));
-        over.flat(Quad::grad(x0, y0, w, h * 0.16, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true).rounded(37.0));
-        over.flat(Quad::grad(x0, y1 - 60.0, w, 60.0, rgba(0x000000, 0.0), rgba(0x000000, 0.45), true).rounded(37.0));
-        over.flat(Quad::grad(x0, y0, 70.0, h, rgba(0x000000, 0.45), rgba(0x000000, 0.0), false).rounded(37.0));
-        over.flat(Quad::grad(x1 - 70.0, y0, 70.0, h, rgba(0x000000, 0.0), rgba(0x000000, 0.45), false).rounded(37.0));
-        over.light(Quad::glow(x1 - w * 0.16, y0 + h * 0.16, w * 0.2, rgba(0xc8d7e1, 0.04)));
+        over.flat(Quad::scan(x0, y0, w, h, 0.30).rounded(37.0));
+        lens(over, LY, 37.0);
     }
+}
+
+/// The chat tube's glass: the same, a little lighter (its picture is darker than the lyrics')
+pub fn lens_light(over: &mut Canvas, r: [f32; 4], rad: f32) {
+    let [x0, y0, x1, y1] = r;
+    let (w, h) = (x1 - x0, y1 - y0);
+    over.flat(Quad::radial(x0, y0, w, h, rgba(0, 0.0), rgba(0, 0.35)).rounded(rad));
+    over.flat(Quad::rim(x0, y0, w, h, rad, 18.0, rgba(0, 0.3), rgba(0, 0.4)));
+    over.flat(Quad::grad(x0, y0, w, h * 0.12, rgba(0xe1f0ff, 0.06), rgba(0xe1f0ff, 0.0), true).rounded(rad));
+    over.flat(Quad::rim(x0 + 0.5, y0 + 0.5, w - 1.0, h - 1.0, rad, 1.5, rgba(0xeef6ff, 0.36), rgba(0xeef6ff, 0.1)));
+    over.light(Quad::glow(x1 - rad * 0.45, y0 + rad * 0.45, rad * 0.9, rgba(0xffffff, 0.1)));
+}
+
+/// The glass in front of a picture tube: a shadow at the walls, the light along the top, one curved reflection
+/// (CSS: radial-gradient(150% 130% at -14% 122%, transparent 69%, light 69.8%, …)), and the polished rim.
+pub fn lens(over: &mut Canvas, r: [f32; 4], rad: f32) {
+    let [x0, y0, x1, y1] = r;
+    let (w, h) = (x1 - x0, y1 - y0);
+    over.flat(Quad::radial(x0, y0, w, h, rgba(0, 0.0), rgba(0, 0.42)).rounded(rad));
+    over.flat(Quad::rim(x0, y0, w, h, rad, 20.0, rgba(0, 0.32), rgba(0, 0.42)));
+    over.flat(Quad::grad(x0, y0, w, h * 0.12, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true).rounded(rad));
+    let (rx, ry) = (1.5 * w * 0.69, 1.3 * h * 0.69);
+    over.flat(Quad::arc_light(x0, y0, w, h, [x0 - 0.14 * w, y0 + 1.22 * h], rx, 8.0, rx / ry, rgba(0xcddedc, 0.09)).rounded(rad));
+    over.light(Quad::glow(x1 - w * 0.16, y0 + h * 0.16, w * 0.2, rgba(0xc8d7e1, 0.035)));
+    over.flat(Quad::rim(x0 + 0.5, y0 + 0.5, w - 1.0, h - 1.0, rad, 1.6, rgba(0xeef6ff, 0.42), rgba(0xeef6ff, 0.12)));
+    over.light(Quad::glow(x1 - rad * 0.45, y0 + rad * 0.45, rad * 0.9, rgba(0xffffff, 0.12)));
+    over.light(Quad::glow(x0 + rad * 0.45, y0 + rad * 0.45, rad * 0.7, rgba(0xffffff, 0.06)));
 }
 
 /* ───────── the LCD (#lcd: 595,677 792x152) */
@@ -412,10 +439,13 @@ impl Trivision {
                 };
                 cv.quad(Some(tex), q);
             }
-            // the printed face bulges a little: a bright left rim, a soft sheen, shadow on the right, a dark gap
-            cv.flat(Quad::grad(sx, y0, sw * 0.12, h, rgba(0, 0.42), [1.0, 1.0, 1.0, 0.1], false));
-            cv.flat(Quad::grad(sx + sw * 0.3, y0, sw * 0.2, h, [1.0, 1.0, 1.0, 0.0], [1.0, 1.0, 1.0, 0.1], false));
-            cv.flat(Quad::grad(sx + sw * 0.62, y0, sw * 0.38, h, rgba(0, 0.0), rgba(0, 0.45), false));
+            // the printed face bulges a little (CSS: rgba(0,0,0,.24) 0, .05 10%, white .05 40%, transparent 70%,
+            // black .14 100%), with a dark gap between the slats
+            cv.flat(Quad::grad(sx, y0, sw * 0.1, h, rgba(0, 0.24), rgba(0, 0.05), false));
+            cv.flat(Quad::grad(sx + sw * 0.1, y0, sw * 0.3, h, rgba(0, 0.05), [1.0, 1.0, 1.0, 0.05], false));
+            cv.flat(Quad::grad(sx + sw * 0.4, y0, sw * 0.3, h, [1.0, 1.0, 1.0, 0.05], [1.0, 1.0, 1.0, 0.0], false));
+            cv.flat(Quad::grad(sx + sw * 0.7, y0, sw * 0.3, h, rgba(0, 0.0), rgba(0, 0.14), false));
+            cv.flat(Quad::flat(sx + sw - 0.7, y0, 1.4, h, rgba(0x08090a, 0.85)));
         }
         if done {
             self.cur = self.next.take();

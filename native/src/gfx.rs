@@ -56,6 +56,22 @@ impl Quad {
     pub fn scan(x: f32, y: f32, w: f32, h: f32, alpha: f32) -> Self {
         Quad { rect: [x, y, w, h], uv: [0.0; 4], color: [0.0, 0.0, 0.0, alpha], pivot: [0.0, 0.0], rot: 0.0, kind: 4.0, radius: 0.0, _pad: 0.0 }
     }
+    /// Light outside a circle (centre, radius, softness in stage px): a curved reflection band.
+    pub fn arc_light(x: f32, y: f32, w: f32, h: f32, c: [f32; 2], r: f32, soft: f32, aspect: f32, color: [f32; 4]) -> Self {
+        Quad { rect: [x, y, w, h], uv: [c[0], c[1], r, soft], color, pivot: [0.0, 0.0], rot: 0.0, kind: 5.0, radius: 0.0, _pad: aspect }
+    }
+    /// A rounded-rect rim of `width`, fading from `top` to `bottom`.
+    pub fn rim(x: f32, y: f32, w: f32, h: f32, r: f32, width: f32, top: [f32; 4], bottom: [f32; 4]) -> Self {
+        Quad { rect: [x, y, w, h], uv: bottom, color: top, pivot: [0.0, 0.0], rot: 0.0, kind: 6.0, radius: r, _pad: width }
+    }
+    /// A dot mesh (pitch, dot radius in stage px).
+    pub fn dots(x: f32, y: f32, w: f32, h: f32, pitch: f32, dot: f32, color: [f32; 4]) -> Self {
+        Quad { rect: [x, y, w, h], uv: [pitch, dot, 0.0, 0.0], color, pivot: [0.0, 0.0], rot: 0.0, kind: 7.0, radius: 0.0, _pad: 0.0 }
+    }
+    /// A radial gradient filling the quad: `inner` in the middle -> `outer` at the edge.
+    pub fn radial(x: f32, y: f32, w: f32, h: f32, inner: [f32; 4], outer: [f32; 4]) -> Self {
+        Quad { rect: [x, y, w, h], uv: outer, color: inner, pivot: [0.0, 0.0], rot: 0.0, kind: 8.0, radius: 0.0, _pad: 0.0 }
+    }
     pub fn rounded(mut self, r: f32) -> Self {
         self.radius = r;
         self
@@ -133,6 +149,7 @@ struct Out {
     @location(5) radius: f32,
     @location(6) uvraw: vec4<f32>,
     @location(7) dir: f32,
+    @location(8) stage: vec2<f32>,
 };
 
 @vertex
@@ -155,37 +172,66 @@ fn vs(@builtin(vertex_index) vi: u32, i: Inst) -> Out {
     o.radius = i.radius.x;
     o.uvraw = i.uv;
     o.dir = i.radius.y;
+    o.stage = p;
     return o;
 }
 
 @fragment
 fn fs(o: Out) -> @location(0) vec4<f32> {
     let t = textureSample(tex, samp, o.uv);   // first: sampling must happen in uniform control flow
+    // signed distance to the quad's rounded rect (stage px), and a 1 px antialiased mask
+    let half = o.size * 0.5;
+    let q = abs(o.local * half) - half + vec2(o.radius);
+    let sd = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - o.radius;
     var mask = 1.0;
-    if (o.radius > 0.0) {
-        // signed distance to a rounded rect, in stage px; one px of antialiasing
-        let half = o.size * 0.5;
-        let q = abs(o.local * half) - half + vec2(o.radius);
-        let d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - o.radius;
-        mask = clamp(0.5 - d, 0.0, 1.0);
+    if (o.radius > 0.0) { mask = clamp(0.5 - sd, 0.0, 1.0); }
+    let sp = o.stage;
+    switch (u32(o.kind + 0.5)) {
+        case 0u: { let c = t * o.color; return vec4(c.rgb, c.a * mask); }
+        case 1u: { return vec4(o.color.rgb, o.color.a * mask); }
+        case 2u: {
+            // a soft round glow (quadratic falloff)
+            let a = clamp(1.0 - length(o.local), 0.0, 1.0);
+            return vec4(o.color.rgb, o.color.a * a * a);
+        }
+        case 3u: {
+            // a linear gradient color -> uvraw, along x (or y when dir = 1)
+            let f = select(o.local.x, o.local.y, o.dir > 0.5) * 0.5 + 0.5;
+            let c = mix(o.color, o.uvraw, f);
+            return vec4(c.rgb, c.a * mask);
+        }
+        case 4u: {
+            // scanlines in the window's own pixel rows
+            let row = u32(o.pos.y) % 3u;
+            return vec4(0.0, 0.0, 0.0, select(0.0, o.color.a, row == 0u) * mask);
+        }
+        case 5u: {
+            // light outside a big circle (uvraw = centre x, y, radius, softness; stage px): a curved glass reflection
+            let asp = select(1.0, o.dir, o.dir > 0.0);
+            let d = length((sp - o.uvraw.xy) * vec2(1.0, asp));
+            let a = smoothstep(o.uvraw.z, o.uvraw.z + o.uvraw.w, d) * (1.0 - 0.7 * smoothstep(o.uvraw.z + o.uvraw.w, o.uvraw.z + o.uvraw.w * 14.0, d));
+            return vec4(o.color.rgb, o.color.a * a * mask);
+        }
+        case 6u: {
+            // a rounded-rect rim of width dir (stage px), colour fading top (color) -> bottom (uvraw)
+            let f = o.local.y * 0.5 + 0.5;
+            let c = mix(o.color, o.uvraw, f);
+            let a = clamp(0.5 - sd, 0.0, 1.0) * clamp(0.5 + sd + o.dir, 0.0, 1.0);
+            return vec4(c.rgb, c.a * a);
+        }
+        case 7u: {
+            // a phosphor dot mesh (uvraw.x = pitch, uvraw.y = dot radius, stage px)
+            let g = fract(sp / o.uvraw.x) * o.uvraw.x - vec2(o.uvraw.x * 0.5);
+            let a = clamp(o.uvraw.y - length(g) + 0.5, 0.0, 1.0);
+            return vec4(o.color.rgb, o.color.a * a * mask);
+        }
+        default: {
+            // radial gradient: color in the middle -> uvraw at the edge (ellipse filling the quad)
+            let f = clamp(length(o.local), 0.0, 1.0);
+            let c = mix(o.color, o.uvraw, f * f * (3.0 - 2.0 * f));
+            return vec4(c.rgb, c.a * mask);
+        }
     }
-    if (o.kind > 1.5) {
-        let d = length(o.local);
-        let a = clamp(1.0 - d, 0.0, 1.0);
-        return vec4(o.color.rgb, o.color.a * a * a);
-    }
-    if (o.kind > 3.5) {
-        let row = u32(o.pos.y) % 3u;
-        return vec4(0.0, 0.0, 0.0, select(0.0, o.color.a, row == 0u) * mask);
-    }
-    if (o.kind > 2.5) {
-        let f = select(o.local.x, o.local.y, o.dir > 0.5) * 0.5 + 0.5;
-        let c = mix(o.color, o.uvraw, f);
-        return vec4(c.rgb, c.a * mask);
-    }
-    if (o.kind > 0.5) { return vec4(o.color.rgb, o.color.a * mask); }
-    let c = t * o.color;
-    return vec4(c.rgb, c.a * mask);
 }
 "#;
 
