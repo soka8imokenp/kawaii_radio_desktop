@@ -196,14 +196,6 @@ impl Lyrics {
                 let mut tx = Txt::new(s.clone(), text::MONO, a.size, bx, by + a.y, c8(a.color, a.alpha)).weight(if now { 600 } else { 500 }).clip(clip)
                     .glow([230, 220, 130, if now { 150 } else { 90 }], if now { 3.0 } else { 2.2 });
                 if now {
-                    // karaoke: the sung part bright, the rest dim (by time within the line)
-                    let t0 = self.lines[*idx].t;
-                    let t1 = self.lines.get(idx + 1).map(|l| l.t).unwrap_or(t0 + 4.0);
-                    let p = ((t - t0) / (t1 - t0).max(0.2)).clamp(0.0, 1.0);
-                    let chars: Vec<char> = s.chars().collect();
-                    let cut = (p * chars.len() as f64).round() as usize;
-                    let (a1, a2): (String, String) = (chars[..cut].iter().collect(), chars[cut..].iter().collect());
-                    tx.spans = vec![Span { text: a1, color: c8(0xf6e8a2, a.alpha), weight: 600 }, Span { text: a2, color: c8(0xb4b67c, a.alpha), weight: 600 }];
                     tx = tx.wrap(bw).line(a.size * 1.22);
                     // the phosphor glow behind the sung line
                     cv.light(Quad::glow(bx + bw * 0.3, by + a.y + a.size * 0.8, bw * 0.5, rgba(0xc8d27a, 0.05 * a.alpha)));
@@ -429,13 +421,13 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
 }
 
 /* ───────── the tuner drum (#drum: 258,866 500x92 — a brushed graphite cylinder with a printed scale) */
-pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
+pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32, light: bool) {
     let (ox, oy, w, h, r) = (258.0f32, 866.0f32, 494.0f32, 92.0f32, 239.0f32);
     let win = ([ox, oy, ox + w, oy + h], 18.0);
     cv.mask = Some(win);
     over.mask = Some(win);
     // body: the cylinder's shading across its width
-    let st = [0x0c0d0f, 0x25282d, 0x40444b, 0x565b63, 0x3a3e45, 0x212328, 0x0b0c0e];
+    let st = if light { [0x5d636c, 0x9aa0a9, 0xd9dde2, 0xf4f5f7, 0xc9ced5, 0x8a9099, 0x4f545c] } else { [0x0c0d0f, 0x25282d, 0x40444b, 0x565b63, 0x3a3e45, 0x212328, 0x0b0c0e] };
     let ps = [0.0, 0.1, 0.3, 0.42, 0.62, 0.88, 1.0];
     for k in 0..6 {
         cv.flat(Quad::grad(ox + w * ps[k], oy, w * (ps[k + 1] - ps[k]) + 0.5, h, rgb(st[k]), rgb(st[k + 1]), false));
@@ -455,14 +447,15 @@ pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
         }
     }
     // the printed band
-    let bs = [(0.0, 0.0), (0.12, 0.75), (0.45, 0.8), (0.88, 0.75), (1.0, 0.0)];
+    let bs = if light { [(0.0, 0.0), (0.12, 0.85), (0.45, 0.95), (0.88, 0.85), (1.0, 0.0)] } else { [(0.0, 0.0), (0.12, 0.75), (0.45, 0.8), (0.88, 0.75), (1.0, 0.0)] };
+    let band = if light { 0xf0ebda } else { 0x16171a };
     for k in 0..4 {
-        cv.flat(Quad::grad(ox + w * bs[k].0, oy + 12.0, w * (bs[k + 1].0 - bs[k].0) + 0.5, h - 24.0, rgba(0x16171a, bs[k].1), rgba(0x16171a, bs[k + 1].1), false));
+        cv.flat(Quad::grad(ox + w * bs[k].0, oy + 12.0, w * (bs[k + 1].0 - bs[k].0) + 0.5, h - 24.0, rgba(band, bs[k].1), rgba(band, bs[k + 1].1), false));
     }
     cv.flat(Quad::flat(ox, oy + 12.0, w, 1.0, [1.0, 1.0, 1.0, 0.08]));
     cv.flat(Quad::flat(ox, oy + h - 13.0, w, 1.0, [1.0, 1.0, 1.0, 0.08]));
     // the scale: ticks and numbers squeezed by the curvature, fading as they turn away
-    let ink = 0xe8e2d0;
+    let ink = if light { 0x2a2c30 } else { 0xe8e2d0 };
     let base = (angle_deg / 2.0).floor() as i32;
     for k in -64..=64 {
         let th = (k as f32 * 2.0 - (angle_deg - base as f32 * 2.0)).to_radians();
@@ -497,7 +490,8 @@ pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
     }
     cv.flat(Quad::flat(ox, oy + 59.0, w, 1.0, rgba(ink, 0.32)));
     // the drum turning away into the dark at both ends, the window's lip shading top and bottom
-    over.flat(Quad::grad(ox, oy, w * 0.14, h, rgba(0, 0.75), rgba(0, 0.0), false));
+    let dk = if light { 0.45 } else { 1.0 };
+    over.flat(Quad::grad(ox, oy, w * 0.14, h, rgba(0, 0.75 * dk), rgba(0, 0.0), false));
     over.flat(Quad::grad(ox + w * 0.86, oy, w * 0.14, h, rgba(0, 0.0), rgba(0, 0.8), false));
     over.flat(Quad::grad(ox, oy, w, h * 0.16, rgba(0, 0.6), rgba(0, 0.0), true));
     over.flat(Quad::grad(ox, oy + h * 0.84, w, h * 0.16, rgba(0, 0.0), rgba(0, 0.45), true));

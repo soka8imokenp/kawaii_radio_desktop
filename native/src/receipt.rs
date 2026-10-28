@@ -115,7 +115,7 @@ impl Tape {
         self.feed.is_some() || self.rolls.first().is_some_and(|r| r.burn.is_some_and(|b| b.elapsed().as_secs_f32() / 0.08 * 21.0 < r.height))
     }
 
-    pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas) -> (usize, usize) {
+    pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas, paper: usize) -> (usize, usize) {
         let [x0, y0, x1, y1] = WIN;
         // the take-up roller's stepper pulls the tape down: 3 px steps, 7 ms each
         let mut feed_off = 0.0;
@@ -144,6 +144,10 @@ impl Tape {
         self.scroll = self.scroll.clamp(0.0, max);
         cv.clip = Some(WIN);
         cv.flat(Quad::flat(x0, y0, x1 - x0, y1 - y0, rgb(0xf3f1ea)));
+        // thermal paper: faint clouds and fibres, moving with the tape
+        let (pw, ph) = (x1 - x0, y1 - y0);
+        let tape_y = (self.scroll + feed_off) / 512.0;
+        cv.quad(Some(paper), Quad { rect: [x0, y0, pw, ph], uv: [0.0, -tape_y, pw / 512.0, ph / 512.0], color: [0.42, 0.38, 0.3, 0.09], ..Quad::full() });
         let mut y = y0 - feed_off - self.scroll;
         for r in &self.rolls {
             let top = y;
@@ -207,11 +211,26 @@ impl Tape {
             }
         }
         cv.clip = None;
-        // the platen bows the paper: darker at both edges, a soft sheen; shadow under the head and over the roller
-        over.flat(Quad::grad(x0, y0, 30.0, y1 - y0, rgba(0, 0.14), rgba(0, 0.0), false));
-        over.flat(Quad::grad(x1 - 30.0, y0, 30.0, y1 - y0, rgba(0, 0.0), rgba(0, 0.16), false));
-        over.flat(Quad::grad(x0, y0, x1 - x0, 30.0, rgba(0, 0.45), rgba(0, 0.0), true));
-        over.flat(Quad::grad(x0, y1 - 26.0, x1 - x0, 26.0, rgba(0, 0.0), rgba(0, 0.5), true));
+        // the platen bows the paper: it curves away at both edges (darker), catches the light in a soft band, comes
+        // out of the head's slot under its lip and wraps over the roller at the bottom
+        let (w, h) = (x1 - x0, y1 - y0);
+        over.flat(Quad::grad(x0, y0, 60.0, h, rgba(0x2a2218, 0.2), rgba(0x2a2218, 0.0), false));
+        over.flat(Quad::grad(x1 - 70.0, y0, 70.0, h, rgba(0x2a2218, 0.0), rgba(0x2a2218, 0.24), false));
+        over.flat(Quad::grad(x0 + w * 0.22, y0, w * 0.12, h, rgba(0xffffff, 0.0), rgba(0xffffff, 0.09), false));
+        over.flat(Quad::grad(x0 + w * 0.34, y0, w * 0.16, h, rgba(0xffffff, 0.09), rgba(0xffffff, 0.0), false));
+        // the paper is not quite flat: slow waves fixed to it, travelling with the tape
+        let off = self.scroll + feed_off;
+        for k in 0..4 {
+            let yy = y0 + (k as f32 * 157.0 + 40.0 - off).rem_euclid(h + 120.0) - 60.0;
+            over.flat(Quad::grad(x0, yy, w, 30.0, rgba(0x2a2218, 0.0), rgba(0x2a2218, 0.035), true));
+            over.flat(Quad::grad(x0, yy + 30.0, w, 30.0, rgba(0xffffff, 0.05), rgba(0xffffff, 0.0), true));
+        }
+        over.flat(Quad::grad(x0, y0, w, 34.0, rgba(0, 0.5), rgba(0, 0.0), true));
+        over.flat(Quad::flat(x0, y0, w, 1.5, rgba(0, 0.6)));
+        over.flat(Quad::grad(x0, y0 + 10.0, w, 10.0, rgba(0xffffff, 0.0), rgba(0xffffff, 0.08), true));
+        over.flat(Quad::grad(x0, y1 - 34.0, w, 20.0, rgba(0, 0.0), rgba(0, 0.22), true));
+        over.flat(Quad::flat(x0, y1 - 15.0, w, 1.2, rgba(0xffffff, 0.35)));
+        over.flat(Quad::grad(x0, y1 - 14.0, w, 14.0, rgba(0, 0.3), rgba(0, 0.65), true));
         let lines = (total / 21.0).max(1.0) as usize;
         ((self.scroll / 21.0) as usize + 1, lines)
     }

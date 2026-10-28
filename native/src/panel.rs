@@ -28,6 +28,7 @@ pub enum Act {
     Full,
     Update,
     FocusSearch,
+    Theme(bool),
 }
 
 pub struct Panel {
@@ -63,6 +64,7 @@ pub struct Ctx<'a> {
     pub blink: bool,
     pub minutes: u64,
     pub songs: u64,
+    pub light: bool,
 }
 
 impl Panel {
@@ -251,6 +253,16 @@ impl Panel {
                 y += 66.0;
                 row(cv, y, "To'liq ekran", "F11 — kino rejimi kabi");
                 seg(cv, &mut hits, x1 - 102.0, y + 2.0, "F11", Act::Full, body);
+                y += 66.0;
+                row(cv, y, "Mavzu", "Kunduzgi oq yoki tungi grafit korpus");
+                for (k, (l, a)) in [("KUN", Act::Theme(true)), ("TUN", Act::Theme(false))].into_iter().enumerate() {
+                    let on = matches!(a, Act::Theme(x) if x == cx.light);
+                    let bx = x1 - 168.0 + k as f32 * 66.0;
+                    if on {
+                        cv.flat(Quad::flat(bx - 4.0, y - 2.0, 66.0, 44.0, rgba(0xc4e078, 0.14)).rounded(8.0));
+                    }
+                    seg(cv, &mut hits, bx, y + 2.0, l, a, body);
+                }
                 y += 66.0;
                 match cx.update {
                     Some(v) => {

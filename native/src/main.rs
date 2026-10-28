@@ -36,6 +36,52 @@ const GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-dark.webp");
 /// the logo: the bunny alone (white on the dark device), and the chassis that was under the green plate
 const LOGO: &[u8] = include_bytes!("../assets/logo-bunny.png");
 const LOGO_BG: &[u8] = include_bytes!("../assets/logo-patch.png");
+const LOGO_BG_LIGHT: &[u8] = include_bytes!("../assets/logo-patch-light.png");
+const LIGHT_UP: &[u8] = include_bytes!("../../app/ui/assets/light-up.webp");
+const LIGHT_DOWN: &[u8] = include_bytes!("../../app/ui/assets/light-down.webp");
+const LIGHT_GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-light.webp");
+
+/// Surface textures the app makes itself (white, the pattern in alpha; tinted by the quad's colour):
+/// `grain` = fine noise, `brushed` = metal brushed along x, `paper` = thermal paper fibres and clouds.
+fn gen_textures(g: &mut Gfx) -> (usize, usize, usize) {
+    let mut seed: u32 = 0x2545_f491;
+    let mut rnd = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed as f32 / u32::MAX as f32
+    };
+    let mk = |w: u32, h: u32, a: &dyn Fn(u32, u32) -> f32| -> Vec<u8> {
+        let mut v = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                v.extend([255, 255, 255, (a(x, y).clamp(0.0, 1.0) * 255.0) as u8]);
+            }
+        }
+        v
+    };
+    let n1: Vec<f32> = (0..512 * 256).map(|_| rnd()).collect();
+    let grain = mk(512, 256, &|x, y| n1[(y * 512 + x) as usize]);
+    let rows: Vec<f32> = (0..128).map(|_| rnd()).collect();
+    let streak: Vec<f32> = (0..512 * 128).map(|_| rnd()).collect();
+    let brushed = mk(512, 128, &|x, y| {
+        // a row's own brightness, long streaks along it, a little grain
+        let s = (0..24).map(|k| streak[(y as usize * 512 + ((x as usize + k * 7) % 512)) % streak.len()]).sum::<f32>() / 24.0;
+        0.35 * rows[y as usize] + 0.45 * s + 0.2 * n1[(y * 512 + x) as usize]
+    });
+    let blot: Vec<f32> = (0..32 * 32).map(|_| rnd()).collect();
+    let paper = mk(512, 512, &|x, y| {
+        // soft clouds (bilinear 32x32 noise) and short fibres along y
+        let (fx, fy) = (x as f32 / 16.0, y as f32 / 16.0);
+        let (ix, iy) = (fx as usize % 32, fy as usize % 32);
+        let (tx, ty) = (fx.fract(), fy.fract());
+        let b = |i: usize, j: usize| blot[(j % 32) * 32 + (i % 32)];
+        let c = b(ix, iy) * (1.0 - tx) * (1.0 - ty) + b(ix + 1, iy) * tx * (1.0 - ty) + b(ix, iy + 1) * (1.0 - tx) * ty + b(ix + 1, iy + 1) * tx * ty;
+        let f = n1[((y / 3) * 512 + x) as usize % n1.len()];
+        0.55 * c + 0.3 * f + 0.15 * n1[((y * 512 + x) as usize) % n1.len()]
+    });
+    (g.texture_tiled(512, 256, &grain), g.texture_tiled(512, 128, &brushed), g.texture_tiled(512, 512, &paper))
+}
 
 /// What the network threads hand to the window thread.
 enum Msg {
@@ -53,6 +99,8 @@ enum Msg {
     Toast(String),
     /// an mp3 of the listener's own choice (O'Z TANLOVIM), played from the start
     Pick { track: String, src: audio::Prepared },
+    /// a theme's plates, decoded (up, down, glass, logo patch)
+    Plates { light: bool, imgs: Vec<image::RgbaImage> },
     /// the account's progress after a sync: likes (id -> time), unliked, playlists
     Synced(serde_json::Value),
     Error(String),
@@ -102,6 +150,11 @@ struct State {
     up: usize,
     down: usize,
     glass: usize,
+    /// the plates of each theme (dark, light), once loaded
+    plates: [Option<(usize, usize, usize, usize)>; 2],
+    light: bool,
+    /// grain, brushed metal, paper
+    tex: (usize, usize, usize),
     /// the bunny and the chassis patch under it
     logo: (usize, usize),
     /// the band switch's sliding light: x and speed
@@ -474,6 +527,7 @@ impl State {
                 w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(winit::window::Fullscreen::Borderless(None)) });
             }
             Act::Update => {}
+            Act::Theme(l) => self.set_theme(l),
             Act::Play(id) => {
                 if self.has_kp() {
                     let cx_list = self.panel_list_ids();
@@ -505,6 +559,7 @@ impl State {
             blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
             minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
             songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
+            light: self.light,
         }
     }
 
@@ -524,6 +579,28 @@ impl State {
         }
         self.screen_anim = Some((Instant::now(), self.panel.screen));
         self.panel.screen = s;
+    }
+
+    /// KUN (light chassis) / TUN (graphite): the plates are swapped (decoded in the background the first time).
+    fn set_theme(&mut self, light: bool) {
+        self.store.set("theme", (if light { "light" } else { "dark" }).into());
+        match self.plates[light as usize] {
+            Some((u, d, g, _)) => {
+                self.up = u;
+                self.down = d;
+                self.glass = g;
+                self.light = light;
+            }
+            None => {
+                let p = self.proxy.clone();
+                std::thread::spawn(move || {
+                    let imgs = [LIGHT_UP, LIGHT_DOWN, LIGHT_GLASS, LOGO_BG_LIGHT].iter().filter_map(|b| image::load_from_memory(b).ok().map(|i| i.to_rgba8())).collect::<Vec<_>>();
+                    if imgs.len() == 4 {
+                        let _ = p.send_event(Msg::Plates { light, imgs });
+                    }
+                });
+            }
+        }
     }
 
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
@@ -768,11 +845,12 @@ impl State {
         }
         // the logo: the chassis over the old green plate, the bunny in white
         let logo = vec![
-            Batch { tex: Some(self.logo.1), quads: vec![Quad { rect: [148.0, 36.0, 51.5, 52.0], uv: [0.0, 0.0, 1.0, 1.0], ..Quad::full() }], add: false, clip: None },
+            Batch { tex: Some(self.plates[self.light as usize].map(|p| p.3).unwrap_or(self.logo.1)), quads: vec![Quad { rect: [148.0, 36.0, 51.5, 52.0], uv: [0.0, 0.0, 1.0, 1.0], ..Quad::full() }], add: false, clip: None },
             Batch { tex: Some(self.logo.0), quads: vec![Quad { rect: [152.0, 40.0, 43.5, 44.0], uv: [0.0, 0.0, 1.0, 1.0], color: [0.96, 0.97, 0.96, 1.0], ..Quad::full() }], add: false, clip: None },
         ];
         let mut halos: Vec<Quad> = vec![];
         let mut switch: Vec<Quad> = vec![];
+        let mut lens_glints: Vec<Quad> = vec![];
         let mut cv_texts: Vec<text::Txt> = vec![];
         // LEDs: the lit lens from the down plate, with its brightness
         for j in 0..18 {
@@ -781,7 +859,10 @@ impl State {
                 let y = 548.0 + j as f32 * 22.0;
                 down.quads.push(Quad::plate_cut(54.0, y - 10.0, 74.0, y + 10.0, 0.25 + 0.75 * b).rounded(10.0));
                 let col = if j < 2 { [1.0, 0.27, 0.16, 0.30 * b] } else if j < 5 { [1.0, 0.67, 0.25, 0.26 * b] } else { [0.27, 0.9, 0.47, 0.24 * b] };
-                halos.push(Quad::glow(64.0, y, 17.0, col));
+                let c = [col[0], col[1], col[2], col[3] * 0.55];
+                halos.push(Quad::glow(64.0, y, 15.0, c));
+                halos.push(Quad::radial(64.0 - 6.5, y - 6.5, 13.0, 13.0, [1.0, 0.95, 0.85, 0.42 * b], [col[0], col[1], col[2], 0.0]));
+                lens_glints.push(Quad::glow(61.5, y - 3.0, 2.6, [1.0, 1.0, 1.0, 0.5 + 0.3 * b]));
             }
         }
         // the band switch: a recessed panel over the two plate keys, RADIO printed on the left, O'Z TANLOVIM on
@@ -799,7 +880,17 @@ impl State {
         let (pw, ph) = (px1 - px0, py1 - py0);
         switch.push(Quad::flat(px0 - 2.0, py0 - 2.0, pw + 4.0, ph + 4.0, [0.05, 0.055, 0.06, 1.0]).rounded(18.0));
         switch.push(Quad::grad(px0, py0, pw, ph, scene::rgb(0x15171a), scene::rgb(0x1d1f23), true).rounded(16.0));
+        let grain = |r: [f32; 4], c: [f32; 4], rad: f32| Batch { tex: Some(self.tex.0), quads: vec![Quad { rect: r, uv: [0.0, 0.0, r[2] / 512.0, r[3] / 256.0], color: c, ..Quad::full() }.rounded(rad)], add: false, clip: None };
+        let mut textured: Vec<Batch> = vec![grain([px0, py0, pw, ph], [0.0, 0.0, 0.0, 0.22], 16.0), grain([px0, py0, pw, ph], [1.0, 1.0, 1.0, 0.035], 16.0)];
         switch.push(Quad::inset(px0, py0, pw, ph, 16.0, 12.0, [0.0, 0.0, 0.0, 0.55]));
+        // two countersunk screws at the ends
+        for sxp in [px0 + 20.0, px1 - 20.0] {
+            switch.push(Quad::flat(sxp - 7.0, 61.0, 14.0, 14.0, [0.0, 0.0, 0.0, 0.55]).rounded(7.0));
+            switch.push(Quad::radial(sxp - 6.0, 62.0, 12.0, 12.0, scene::rgb(0x7d838c), scene::rgb(0x2e3136)).rounded(6.0));
+            switch.push(Quad::rim(sxp - 6.0, 62.0, 12.0, 12.0, 6.0, 1.0, [1.0, 1.0, 1.0, 0.3], [0.0, 0.0, 0.0, 0.4]));
+            switch.push(Quad::flat(sxp - 4.5, 67.3, 9.0, 1.6, [0.08, 0.08, 0.09, 0.9]).rotated([sxp, 68.0], 0.6));
+            switch.push(Quad::flat(sxp - 0.8, 63.5, 1.6, 9.0, [0.08, 0.08, 0.09, 0.9]).rotated([sxp, 68.0], 0.6));
+        }
         switch.push(Quad::rim(px0 - 2.0, py0 - 2.0, pw + 4.0, ph + 4.0, 18.0, 1.0, [0.0, 0.0, 0.0, 0.5], [1.0, 1.0, 1.0, 0.07]));
         // the slot
         let (tc, tw2, ty) = (1102.0f32, 84.0f32, 68.0f32);
@@ -816,6 +907,9 @@ impl State {
         switch.push(Quad::grad(kx, ky, kw, kh, scene::rgb(0x8c929b), scene::rgb(0x3a3e45), true).rounded(10.0));
         switch.push(Quad::grad(kx + 2.0, ky + 2.0, kw - 4.0, kh * 0.45, [1.0, 1.0, 1.0, 0.22], [1.0, 1.0, 1.0, 0.0], true).rounded(8.0));
         switch.push(Quad::rim(kx, ky, kw, kh, 10.0, 1.2, [1.0, 1.0, 1.0, 0.35], [0.0, 0.0, 0.0, 0.5]));
+        let km = Quad { rect: [kx, ky, kw, kh], uv: [0.0, (f * 0.3).fract(), kw / 512.0, kh / 128.0], color: [1.0, 1.0, 1.0, 0.16], ..Quad::full() }.rounded(10.0);
+        let kd = Quad { rect: [kx, ky, kw, kh], uv: [0.3, 0.5, kw / 512.0, kh / 128.0], color: [0.0, 0.0, 0.0, 0.22], ..Quad::full() }.rounded(10.0);
+        let knob_metal = Batch { tex: Some(self.tex.1), quads: vec![kd, km], add: false, clip: None };
         for g in [-10.0f32, 0.0, 10.0] {
             let cx = kx + kw / 2.0 + g;
             switch.push(Quad::flat(cx - 1.5, ky + 9.0, 2.0, kh - 18.0, [0.1, 0.11, 0.12, 0.85]).rounded(1.0));
@@ -827,14 +921,26 @@ impl State {
                 let m = |sh: u32| (((a >> sh) & 255) as f32 + ((((b >> sh) & 255) as f32) - ((a >> sh) & 255) as f32) * on) as u8;
                 [m(16), m(8), m(0), 255]
             };
-            let mut t = text::Txt::new(t, text::BAR, 16.0, x, 59.0, c(0x7a818a, 0xc9f5d8)).weight(600).align(text::Align::Center);
+            let mut t = text::Txt::new(t, text::BAR, 16.0, x, 59.0, c(0x6b727b, 0xc9f5d8)).weight(600).align(text::Align::Center);
             if on > 0.5 {
                 t = t.glow([110, 255, 170, (120.0 * on) as u8], 3.0);
             }
-            t
+            // engraved into the panel: a dark edge above the letters, a light one below
+            let mut hi = t.clone();
+            hi.glow = None;
+            hi.y += 1.0;
+            for sp in &mut hi.spans {
+                sp.color = [255, 255, 255, 22];
+            }
+            let mut lo = hi.clone();
+            lo.y -= 2.0;
+            for sp in &mut lo.spans {
+                sp.color = [0, 0, 0, 170];
+            }
+            [lo, hi, t]
         };
-        cv_texts.push(lab("R A D I O", 952.0, (1.0 - f).clamp(0.0, 1.0)));
-        cv_texts.push(lab("O ' Z   T A N L O V I M", 1258.0, f.clamp(0.0, 1.0)));
+        cv_texts.extend(lab("R A D I O", 952.0, (1.0 - f).clamp(0.0, 1.0)));
+        cv_texts.extend(lab("O ' Z   T A N L O V I M", 1258.0, f.clamp(0.0, 1.0)));
         // the printer's lamp while the head burns a receipt
         if self.tape.busy() {
             down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
@@ -847,7 +953,10 @@ impl State {
                 let a = (225.0 - i as f32 * 13.5f32).to_radians();
                 let (x, y) = (1250.0 + a.cos() * 86.0, 958.0 - a.sin() * 86.0);
                 down.quads.push(Quad::plate_cut(x - 9.0, y - 9.0, x + 9.0, y + 9.0, 1.0).rounded(9.0));
-                halos.push(Quad::glow(x, y, 15.0, if i >= 18 { [1.0, 0.27, 0.16, 0.26] } else { [1.0, 0.69, 0.27, 0.2] }));
+                let col = if i >= 18 { [1.0, 0.27, 0.16] } else { [1.0, 0.69, 0.27] };
+                halos.push(Quad::glow(x, y, 13.0, [col[0], col[1], col[2], 0.11]));
+                halos.push(Quad::radial(x - 6.0, y - 6.0, 12.0, 12.0, [1.0, 0.95, 0.85, 0.4], [col[0], col[1], col[2], 0.0]));
+                lens_glints.push(Quad::glow(x - 2.5, y - 3.0, 2.4, [1.0, 1.0, 1.0, 0.7]));
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
@@ -873,7 +982,14 @@ impl State {
         }
         let mut batches = vec![base];
         batches.extend(logo);
-        batches.extend([upk, down, Batch { tex: None, quads: switch, add: false, clip: None }, Batch { tex: None, quads: halos, add: true, clip: None }]);
+        // the switch: its panel under the grain, the knob over it, the knob's metal on top
+        let knob_at = switch.iter().rposition(|q| q.kind == 3.0 && q.rect[2] == 76.0).unwrap_or(switch.len());
+        let knob: Vec<Quad> = switch.split_off(knob_at);
+        let (knob_a, knob_b): (Vec<Quad>, Vec<Quad>) = (knob.clone(), vec![]);
+        let _ = knob_b;
+        batches.extend([upk, down, Batch { tex: None, quads: switch, add: false, clip: None }]);
+        batches.extend(textured);
+        batches.extend([Batch { tex: None, quads: knob_a, add: false, clip: None }, knob_metal, Batch { tex: None, quads: halos, add: true, clip: None }, Batch { tex: None, quads: lens_glints, add: true, clip: None }]);
         let mut cv = Canvas { batches, texts: cv_texts, clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
@@ -923,7 +1039,7 @@ impl State {
         scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur, ghost);
         self.drum += self.drum_kick * 0.02 * 57.3 * (dt * 60.0);
         self.drum_kick *= 0.9f32.powf(dt * 60.0);
-        scene::draw_drum(&mut cv, &mut over, self.drum);
+        scene::draw_drum(&mut cv, &mut over, self.drum, self.light);
         chat::draw_listeners(&mut cv, self.chat.live, self.started.elapsed().as_secs_f32(), self.level);
         {
             let proxy = self.proxy.clone();
@@ -963,6 +1079,7 @@ impl State {
                     blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
                     minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
                     songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
+                    light: self.light,
                 };
                 let real = panel.screen;
                 panel.screen = shown;
@@ -1001,7 +1118,7 @@ impl State {
             }
             self.panel = panel;
         }
-        let (line, lines) = self.tape.draw(&mut cv, &mut over);
+        let (line, lines) = self.tape.draw(&mut cv, &mut over, self.tex.2);
         over.text(text::Txt::new(format!("QATOR {line:02}/{lines:02}"), text::VT, 18.0, 1773.0, 48.0, [35, 43, 27, 255]).align(text::Align::Center).clip([1703.0, 43.0, 1843.0, 73.0]));
         // the compose strip under the tube (an LCD): what is typed, a blinking block cursor
         let blink = (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0;
@@ -1102,6 +1219,7 @@ impl ApplicationHandler<Msg> for App {
         let down = load(&mut gfx, PLATE_DOWN);
         let glass = load(&mut gfx, GLASS);
         let logo = (load(&mut gfx, LOGO), load(&mut gfx, LOGO_BG));
+        let tex = gen_textures(&mut gfx);
         // the convex tube glasses: the lyrics tube and the chat monitor
         gfx.lenses = [(scene::LY, [0.045, 0.0035]), (chat::TUBE, [0.035, 0.003])];
         let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
@@ -1147,6 +1265,9 @@ impl ApplicationHandler<Msg> for App {
             down,
             glass,
             logo,
+            plates: [Some((up, down, glass, logo.1)), None],
+            light: false,
+            tex,
             released: vec![None; keys().len()],
             screen_anim: None,
             sw: (0.0, 0.0),
@@ -1208,6 +1329,9 @@ impl ApplicationHandler<Msg> for App {
             st.playlists = st.store.get("playlists").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
             if st.token.is_some() {
                 st.refresh_account();
+            }
+            if st.store.get("theme").and_then(|v| v.as_str()) == Some("light") {
+                st.set_theme(true);
             }
         }
         let p5 = self.proxy.clone();
@@ -1325,6 +1449,11 @@ impl ApplicationHandler<Msg> for App {
                 }
             }
             Msg::Stickers(m) => st.chat.stickers = m,
+            Msg::Plates { light, imgs } => {
+                let t: Vec<usize> = imgs.iter().map(|i| st.gfx.texture_rgba(i.width(), i.height(), i)).collect();
+                st.plates[light as usize] = Some((t[0], t[1], t[2], t[3]));
+                st.set_theme(light);
+            }
             Msg::Image { url, img } => {
                 let tex = img.map(|i| {
                     let (w, h) = i.dimensions();

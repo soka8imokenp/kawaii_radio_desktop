@@ -220,6 +220,7 @@ pub struct Gfx {
     view_bind: wgpu::BindGroup,
     tex_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    sampler_tiled: wgpu::Sampler,
     textures: Vec<Texture>,
     white: usize,
     /// the stage's place in the window (px): offset and scale
@@ -552,7 +553,15 @@ impl Gfx {
                 (b, bg)
             })
             .collect();
-        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 2]); 2] };
+        let sampler_tiled = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, sampler_tiled, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 2]); 2] };
         g.white = g.texture_rgba(1, 1, &[255, 255, 255, 255]);
         g.update_view();
         g
@@ -619,6 +628,15 @@ impl Gfx {
     }
 
     pub fn texture_rgba(&mut self, w: u32, h: u32, rgba: &[u8]) -> usize {
+        self.texture_ex(w, h, rgba, false)
+    }
+
+    /// A texture that tiles (uv outside 0..1 repeats it): the app's own surface patterns.
+    pub fn texture_tiled(&mut self, w: u32, h: u32, rgba: &[u8]) -> usize {
+        self.texture_ex(w, h, rgba, true)
+    }
+
+    fn texture_ex(&mut self, w: u32, h: u32, rgba: &[u8], tiled: bool) -> usize {
         let mips = (w.max(h) as f32).log2().floor() as u32 + 1;
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -648,7 +666,7 @@ impl Gfx {
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.tex_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) }],
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(if tiled { &self.sampler_tiled } else { &self.sampler }) }],
         });
         self.textures.push(Texture { bind, size: (w, h) });
         self.textures.len() - 1
