@@ -470,6 +470,24 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
   Проверено в WSL: apt ставит пакет со всеми зависимостями, приложение запускается, звук идёт.
   Сборке AppImage нужен `patchelf` в WSL (поставлен).
 
+### NATIVE (2026-10-28) — полностью нативное приложение на Rust, папка `native/`
+Пользователь хочет «фулл Rust, не веб-сайт». Пишется рядом с `app/` (Tauri остаётся рабочей версией и
+обновляется, пока native не догонит её по функциям).
+- Стек: `winit 0.30` (окно без рамки, drag_window = Snap), `wgpu 30` (своя отрисовка: плиты-текстуры + квады
+  со скруглённой маской, повороты, свечения — `src/gfx.rs`, один шейдер), `rodio 0.23` (symphonia MP3 + cpal —
+  без системных кодеков; `src/audio.rs`, Tap меряет RMS каналов для VU/LEVEL), `ureq` (`src/net.rs`),
+  `glyphon 0.12` (текст — этап 2).
+- Сцена в координатах 1920×1080 (как рендеры), окно letterbox. Нажатые клавиши/LED = вырезка из down-плиты
+  по форме клавиши (`Key { rect, radius }` в main.rs). Плиты вшиты `include_bytes!` из `app/ui/assets`.
+- API wgpu 30 / rodio 0.23 отличается от привычного: `Player` вместо `Sink`, `DeviceSinkBuilder::open_default_sink`,
+  `queue.present(frame)`, `CurrentSurfaceTexture::Success`, `bind_group_layouts: &[Some(..)]`, `immediate_size`,
+  `multiview_mask`, `MipmapFilterMode`, `color_space: SurfaceColorSpace::Auto`.
+- Этап 1 готов: эфир J-POP/OST/RIOT по расписанию (смещение = позиция в слоте + время загрузки), тумблер,
+  VU (пружина), LEVEL, кольцо громкости (колесо мыши над ручкой), клавиши окна.
+- Дальше: 2) тексты песен/LCD/барабан/призматрон (glyphon), 3) чат + Kawaii ID (вход через браузер +
+  `kawaii://`, нужен деплой `docs/cloud-desktop-login.patch` — только с разрешения), 4) библиотека/поиск/профиль/
+  настройки/чек, 5) автообновление и замена Tauri-версии. Сборка: `cd native && cargo build --release`.
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —
