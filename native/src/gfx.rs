@@ -683,7 +683,8 @@ impl Gfx {
         Some(self.texture_rgba(w, h, &img))
     }
 
-    pub fn render(&mut self, batches: &[Batch], text: Option<(&mut crate::text::TextLayer, &[crate::text::Txt])>, over: &[Batch]) {
+    /// `bloom`: lights that also glow — drawn into the glow target too (blurred there with the texts' glow).
+    pub fn render(&mut self, batches: &[Batch], text: Option<(&mut crate::text::TextLayer, &[crate::text::Txt])>, over: &[Batch], bloom: &[Batch]) {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
@@ -732,6 +733,11 @@ impl Gfx {
             let half = ((self.config.width / 2).max(1), (self.config.height / 2).max(1));
             glow = tl.prepare(&self.device, &self.queue, (self.config.width, self.config.height), half, self.fit, txts);
         }
+        let glow = glow || bloom.iter().any(|b| !b.quads.is_empty());
+        let bloom_bufs: Vec<_> = bloom
+            .iter()
+            .map(|b| (!b.quads.is_empty()).then(|| self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&b.quads), usage: wgpu::BufferUsages::VERTEX })))
+            .collect();
         if glow {
             self.bloom();
             let b = self.bloom.as_ref().unwrap();
@@ -751,9 +757,19 @@ impl Gfx {
                 })
                 .forget_lifetime()
             };
-            if let Some((tl, _)) = text.as_ref() {
+            {
                 let mut p = pass_to(&mut enc, &b.views[0]);
-                tl.render_glow(&mut p);
+                if let Some((tl, _)) = text.as_ref() {
+                    tl.render_glow(&mut p);
+                }
+                p.set_bind_group(0, &self.view_bind, &[]);
+                for (bt, buf) in bloom.iter().zip(&bloom_bufs) {
+                    let Some(buf) = buf else { continue };
+                    p.set_pipeline(&self.pipe_add);
+                    p.set_bind_group(1, &self.textures[bt.tex.unwrap_or(self.white)].bind, &[]);
+                    p.set_vertex_buffer(0, buf.slice(..));
+                    p.draw(0..6, 0..bt.quads.len() as u32);
+                }
             }
             // A -> B (H), B -> A (V), twice: 1 texel apart, then 2.5 texels apart
             for (k, (src, dst)) in [(0usize, 1usize), (1, 0), (0, 1), (1, 0)].into_iter().enumerate() {

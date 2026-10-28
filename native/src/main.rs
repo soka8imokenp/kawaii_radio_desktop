@@ -163,6 +163,8 @@ struct State {
     /// the bunny and the chassis patch under it
     logo: (usize, usize),
     media: Option<souvlaki::MediaControls>,
+    /// this frame's lights that bloom (LED filaments)
+    bloom_q: Vec<Quad>,
     /// the station's schedule from the last tune, the next song being opened (id, start) and the one ready
     slots: Vec<net::Slot>,
     preload: Option<(String, i64)>,
@@ -991,11 +993,16 @@ impl State {
         let mut halos: Vec<Quad> = vec![];
         let mut switch: Vec<Quad> = vec![];
         let mut lens_glints: Vec<Quad> = vec![];
+        let mut bloom_q: Vec<Quad> = vec![];
         let mut cv_texts: Vec<text::Txt> = vec![];
         // LEDs: the real glass lens of the plate stays (its reflections too); the light is added inside it — the dome
         // filled with colour, a hot filament a little below the middle, a faint bloom around, the glint brighter
-        fn led(halos: &mut Vec<Quad>, glints: &mut Vec<Quad>, x: f32, y: f32, r: f32, c: [f32; 3], b: f32) {
-            halos.push(Quad::glow(x, y, r * 2.1, [c[0], c[1], c[2], 0.09 * b]));
+        fn led(halos: &mut Vec<Quad>, glints: &mut Vec<Quad>, bloom: &mut Vec<Quad>, x: f32, y: f32, r: f32, c: [f32; 3], b: f32) {
+            // into the glow target: the lit dome and its hot core, blurred into a real soft bloom around the lens
+            bloom.push(Quad::flat(x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6, [c[0], c[1], c[2], 0.55 * b]).rounded(r * 0.8));
+            bloom.push(Quad::flat(x - r * 0.35, y - r * 0.25, r * 0.7, r * 0.7, [1.0, 0.95, 0.85, 0.5 * b]).rounded(r * 0.35));
+            // the light in the chrome bezel: a thin bright ring, stronger at the bottom (lit from inside)
+            halos.push(Quad::rim(x - r - 1.0, y - r - 1.0, r * 2.0 + 2.0, r * 2.0 + 2.0, r + 1.0, 1.4, [c[0], c[1], c[2], 0.12 * b], [c[0], c[1], c[2], 0.45 * b]));
             halos.push(Quad::radial(x - r, y - r, r * 2.0, r * 2.0, [c[0], c[1], c[2], 0.9 * b], [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6, 0.35 * b]).rounded(r));
             let k = r * 0.55;
             halos.push(Quad::radial(x - k, y + r * 0.12 - k, k * 2.0, k * 2.0, [1.0, 0.98, 0.92, 0.75 * b], [c[0], c[1], c[2], 0.0]).rounded(k));
@@ -1006,7 +1013,7 @@ impl State {
             if b > 0.02 {
                 let y = 548.0 + j as f32 * 22.0;
                 let c = if j < 2 { [1.0, 0.22, 0.12] } else if j < 5 { [1.0, 0.62, 0.18] } else { [0.25, 1.0, 0.5] };
-                led(&mut halos, &mut lens_glints, 64.0, y, 8.5, c, b);
+                led(&mut halos, &mut lens_glints, &mut bloom_q, 64.0, y, 8.5, c, b);
             }
         }
         // the band switch: a recessed panel over the two plate keys, RADIO printed on the left, O'Z TANLOVIM on
@@ -1083,18 +1090,7 @@ impl State {
         };
         cv_texts.extend(lab("R A D I O", 952.0, (1.0 - f).clamp(0.0, 1.0)));
         cv_texts.extend(lab("O ' Z   T A N L O V I M", 1258.0, f.clamp(0.0, 1.0)));
-        // the window's edges: a soft light along the one under the cursor (it can be dragged), and a grip in the
-        // bottom-right corner (three engraved ribs)
-        if let Some(e) = self.edge {
-            use winit::window::ResizeDirection as R;
-            let c = [0.75, 0.9, 1.0, 0.16];
-            let n = [0.75, 0.9, 1.0, 0.0];
-            let (l, r, t, b) = (matches!(e, R::West | R::NorthWest | R::SouthWest), matches!(e, R::East | R::NorthEast | R::SouthEast), matches!(e, R::North | R::NorthWest | R::NorthEast), matches!(e, R::South | R::SouthWest | R::SouthEast));
-            if l { halos.push(Quad::grad(0.0, 0.0, 14.0, 1080.0, c, n, false)); }
-            if r { halos.push(Quad::grad(1906.0, 0.0, 14.0, 1080.0, n, c, false)); }
-            if t { halos.push(Quad::grad(0.0, 0.0, 1920.0, 14.0, c, n, true)); }
-            if b { halos.push(Quad::grad(0.0, 1066.0, 1920.0, 14.0, n, c, true)); }
-        }
+        // a grip in the bottom-right corner (three engraved ribs)
         for k in 0..3 {
             let d = 9.0 + k as f32 * 7.0;
             let (cx, cy) = (1914.0 - d / 2.0, 1074.0 - d / 2.0);
@@ -1113,7 +1109,7 @@ impl State {
                 let a = (225.0 - i as f32 * 13.5f32).to_radians();
                 let (x, y) = (1250.0 + a.cos() * 86.0, 958.0 - a.sin() * 86.0);
                 let c = if i >= 18 { [1.0, 0.22, 0.12] } else { [1.0, 0.62, 0.18] };
-                led(&mut halos, &mut lens_glints, x, y, 7.5, c, 1.0);
+                led(&mut halos, &mut lens_glints, &mut bloom_q, x, y, 7.5, c, 1.0);
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
@@ -1349,6 +1345,7 @@ impl State {
         glass.quads.push(Quad::plate_cut(gx1, gy0, 1920.0, gy1, 1.0));
         over.batches.push(glass);
         self.over = over.batches;
+        self.bloom_q = bloom_q;
         self.texts = cv.texts.into_iter().chain(over.texts).collect();
         cv.batches
     }
@@ -1441,6 +1438,7 @@ impl ApplicationHandler<Msg> for App {
             edge: None,
             slots: vec![],
             media: None,
+            bloom_q: vec![],
             preload: None,
             preloaded: None,
             player,
@@ -1945,7 +1943,8 @@ impl App {
                 let over = std::mem::take(&mut st.over);
                 let texts = std::mem::take(&mut st.texts);
                 let nq: usize = batches.iter().chain(over.iter()).map(|b| b.quads.len()).sum();
-                st.gfx.render(&batches, Some((&mut st.text, &texts)), &over);
+                let bloom = std::mem::take(&mut st.bloom_q);
+                st.gfx.render(&batches, Some((&mut st.text, &texts)), &over, &[Batch { tex: None, quads: bloom, add: true, clip: None }]);
                 st.text.trim();
                 if std::env::var_os("KR_DEBUG").is_some() {
                     use std::io::Write;
