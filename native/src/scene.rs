@@ -507,7 +507,7 @@ pub const TV: [f32; 4] = [156.0, 196.0, 592.0, 628.0];
 const NS: usize = 15;
 
 /// CSS cubic-bezier(x1, y1, x2, y2) at time `t` (0..1): Newton steps on x, then y.
-fn bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
+pub fn bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
     let f = |a: f32, b: f32, u: f32| 3.0 * a * u * (1.0 - u) * (1.0 - u) + 3.0 * b * u * u * (1.0 - u) + u * u * u;
     let df = |a: f32, b: f32, u: f32| 3.0 * a * (1.0 - u) * (1.0 - u) + 6.0 * (b - a) * u * (1.0 - u) + 3.0 * (1.0 - b) * u * u;
     let mut u = t;

@@ -513,6 +513,18 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
   перетаскивании края держит 16:9 (subclass WM_SIZING).
 - Отладка: `KR_DEBUG=1` → `%TEMP%/kr_debug.log` (тюнинг/выбор/время старта) и `kr_prof.log` (время кадра).
 
+- **Чат как в мобилке** (chat.rs): клик по сообщению (или ПКМ) → лист действий: 4 реакции (❤️🔥😂😭, цветные
+  эмодзи рисует glyphon из системного Segoe UI Emoji), JAVOB (ответ, полоска над полем, `reply` = id), NUSXA
+  (arboard), PROFIL (`whois` → карточка: LEVEL/RANK/сообщения/дни, модерация по правилам `canTouch` сервера),
+  QADASH, O'CHIRISH, BLOKLASH. Чипы реакций под сообщениями, «↓» к новым с числом непрочитанных, подгрузка
+  истории (`history before`), «X yozmoqda…», клик по статусу у админа → XONA SOZLAMALARI (sekin rejim, yopish,
+  tozalash — двойное нажатие). Протокол — `D:\kawaii_radio_app\cloud\src\chat.ts`.
+- Клавиши: нажатие = вырез клавиши сдвинут на 1.4 px и ×0.992, отпускание — пружина 280 мс (кадры веб-версии),
+  звуки down/up/latch синтезируются (audio.rs `synth`, как sfx() в app.js). Лампочка TAVSIF закрыта заплаткой из
+  поверхности клавиши, логотип = белая зайчиха (`native/assets/logo-*.png`, вырезаны из плиты скриптом).
+- Смена страниц (`State::go`): 130 мс старая гаснет, 600 мс новая «пишется» слева светящейся полосой
+  (маркеры батчей + `restrict`/`fade` в main.rs).
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —

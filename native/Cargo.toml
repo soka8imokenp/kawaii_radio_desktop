@@ -16,6 +16,7 @@ tungstenite = { version = "0.30.0", features = ["native-tls"] }
 ureq = { version = "2.12", default-features = false, features = ["native-tls", "json", "gzip"] }
 wgpu = "30"
 winit = "0.30"
+arboard = { version = "3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

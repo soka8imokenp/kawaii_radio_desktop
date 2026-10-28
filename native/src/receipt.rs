@@ -131,13 +131,20 @@ impl Tape {
         }
         let dt = self.last.elapsed().as_secs_f32().min(0.1);
         self.last = Instant::now();
+        // the range first (so the tape never runs past an end and snaps back), then ease toward the wheel's goal
+        let total: f32 = self.rolls.iter().map(|r| r.height).sum();
+        let max = (total - (y1 - y0)).max(0.0);
+        self.goal = self.goal.clamp(0.0, max);
         if self.feed.is_none() {
-            self.scroll += (self.goal - self.scroll) * (1.0 - (-dt / 0.09).exp());
+            self.scroll += (self.goal - self.scroll) * (1.0 - (-dt / 0.07).exp());
+            if (self.goal - self.scroll).abs() < 0.3 {
+                self.scroll = self.goal;
+            }
         }
+        self.scroll = self.scroll.clamp(0.0, max);
         cv.clip = Some(WIN);
         cv.flat(Quad::flat(x0, y0, x1 - x0, y1 - y0, rgb(0xf3f1ea)));
         let mut y = y0 - feed_off - self.scroll;
-        let total: f32 = self.rolls.iter().map(|r| r.height).sum();
         for r in &self.rolls {
             let top = y;
             // what the head has burnt so far: one text line (21 px) every 80 ms
@@ -200,9 +207,6 @@ impl Tape {
             }
         }
         cv.clip = None;
-        let max = (total - (y1 - y0)).max(0.0);
-        self.goal = self.goal.clamp(0.0, max);
-        self.scroll = self.scroll.clamp(0.0, max);
         // the platen bows the paper: darker at both edges, a soft sheen; shadow under the head and over the roller
         over.flat(Quad::grad(x0, y0, 30.0, y1 - y0, rgba(0, 0.14), rgba(0, 0.0), false));
         over.flat(Quad::grad(x1 - 30.0, y0, 30.0, y1 - y0, rgba(0, 0.0), rgba(0, 0.16), false));

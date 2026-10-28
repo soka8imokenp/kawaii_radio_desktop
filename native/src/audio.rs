@@ -145,6 +145,65 @@ pub fn prepare(url: &str, offset: impl FnOnce() -> Duration) -> Result<Prepared,
     Ok(Prepared { pre, inner: dec })
 }
 
+#[derive(Clone, Copy)]
+pub enum Sfx {
+    Down,
+    Up,
+    Latch,
+}
+
+/// A key's sound: `thump` = a sine falling an octave, `burst` = band-passed noise, both decaying exponentially.
+fn synth(kind: Sfx) -> Vec<f32> {
+    const SR: f32 = 44100.0;
+    let mut out = vec![0.0f32; (SR * 0.1) as usize];
+    let mut seed: u32 = 0x9e3779b9;
+    let mut noise = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed as f32 / u32::MAX as f32 * 2.0 - 1.0
+    };
+    let env = |t: f32, dur: f32, gain: f32| if t > dur { 0.0 } else { gain * (0.0001f32 / gain).powf(t / dur) };
+    let mut thump = |out: &mut Vec<f32>, f: f32, dur: f32, gain: f32| {
+        let mut ph = 0.0f32;
+        for (i, o) in out.iter_mut().enumerate() {
+            let t = i as f32 / SR;
+            let fr = f * 0.5f32.powf((t / dur).min(1.0));
+            ph += fr / SR * std::f32::consts::TAU;
+            *o += ph.sin() * env(t, dur, gain);
+        }
+    };
+    let mut burst = |out: &mut Vec<f32>, f: f32, q: f32, dur: f32, gain: f32| {
+        // RBJ band-pass (constant 0 dB peak)
+        let w = std::f32::consts::TAU * f / SR;
+        let al = w.sin() / (2.0 * q);
+        let (b0, b2, a0, a1, a2) = (al, -al, 1.0 + al, -2.0 * w.cos(), 1.0 - al);
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0, 0.0, 0.0, 0.0);
+        for (i, o) in out.iter_mut().enumerate() {
+            let t = i as f32 / SR;
+            let x = noise();
+            let y = (b0 * x + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+            x2 = x1;
+            x1 = x;
+            y2 = y1;
+            y1 = y;
+            *o += y * env(t, dur, gain);
+        }
+    };
+    match kind {
+        Sfx::Down => {
+            thump(&mut out, 150.0, 0.05, 0.22);
+            burst(&mut out, 2600.0, 2.5, 0.025, 0.35);
+        }
+        Sfx::Up => burst(&mut out, 4200.0, 3.0, 0.018, 0.22),
+        Sfx::Latch => {
+            thump(&mut out, 95.0, 0.07, 0.28);
+            burst(&mut out, 3000.0, 2.0, 0.03, 0.3);
+        }
+    }
+    out.iter().map(|v| v * 0.55).collect()
+}
+
 pub struct Player {
     _stream: rodio::MixerDeviceSink,
     sink: Arc<Sink>,
@@ -183,6 +242,11 @@ impl Player {
         std::thread::spawn(move || {
             let _ = s.try_seek(to);
         });
+    }
+    /// A key's click, on its own (not under the music's volume).
+    pub fn sfx(&self, kind: Sfx) {
+        let buf = rodio::buffer::SamplesBuffer::new(std::num::NonZero::new(1u16).unwrap(), std::num::NonZero::new(44100u32).unwrap(), synth(kind));
+        self._stream.mixer().add(buf);
     }
     pub fn idle(&self) -> bool {
         self.sink.empty()

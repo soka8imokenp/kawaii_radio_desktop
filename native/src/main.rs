@@ -33,6 +33,9 @@ use winit::window::{Window, WindowId};
 const PLATE_UP: &[u8] = include_bytes!("../../app/ui/assets/dark-up.webp");
 const PLATE_DOWN: &[u8] = include_bytes!("../../app/ui/assets/dark-down.webp");
 const GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-dark.webp");
+/// the logo: the bunny alone (white on the dark device), and the chassis that was under the green plate
+const LOGO: &[u8] = include_bytes!("../assets/logo-bunny.png");
+const LOGO_BG: &[u8] = include_bytes!("../assets/logo-patch.png");
 
 /// What the network threads hand to the window thread.
 enum Msg {
@@ -97,6 +100,12 @@ struct State {
     up: usize,
     down: usize,
     glass: usize,
+    /// the bunny and the chassis patch under it
+    logo: (usize, usize),
+    /// a page change running: since when, from which page
+    screen_anim: Option<(Instant, panel::Screen)>,
+    /// when each key was let go (for its spring back)
+    released: Vec<Option<Instant>>,
     player: Option<audio::Player>,
     keys: Vec<Key>,
     pressed: Option<usize>,
@@ -160,6 +169,47 @@ struct App {
     proxy: EventLoopProxy<Msg>,
     st: Option<State>,
     next_frame: Instant,
+}
+
+/// An empty batch that nothing merges into: what is drawn after it can be told apart (batch index, text index).
+fn marker(c: &mut Canvas) -> (usize, usize) {
+    c.batches.push(Batch { tex: None, quads: vec![], add: false, clip: Some([-9.0, -9.0, -9.0, -9.0]) });
+    (c.batches.len(), c.texts.len())
+}
+
+fn isect(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [a[0].max(b[0]), a[1].max(b[1]), a[2].min(b[2]), a[3].min(b[3])]
+}
+
+/// What was drawn between two markers shows only inside `r`.
+fn restrict(c: &mut Canvas, a: (usize, usize), b: (usize, usize), r: [f32; 4]) {
+    for bt in &mut c.batches[a.0..b.0 - 1] {
+        bt.clip = Some(isect(bt.clip.unwrap_or([0.0, 0.0, 1920.0, 1080.0]), r));
+    }
+    for t in &mut c.texts[a.1..b.1] {
+        t.clip = isect(t.clip, r);
+    }
+}
+
+/// What was drawn between two markers fades to `k`.
+fn fade(c: &mut Canvas, a: (usize, usize), b: (usize, usize), k: f32) {
+    for bt in &mut c.batches[a.0..b.0 - 1] {
+        for q in &mut bt.quads {
+            q.color[3] *= k;
+            // gradients and rims keep their second colour in uv
+            if matches!(q.kind as i32, 3 | 6 | 8 | 10) {
+                q.uv[3] *= k;
+            }
+        }
+    }
+    for t in &mut c.texts[a.1..b.1] {
+        for sp in &mut t.spans {
+            sp.color[3] = (sp.color[3] as f32 * k) as u8;
+        }
+        if let Some(g) = &mut t.glow {
+            g.0[3] = (g.0[3] as f32 * k) as u8;
+        }
+    }
 }
 
 /// KR_DEBUG: a line in %TEMP%/kr_debug.log
@@ -251,7 +301,11 @@ impl State {
         }
         if let Some(out) = &self.chat.out {
             let nonce = format!("{:x}", net::now_ms());
-            let _ = out.send(serde_json::json!({ "type": "send", "kind": kind, "body": body, "nonce": nonce }).to_string());
+            let mut m = serde_json::json!({ "type": "send", "kind": kind, "body": body, "nonce": nonce });
+            if let Some(r) = self.chat.reply.take() {
+                m["reply"] = r.id.into();
+            }
+            let _ = out.send(m.to_string());
         }
         self.chat.goal = 0.0;
     }
@@ -381,7 +435,7 @@ impl State {
     fn act(&mut self, a: panel::Act) {
         use panel::Act;
         match a {
-            Act::Close => self.panel.screen = panel::Screen::Home,
+            Act::Close => self.go(panel::Screen::Home),
             Act::Back => {
                 self.panel.open = None;
                 self.panel.scroll = 0.0;
@@ -457,6 +511,15 @@ impl State {
         }
     }
 
+    /// Change the page on the display: the old one dims away, the new one is written in by a sweep (see frame()).
+    fn go(&mut self, s: panel::Screen) {
+        if s == self.panel.screen {
+            return;
+        }
+        self.screen_anim = Some((Instant::now(), self.panel.screen));
+        self.panel.screen = s;
+    }
+
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
         self.keys.iter().position(|k| x >= k.rect[0] && x <= k.rect[2] && y >= k.rect[1] && y <= k.rect[3])
     }
@@ -487,7 +550,7 @@ impl State {
                     "gear" => panel::Screen::Settings,
                     _ => panel::Screen::Home,
                 };
-                self.panel.screen = if self.panel.screen == s { panel::Screen::Home } else { s };
+                self.go(if self.panel.screen == s { panel::Screen::Home } else { s });
                 self.panel.scroll = 0.0;
                 self.search_focus = self.panel.screen == panel::Screen::Search;
             }
@@ -520,7 +583,7 @@ impl State {
                     tune(proxy.clone(), self.station.clone(), self.tracks.clone());
                     self.toast("RADIO");
                 } else if self.has_kp() {
-                    self.panel.screen = panel::Screen::Search;
+                    self.go(panel::Screen::Search);
                     self.search_focus = true;
                     self.toast("O'Z TANLOVIM · QO'SHIQ TANLANG");
                 } else {
@@ -633,15 +696,49 @@ impl State {
             }
         }
 
-        let base = Batch { tex: Some(self.up), quads: vec![Quad::full()], add: false, clip: None };
-        // pressed / latched keys: their own shape cut from the "down" plate, nothing around them changes
+        let mut base = Batch { tex: Some(self.up), quads: vec![Quad::full()], add: false, clip: None };
+        // the TAVSIF key has no lamp: its corner is covered with the key's own surface from beside it
+        const LAMP: ([f32; 4], [f32; 4]) = ([452.0, 992.0, 467.0, 1008.0], [465.0, 992.0, 480.0, 1008.0]);
+        let lamp_patch = |src: [f32; 4], dst: [f32; 4]| Quad { rect: [dst[0], dst[1], dst[2] - dst[0], dst[3] - dst[1]], ..Quad::plate_cut(src[0], src[1], src[2], src[3], 1.0) }.rounded(7.0);
+        base.quads.push(lamp_patch(LAMP.0, LAMP.1));
+        // physical keys, each cut by its own shape: held = sunk 1.4 px and a hair smaller, let go = a short spring
+        // with an overshoot (the web version's keyframes); pressed / latched ones from the "down" plate
+        let mut upk = Batch { tex: Some(self.up), quads: vec![], add: false, clip: None };
         let mut down = Batch { tex: Some(self.down), quads: vec![], add: false, clip: None };
         for i in 0..self.keys.len() {
-            if self.key_down(i) {
-                let k = &self.keys[i];
-                down.quads.push(Quad::plate_cut(k.rect[0], k.rect[1], k.rect[2], k.rect[3], 1.0).rounded(k.radius));
+            let k = &self.keys[i];
+            let (off, sc) = if self.pressed == Some(i) && k.id != "play" {
+                (1.4, 0.992)
+            } else if let Some(t) = self.released.get(i).copied().flatten().map(|t| t.elapsed().as_secs_f32() / 0.28).filter(|t| *t < 1.0) {
+                let e = scene::bezier(0.2, 0.8, 0.3, 1.0, t) * 3.0;
+                const KF: [(f32, f32); 4] = [(1.4, 0.992), (-0.7, 1.003), (0.25, 1.0), (0.0, 1.0)];
+                let (a, b) = (KF[(e as usize).min(2)], KF[(e as usize + 1).min(3)]);
+                let f = e.fract();
+                (a.0 + (b.0 - a.0) * f, a.1 + (b.1 - a.1) * f)
+            } else {
+                (0.0, 1.0)
+            };
+            let lit = self.key_down(i);
+            if !lit && off == 0.0 {
+                continue;
+            }
+            let r = k.rect;
+            let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
+            let map = |x: f32, y: f32| (cx + (x - cx) * sc, cy + (y - cy) * sc + off);
+            let (a, b) = (map(r[0], r[1]), map(r[2], r[3]));
+            let q = Quad { rect: [a.0, a.1, b.0 - a.0, b.1 - a.1], ..Quad::plate_cut(r[0], r[1], r[2], r[3], 1.0) }.rounded(k.radius * sc);
+            let batch = if lit { &mut down } else { &mut upk };
+            batch.quads.push(q);
+            if k.id == "tavsif" {
+                let (d0, d1) = (map(LAMP.1[0], LAMP.1[1]), map(LAMP.1[2], LAMP.1[3]));
+                batch.quads.push(lamp_patch(LAMP.0, [d0.0, d0.1, d1.0, d1.1]));
             }
         }
+        // the logo: the chassis over the old green plate, the bunny in white
+        let logo = vec![
+            Batch { tex: Some(self.logo.1), quads: vec![Quad { rect: [148.0, 36.0, 51.5, 52.0], uv: [0.0, 0.0, 1.0, 1.0], ..Quad::full() }], add: false, clip: None },
+            Batch { tex: Some(self.logo.0), quads: vec![Quad { rect: [152.0, 40.0, 43.5, 44.0], uv: [0.0, 0.0, 1.0, 1.0], color: [0.96, 0.97, 0.96, 1.0], ..Quad::full() }], add: false, clip: None },
+        ];
         let mut halos: Vec<Quad> = vec![];
         // LEDs: the lit lens from the down plate, with its brightness
         for j in 0..18 {
@@ -689,7 +786,10 @@ impl State {
             lamps.push(Quad::glow(cx, 765.0, 64.0, [1.0, 0.6, 0.27, 0.12 * fl]));
             lamps.push(Quad::glow(cx, 765.0, 36.0, [1.0, 0.5, 0.18, 0.05 * fl]));
         }
-        let mut cv = Canvas { batches: vec![base, down, Batch { tex: None, quads: halos, add: true, clip: None }], texts: vec![], clip: None, mask: None };
+        let mut batches = vec![base];
+        batches.extend(logo);
+        batches.extend([upk, down, Batch { tex: None, quads: halos, add: true, clip: None }]);
+        let mut cv = Canvas { batches, texts: vec![], clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
         let (pos, dur) = if self.pick {
@@ -700,13 +800,34 @@ impl State {
         };
         self.tv.draw(&mut cv);
         let (title, artist) = track.as_ref().map(|t| (t.title.clone(), t.artist.clone())).unwrap_or(("KAWAII RADIO".into(), "ulanmoqda…".into()));
-        if self.panel.screen == panel::Screen::Home {
+        // the page change (the Tauri "shutter"): 130 ms the old page dims and flares, then 600 ms the new one is
+        // written in from the left by a glowing sweep and settles from bright
+        let mut phase: Option<(bool, f32)> = None;
+        let mut shown = self.panel.screen;
+        if let Some((t0, from)) = self.screen_anim {
+            let t = t0.elapsed().as_secs_f32();
+            if t < 0.13 {
+                shown = from;
+                phase = Some((false, t / 0.13));
+            } else if t < 0.73 {
+                phase = Some((true, scene::bezier(0.3, 0.75, 0.25, 1.0, (t - 0.13) / 0.6)));
+            } else {
+                self.screen_anim = None;
+            }
+        }
+        if phase.is_some() {
+            let [x0, y0, x1, y1] = scene::LY;
+            cv.flat(Quad::flat(x0, y0, x1 - x0, y1 - y0, scene::rgb(0x0b0e09)).rounded(37.0));
+        }
+        let m_ly = (marker(&mut cv), marker(&mut over));
+        if shown == panel::Screen::Home {
             if self.lyrics.lines.is_empty() {
                 let samples = self.player.as_ref().map(|p| p.levels.samples()).unwrap_or_default();
                 self.spec.update(&samples, self.playing, self.started.elapsed().as_secs_f32());
             }
             self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist, &self.spec);
         }
+        let m_ly_end = (marker(&mut cv), marker(&mut over));
         let station = if self.pick { "O'Z TANLOVIM" } else { match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" } };
         let line1 = format!("♫ {title} · {artist}");
         let foot = track.as_ref().map(|t| format!("{station} · {} · {} BPM · ENERGIYA {}%", t.category.to_uppercase(), t.bpm.round(), t.energy.round())).unwrap_or_default();
@@ -761,7 +882,42 @@ impl State {
                     minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
                     songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
                 };
+                let real = panel.screen;
+                panel.screen = shown;
+                let m0 = (marker(&mut cv), marker(&mut over));
                 panel.draw(&mut cv, &mut over, &mut self.text, &cx, &mut img);
+                let m1 = (marker(&mut cv), marker(&mut over));
+                panel.screen = real;
+                if let Some((reveal, k)) = phase {
+                    for (a, b) in [(m_ly, m_ly_end), (m0, m1)] {
+                        if reveal {
+                            let [x0, y0, x1, y1] = scene::LY;
+                            let r = [x0, y0, x0 + (x1 - x0) * k, y1];
+                            restrict(&mut cv, a.0, b.0, r);
+                            restrict(&mut over, a.1, b.1, r);
+                        } else {
+                            fade(&mut cv, a.0, b.0, 1.0 - k);
+                            fade(&mut over, a.1, b.1, 1.0 - k);
+                        }
+                    }
+                    let [x0, y0, x1, y1] = scene::LY;
+                    let (w, h) = (x1 - x0, y1 - y0);
+                    over.mask = Some((scene::LY, 37.0));
+                    if reveal {
+                        // the glowing head of the sweep, the written part still bright, the rest of the tube empty glass
+                        let hx = x0 + w * k;
+                        over.flat(Quad::flat(hx, y0, x1 - hx, h, scene::rgba(0x0b0e09, 1.0)));
+                        over.flat(Quad::scan(hx, y0, x1 - hx, h, 0.3));
+                        over.light(Quad::flat(x0, y0, hx - x0, h, scene::rgba(0xe6ff9a, 0.1 * (1.0 - k))));
+                        over.light(Quad::grad(hx - 46.0, y0, 46.0, h, scene::rgba(0xc4e078, 0.0), scene::rgba(0xc4e078, 0.35 * (1.0 - k * 0.6)), false));
+                        over.light(Quad::flat(hx - 2.0, y0, 3.0, h, scene::rgba(0xeaffb0, 0.55 * (1.0 - k * 0.6))));
+                    } else {
+                        // the old page flares a little as it goes
+                        over.light(Quad::flat(x0, y0, w, h, scene::rgba(0xe6ff9a, 0.08 * k)));
+                    }
+                    over.mask = None;
+                    scene::lens(&mut over, scene::LY, 37.0);
+                }
             }
             self.panel = panel;
         }
@@ -865,6 +1021,7 @@ impl ApplicationHandler<Msg> for App {
         let up = load(&mut gfx, PLATE_UP);
         let down = load(&mut gfx, PLATE_DOWN);
         let glass = load(&mut gfx, GLASS);
+        let logo = (load(&mut gfx, LOGO), load(&mut gfx, LOGO_BG));
         let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
         // the chat: one socket, a hello with this computer's identity
         let mut store = store::Store::open();
@@ -907,6 +1064,9 @@ impl ApplicationHandler<Msg> for App {
             up,
             down,
             glass,
+            logo,
+            released: vec![None; keys().len()],
+            screen_anim: None,
             player,
             keys: keys(),
             pressed: None,
@@ -1166,6 +1326,28 @@ impl ApplicationHandler<Msg> for App {
                     st.scrub = Some(st.cursor.0);
                 }
             }
+            // the chat tube: its own messages, sheets and keys (right button = a message's actions at once)
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: b @ (MouseButton::Left | MouseButton::Right), .. }
+                if st.chat.wants(st.cursor.0, st.cursor.1) && !(st.tray && st.tray_pick(st.cursor.0, st.cursor.1).is_some()) =>
+            {
+                let (x, y) = st.cursor;
+                st.tray = false;
+                match st.chat.click(x, y, b == MouseButton::Right) {
+                    Some(chat::ChatAct::Reply) => {
+                        if st.acc.is_some() {
+                            st.compose.get_or_insert_with(String::new);
+                        } else {
+                            st.login();
+                        }
+                    }
+                    Some(chat::ChatAct::Copy(t)) => {
+                        let ok = arboard::Clipboard::new().and_then(|mut c| c.set_text(t)).is_ok();
+                        st.toast(if ok { "NUSXA OLINDI" } else { "NUSXA OLIB BO'LMADI" });
+                    }
+                    Some(chat::ChatAct::Toast(t)) => st.toast(&t),
+                    None => {}
+                }
+            }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 let (x, y) = st.cursor;
                 match state {
@@ -1194,7 +1376,10 @@ impl ApplicationHandler<Msg> for App {
                             if st.keys[i].id != "compose" && st.keys[i].id != "cid" {
                                 st.compose = None;
                             }
-                            st.pressed = Some(i)
+                            st.pressed = Some(i);
+                            if let Some(p) = &st.player {
+                                p.sfx(if st.keys[i].id == "play" { audio::Sfx::Latch } else { audio::Sfx::Down });
+                            }
                         }
                         // any surface that is not a control moves the window (the OS's own move loop: Snap works)
                         None => {
@@ -1208,6 +1393,10 @@ impl ApplicationHandler<Msg> for App {
                             st.seek_at(sx);
                         }
                         if let Some(i) = st.pressed.take() {
+                            st.released[i] = Some(Instant::now());
+                            if let (Some(p), false) = (&st.player, st.keys[i].id == "play") {
+                                p.sfx(audio::Sfx::Up);
+                            }
                             if st.key_at(x, y) == Some(i) {
                                 let id = st.keys[i].id;
                                 st.on_click(id, &self.proxy, el);
@@ -1232,7 +1421,7 @@ impl ApplicationHandler<Msg> for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == WKey::Named(NamedKey::Escape) && st.compose.is_none() => {
-                st.panel.screen = panel::Screen::Home;
+                st.go(panel::Screen::Home);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == WKey::Named(NamedKey::F11) => {
                 st.act(panel::Act::Full);
