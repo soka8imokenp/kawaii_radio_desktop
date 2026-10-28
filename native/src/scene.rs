@@ -318,6 +318,45 @@ fn fmt(s: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// Seven-segment digits (and ':') like an LCD clock: `w` x `h` per digit, segment thickness `t`.
+const SEGS: [u8; 10] = [0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f];
+fn seg_width(s: &str, w: f32, h: f32) -> f32 {
+    s.chars().map(|c| if c == ':' { h * 0.32 } else { w + h * 0.22 }).sum::<f32>() - h * 0.22
+}
+#[allow(clippy::too_many_arguments)]
+fn seg_text(cv: &mut Canvas, s: &str, mut x: f32, y: f32, w: f32, h: f32, t: f32, ink: u32, a: f32) {
+    for ch in s.chars() {
+        if ch == ':' {
+            for cy in [y + h * 0.3, y + h * 0.7] {
+                cv.flat(Quad::flat(x + 1.4, cy - t / 2.0 + 1.4, t, t, rgba(ink, 0.2 * a)).rounded(t / 2.0));
+                cv.flat(Quad::flat(x, cy - t / 2.0, t, t, rgba(ink, a)).rounded(t / 2.0));
+            }
+            x += h * 0.32;
+            continue;
+        }
+        let m = ch.to_digit(10).map(|d| SEGS[d as usize]).unwrap_or(0);
+        let hh = h / 2.0;
+        // a, b, c, d, e, f, g: each a pill with a hair of gap at the joints
+        let r = [
+            [x + t * 0.7, y, w - t * 1.4, t],
+            [x + w - t, y + t * 0.7, t, hh - t * 1.0],
+            [x + w - t, y + hh + t * 0.3, t, hh - t * 1.0],
+            [x + t * 0.7, y + h - t, w - t * 1.4, t],
+            [x, y + hh + t * 0.3, t, hh - t * 1.0],
+            [x, y + t * 0.7, t, hh - t * 1.0],
+            [x + t * 0.7, y + hh - t / 2.0, w - t * 1.4, t],
+        ];
+        for (k, q) in r.iter().enumerate() {
+            let on = m & (1 << k) != 0;
+            if on {
+                cv.flat(Quad::flat(q[0] + 1.4, q[1] + 1.4, q[2], q[3], rgba(ink, 0.2 * a)).rounded(t / 2.0));
+            }
+            cv.flat(Quad::flat(q[0], q[1], q[2], q[3], rgba(ink, if on { a } else { 0.07 })).rounded(t / 2.0));
+        }
+        x += w + h * 0.22;
+    }
+}
+
 /// `ghost`: O'Z TANLOVIM, the cursor over the waveform: where a click would jump (a faint head and its time).
 pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64, dur: f64, ghost: Option<f32>) {
     let (ox, oy, lw) = (595.0f32, 677.0f32, 792.0f32);
@@ -335,27 +374,38 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
         cv.text(t);
     };
     let clip = [ox, oy, ox + lw, oy + 152.0];
-    lcd_text(cv, Txt::new(line1, text::DOT, 20.0, ox + 28.0, oy + 14.0, c8(ink, 1.0)).clip([ox, oy, ox + lw - 260.0, oy + 152.0]));
-    cv.text(Txt::new("8:88", text::VT, 46.0, ox + lw - 88.0, oy + 4.0, c8(ink, 0.18)).align(Align::Right).clip(clip));
-    lcd_text(cv, Txt::new(fmt(pos), text::VT, 46.0, ox + lw - 88.0, oy + 4.0, c8(ink, 1.0)).align(Align::Right).clip(clip));
-    cv.text(Txt::new(format!("/ {}", fmt(dur)), text::VT, 22.0, ox + lw - 20.0, oy + 26.0, c8(ink, 0.45)).align(Align::Right).clip(clip));
+    // the top row: the song (title bold, artist lighter) on the left, the clock on the right, both on one line
+    let (title, artist) = line1.trim_start_matches(['♫', ' ']).split_once(" · ").unwrap_or((line1, ""));
+    let mut t1 = Txt::new(format!("♫ {title}"), text::MR, 20.0, ox + 28.0, oy + 14.0, c8(ink, 1.0)).weight(700);
+    t1.spans.push(text::Span { text: format!("   {artist}"), color: c8(ink, 0.62), weight: 500 });
+    lcd_text(cv, t1.clip([ox, oy, ox + lw - 250.0, oy + 152.0]));
+    // the clock: seven-segment digits (the unlit segments faintly visible, like a real LCD), the length after it
+    let total = fmt(dur);
+    let tw = seg_width(&total, 9.0, 16.0);
+    seg_text(cv, &total, ox + lw - 28.0 - tw, oy + 22.0, 9.0, 16.0, 2.2, ink, 0.5);
+    cv.flat(Quad::flat(ox + lw - 28.0 - tw - 14.0, oy + 21.0, 2.0, 18.0, rgba(ink, 0.35)).rotated([ox + lw - 28.0 - tw - 13.0, oy + 30.0], 0.35));
+    let cur = fmt(pos);
+    let cw = seg_width(&cur, 18.0, 30.0);
+    seg_text(cv, &cur, ox + lw - 28.0 - tw - 28.0 - cw, oy + 10.0, 18.0, 30.0, 4.0, ink, 1.0);
     let frac = if dur > 0.0 { (pos / dur).clamp(0.0, 1.0) as f32 } else { 0.0 };
     let n = wave.len().max(1) as f32;
+    let wc = oy + 82.0;
     for (i, h) in wave.iter().enumerate() {
+        let h = h * 0.78;
         let x = ox + 27.0 + i as f32 * (wv / n);
         let on = (i as f32 / n) < frac;
-        cv.flat(Quad::flat(x + 1.6, oy + 77.0 - h / 2.0 + 1.6, wv / n * 0.62, *h, rgba(ink, if on { 0.2 } else { 0.0 })));
-        cv.flat(Quad::flat(x, oy + 77.0 - h / 2.0, wv / n * 0.62, *h, rgba(ink, if on { 1.0 } else { 0.18 })));
+        cv.flat(Quad::flat(x + 1.6, wc - h / 2.0 + 1.6, wv / n * 0.62, h, rgba(ink, if on { 0.2 } else { 0.0 })));
+        cv.flat(Quad::flat(x, wc - h / 2.0, wv / n * 0.62, h, rgba(ink, if on { 1.0 } else { 0.18 })));
     }
-    cv.flat(Quad::flat(ox + 27.0 + frac * wv, oy + 47.0, 3.0, 62.0, rgb(ink)));
+    cv.flat(Quad::flat(ox + 27.0 + frac * wv, wc - 25.0, 3.0, 50.0, rgb(ink)));
     if let (Some(g), true) = (ghost, dur > 0.0) {
         let gx = ox + 27.0 + g.clamp(0.0, 1.0) * wv;
-        cv.flat(Quad::flat(gx, oy + 47.0, 2.0, 62.0, rgba(ink, 0.45)));
-        let tx = Txt::new(fmt(g as f64 * dur), text::VT, 20.0, gx + 6.0, oy + 46.0, c8(ink, 0.8));
+        cv.flat(Quad::flat(gx, wc - 25.0, 2.0, 50.0, rgba(ink, 0.45)));
+        let tx = Txt::new(fmt(g as f64 * dur), text::BAR, 15.0, gx + 6.0, wc - 26.0, c8(ink, 0.85)).weight(600);
         cv.text(if gx > ox + lw - 120.0 { Txt { x: gx - 6.0, ..tx }.align(Align::Right) } else { tx });
     }
     cv.flat(Quad::flat(ox + 27.0, oy + 117.0, wv, 1.0, rgba(ink, 0.18)));
-    lcd_text(cv, Txt::new(foot, text::VT, 22.0, ox + 29.0, oy + 122.0, c8(ink, 1.0)).clip(clip));
+    lcd_text(cv, Txt::new(foot, text::BAR, 16.0, ox + 29.0, oy + 124.0, c8(ink, 0.9)).weight(600).clip(clip));
 }
 
 /* ───────── the tuner drum (#drum: 258,866 500x92 — a brushed graphite cylinder with a printed scale) */
