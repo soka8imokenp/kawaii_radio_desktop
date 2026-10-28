@@ -994,26 +994,32 @@ impl State {
         let mut switch: Vec<Quad> = vec![];
         let mut lens_glints: Vec<Quad> = vec![];
         let mut bloom_q: Vec<Quad> = vec![];
+        let mut frost: Vec<Quad> = vec![];
         let mut cv_texts: Vec<text::Txt> = vec![];
         // LEDs: the real glass lens of the plate stays (its reflections too); the light is added inside it — the dome
         // filled with colour, a hot filament a little below the middle, a faint bloom around, the glint brighter
-        fn led(halos: &mut Vec<Quad>, glints: &mut Vec<Quad>, bloom: &mut Vec<Quad>, x: f32, y: f32, r: f32, c: [f32; 3], b: f32) {
-            // into the glow target: the lit dome and its hot core, blurred into a real soft bloom around the lens
-            bloom.push(Quad::flat(x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6, [c[0], c[1], c[2], 0.55 * b]).rounded(r * 0.8));
-            bloom.push(Quad::flat(x - r * 0.35, y - r * 0.25, r * 0.7, r * 0.7, [1.0, 0.95, 0.85, 0.5 * b]).rounded(r * 0.35));
-            // the light in the chrome bezel: a thin bright ring, stronger at the bottom (lit from inside)
-            halos.push(Quad::rim(x - r - 1.0, y - r - 1.0, r * 2.0 + 2.0, r * 2.0 + 2.0, r + 1.0, 1.4, [c[0], c[1], c[2], 0.12 * b], [c[0], c[1], c[2], 0.45 * b]));
-            halos.push(Quad::radial(x - r, y - r, r * 2.0, r * 2.0, [c[0], c[1], c[2], 0.9 * b], [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6, 0.35 * b]).rounded(r));
-            let k = r * 0.55;
-            halos.push(Quad::radial(x - k, y + r * 0.12 - k, k * 2.0, k * 2.0, [1.0, 0.98, 0.92, 0.75 * b], [c[0], c[1], c[2], 0.0]).rounded(k));
-            glints.push(Quad::glow(x - r * 0.38, y - r * 0.42, r * 0.32, [1.0, 1.0, 1.0, 0.25 + 0.35 * b]));
+        // a lit indicator lamp: the plate's real glass lens stays (its reflections too). Inside it a frosted diffuser:
+        // nearly white where the filament is, the colour saturating towards the rim, a little dimmer at the very edge;
+        // a faint bloom (GPU blur, not a painted halo); every lamp a hair different in brightness, like real ones
+        fn led(halos: &mut Vec<Quad>, glints: &mut Vec<Quad>, bloom: &mut Vec<Quad>, frost: &mut Vec<Quad>, x: f32, y: f32, r: f32, c: [f32; 3], b: f32, id: u32) {
+            let var = 0.9 + 0.2 * (((id.wrapping_mul(2654435761) >> 16) & 255) as f32 / 255.0);
+            let b = b * var;
+            let w = |k: f32| [c[0] + (1.0 - c[0]) * k, c[1] + (1.0 - c[1]) * k, c[2] + (1.0 - c[2]) * k];
+            let hot = w(0.6);
+            bloom.push(Quad::flat(x - r * 0.6, y - r * 0.6, r * 1.2, r * 1.2, [c[0], c[1], c[2], 0.3 * b]).rounded(r * 0.6));
+            halos.push(Quad::radial(x - r, y - r, r * 2.0, r * 2.0, [c[0], c[1], c[2], 0.75 * b], [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, 0.5 * b]).rounded(r));
+            let k = r * 0.6;
+            halos.push(Quad::radial(x - k, y + r * 0.1 - k, k * 2.0, k * 2.0, [hot[0], hot[1], hot[2], 0.65 * b], [c[0], c[1], c[2], 0.0]).rounded(k));
+            // the diffuser's frosting: fine dark grain over the lit glass
+            frost.push(Quad { rect: [x - r, y - r, r * 2.0, r * 2.0], uv: [(x * 0.013).fract(), (y * 0.017).fract(), r / 64.0, r / 32.0], color: [0.0, 0.0, 0.0, 0.35 * b], ..Quad::full() }.rounded(r));
+            glints.push(Quad::glow(x - r * 0.38, y - r * 0.42, r * 0.28, [1.0, 1.0, 1.0, 0.2 + 0.25 * b]));
         }
         for j in 0..18 {
             let b = self.leds[j];
             if b > 0.02 {
                 let y = 548.0 + j as f32 * 22.0;
                 let c = if j < 2 { [1.0, 0.22, 0.12] } else if j < 5 { [1.0, 0.62, 0.18] } else { [0.25, 1.0, 0.5] };
-                led(&mut halos, &mut lens_glints, &mut bloom_q, 64.0, y, 8.5, c, b);
+                led(&mut halos, &mut lens_glints, &mut bloom_q, &mut frost, 64.0, y, 8.5, c, b, j as u32);
             }
         }
         // the band switch: a recessed panel over the two plate keys, RADIO printed on the left, O'Z TANLOVIM on
@@ -1109,7 +1115,7 @@ impl State {
                 let a = (225.0 - i as f32 * 13.5f32).to_radians();
                 let (x, y) = (1250.0 + a.cos() * 86.0, 958.0 - a.sin() * 86.0);
                 let c = if i >= 18 { [1.0, 0.22, 0.12] } else { [1.0, 0.62, 0.18] };
-                led(&mut halos, &mut lens_glints, &mut bloom_q, x, y, 7.5, c, 1.0);
+                led(&mut halos, &mut lens_glints, &mut bloom_q, &mut frost, x, y, 7.5, c, 1.0, 40 + i as u32);
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
@@ -1142,7 +1148,7 @@ impl State {
         let _ = knob_b;
         batches.extend([upk, down, Batch { tex: None, quads: switch, add: false, clip: None }]);
         batches.extend(textured);
-        batches.extend([Batch { tex: None, quads: knob_a, add: false, clip: None }, knob_metal, Batch { tex: None, quads: halos, add: true, clip: None }, Batch { tex: None, quads: lens_glints, add: true, clip: None }]);
+        batches.extend([Batch { tex: None, quads: knob_a, add: false, clip: None }, knob_metal, Batch { tex: None, quads: halos, add: true, clip: None }, Batch { tex: Some(self.tex.0), quads: frost, add: false, clip: None }, Batch { tex: None, quads: lens_glints, add: true, clip: None }]);
         let mut cv = Canvas { batches, texts: cv_texts, clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
