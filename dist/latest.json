@@ -1,15 +1,19 @@
 {
-  "version": "0.7.0",
-  "notes": "KUTUBXONA: telefondagi sevimlilar va pleylistlar endi shu yerda. Sevimlilar Kawaii ID orqali to'g'ri sinxronlanadi (avval ular o'chib ketishi mumkin edi). Linux versiyasi tuzatildi: ovoz kodeklari bilan, qotib qolmaydi.",
-  "pub_date": "2026-10-28T14:21:24Z",
+  "version": "0.8.0",
+  "notes": "Kawaii Radio endi to'liq o'z dvigatelida (Rust): tezroq, yengilroq, brauzersiz. Yangi: ijrochilar sahifalari, SAQLASH (internetsiz tinglash, Kawaii Pass), chatda reaksiyalar va javoblar, tizim media tugmalari, KUN/TUN mavzusi.",
+  "pub_date": "2026-10-28T20:13:26Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjhwRExOZWp3R1h2VG1jdS8ySVZCazJuMWQvRmlUNkxHN0FiVDBwOGVuSnVESHZxUXRML3lxVExjaU1JOEtLMitJZzhwWEMwUTJWcEpVVFR6SEhkc3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTk3Mjg0CWZpbGU6S2F3YWlpIFJhZGlvXzAuNy4wX3g2NC1zZXR1cC5leGUJdmVyc2lvbjowLjcuMAptaWo1TWczQVhJcFJ3ZE1mWWptbThBN0tCRHdOVW11T3huako4U2JYRFJVM1E0UTUyeGJqQVB0QnpUMVZBaGMyRzhEV0JHUVk2MHZoa0lTKytTS3dEUT09Cg==",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.7.0-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtyci9OMk4zZFE4M1NFNDJIM1ZLS1BSeXZqNytjdUpoSWNvWHNLZGF2ZG5KOGhadUN2S2lWUm5nT1I1aFJ1ajR0WGxSZjMwMVhEZ211elNFNVZOeFhBeFFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjE4NDA2CWZpbGU6S2F3YWlpUmFkaW8tMC44LjAtc2V0dXAuZXhlCm5TM0JrYWJYYkVXN2hzdzIvMnVtV1hadWxzWFVXRVNDcWlCSW43OEJ3akFwWlRXVXY1V3N2VXF1Rk1lV3lDUEFqbTR0VVdIaUphWmxLM1EyUTAzWEJ3PT0K",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.0-setup.exe"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjVoaklib2VoMmlGVmhiSFIzMTFYVlBWMGIwK1hOanBoOGJMTmFLVS9xdlFqUzFCQkxBT3c3YUJ5S2lVMXRuOFRVQi8rMnk4UHZMY25NeDZIMHQvUHc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMTk4NDE1CWZpbGU6S2F3YWlpIFJhZGlvXzAuNy4wX2FtZDY0LkFwcEltYWdlCXZlcnNpb246MC43LjAKWHZ3OWlacXdSOXVqMHNCOUpQeENObkhHTjVrMEthdm9JNlAvalhEbHE3VGdlYXVVWXRyaUowZVErRkFDSW5oY2NmNk9acFNjR1duQ3A3WlNaU09IREE9PQo=",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.7.0_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjd0RTl3K3A5ZTJVUWRHMG9XZkpkeUVuYlBxM2REY3NmMFVWSHhpS3dPT1ZjcmRhcVZPaE9ibnY5ZTJUVEtTMmJWa0hSSENNeFFSNHB6U0kwN0ZOclE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjE4NTk5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjBfYW1kNjQuQXBwSW1hZ2UKYU95ZjRjTUdaajFGaW5HaEU0dXdDdkxodWJRUmU2V3NmNzZQV2NXbWQ4REYwTUM1TSt0aVFJYnlKb1h5V1J1YWdUQ3BJL0NxQzcwZ3dDYlVEcnlxQ1E9PQo=",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.0_amd64.AppImage"
+    },
+    "linux-x86_64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjBPOTJNUDR6MWpTZ0ZnSVRMeUhsU3FzOG1JeGhUSEhnVTBJaWxGZUV2STFQdW1qazNZWGtzck1SUVV6bXNHeGhWM2t4NmlCUkhHdGozbWU3UFg5N0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjE4NTk5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjBfYW1kNjQuZGViCjBvdGlkZWtVZy85VW9QZGhJYkFudHdVUzNlaXcrQWdncVZNc2h1eE1nZGdwRmhmNEtDSCtzWjRMcnBUZUdoeWJTcTBoekIrM3VWb3N3ajlOU01mVUJ3PT0K",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.0_amd64.deb"
     }
   }
 }

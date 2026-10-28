@@ -16,6 +16,7 @@ mod panel;
 mod receipt;
 mod scene;
 mod text;
+mod updater;
 mod vault;
 #[cfg(windows)]
 mod win;
@@ -107,6 +108,8 @@ enum Msg {
     /// the artist pages from the cloud; a discography fetched (None while loading or missing)
     Artists(Vec<artists::Artist>),
     Disco(i64, Option<artists::Disco>),
+    /// a newer version is out
+    Update(updater::Update),
     /// SAQLASH: a song kept (or failed)
     Saved(String, bool),
     /// the system's media controls (keyboard media keys, the Windows volume flyout, Linux MPRIS)
@@ -176,6 +179,8 @@ struct State {
     saved: Vec<String>,
     vault_key: Vec<u8>,
     saving: Option<String>,
+    update: Option<updater::Update>,
+    updating: bool,
     /// this frame's lights that bloom (LED filaments)
     bloom_q: Vec<Quad>,
     /// the station's schedule from the last tune, the next song being opened (id, start) and the one ready
@@ -522,6 +527,11 @@ impl State {
         use panel::Act;
         match a {
             Act::Close => self.go(panel::Screen::Home),
+            Act::AllArtists => {
+                self.panel.page.push(panel::Page::AllArtists);
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
             Act::OpenArtist(id) => {
                 self.panel.page.push(panel::Page::Artist(id));
                 self.panel.scroll = 0.0;
@@ -575,7 +585,18 @@ impl State {
                 let w = &self.gfx.window;
                 w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(winit::window::Fullscreen::Borderless(None)) });
             }
-            Act::Update => {}
+            Act::Update => {
+                if let (Some(u), false) = (self.update.clone(), self.updating) {
+                    self.updating = true;
+                    self.toast("YANGILANMOQDA… ILOVA O'ZI QAYTA OCHILADI");
+                    let p = self.proxy.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = updater::install(&u) {
+                            let _ = p.send_event(Msg::Toast(format!("YANGILAB BO'LMADI · {}", e.to_uppercase())));
+                        }
+                    });
+                }
+            }
             Act::Theme(l) => self.set_theme(l),
             Act::Play(id) => {
                 if self.has_kp() {
@@ -603,7 +624,7 @@ impl State {
             acc: self.acc.as_ref(),
             now: self.now.as_deref(),
             version: env!("CARGO_PKG_VERSION"),
-            update: None,
+            update: self.update.as_ref().map(|u| u.version.as_str()),
             search_focus: self.search_focus,
             blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
             minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
@@ -1168,6 +1189,11 @@ impl State {
             switch.push(Quad::flat(cx - d * 0.7, cy - 0.5, d * 1.4, 1.6, [0.0, 0.0, 0.0, 0.55]).rotated([cx, cy], -0.785));
             switch.push(Quad::flat(cx - d * 0.7 + 0.8, cy + 1.1, d * 1.4, 1.0, [1.0, 1.0, 1.0, 0.1]).rotated([cx + 0.8, cy + 1.6], -0.785));
         }
+        // a small amber lamp in the gear key's corner while a new version waits
+        if self.update.is_some() {
+            let k = 0.55 + 0.45 * (self.started.elapsed().as_secs_f32() * 3.9).sin().abs();
+            led(&mut halos, &mut lens_glints, &mut bloom_q, &mut frost, 88.0, 997.0, 4.0, [1.0, 0.6, 0.18], k, 99);
+        }
         // the printer's lamp while the head burns a receipt
         if self.tape.busy() {
             down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
@@ -1298,7 +1324,7 @@ impl State {
                     acc: self.acc.as_ref(),
                     now: self.now.as_deref(),
                     version: env!("CARGO_PKG_VERSION"),
-                    update: None,
+                    update: self.update.as_ref().map(|u| u.version.as_str()),
                     search_focus: self.search_focus,
                     blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
                     minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
@@ -1526,6 +1552,8 @@ impl ApplicationHandler<Msg> for App {
             saved: vault::list(),
             vault_key: vec![],
             saving: None,
+            update: None,
+            updating: false,
             bloom_q: vec![],
             preload: None,
             preloaded: None,
@@ -1616,6 +1644,14 @@ impl ApplicationHandler<Msg> for App {
                     k.into_bytes()
                 }
             };
+            // updates: at start and every 6 hours
+            let p7 = self.proxy.clone();
+            std::thread::spawn(move || loop {
+                if let Some(u) = updater::check() {
+                    let _ = p7.send_event(Msg::Update(u));
+                }
+                std::thread::sleep(Duration::from_secs(6 * 3600));
+            });
             let p6 = self.proxy.clone();
             std::thread::spawn(move || {
                 if let Some(a) = artists::fetch() {
@@ -1743,6 +1779,12 @@ impl ApplicationHandler<Msg> for App {
             }
             Msg::Stickers(m) => st.chat.stickers = m,
             Msg::Artists(a) => st.artists = a,
+            Msg::Update(u) => {
+                if st.update.is_none() {
+                    st.toast(&format!("YANGI VERSIYA v{} · SOZLAMALAR", u.version));
+                }
+                st.update = Some(u);
+            }
             Msg::Disco(d, x) => {
                 st.discos.insert(d, Some(x.unwrap_or_default()));
             }

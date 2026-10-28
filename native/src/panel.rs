@@ -32,11 +32,14 @@ pub enum Act {
     OpenArtist(String),
     OpenAlbum(String, String),
     Unsave(String),
+    AllArtists,
 }
 
 /// A page opened over a screen (an artist, one of their releases); ‹ ORQAGA goes back.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
+    /// every artist, A to Z
+    AllArtists,
     Artist(String),
     Album(String, String),
 }
@@ -102,7 +105,7 @@ impl Panel {
                 let r = a.and_then(|a| a.deezer).and_then(|d| cx.discos.get(&d)).and_then(|d| d.as_ref()).and_then(|d| d.releases.iter().find(|r| &r.id == rid));
                 return r.map(|r| r.ours().iter().filter_map(|i| cx.tracks.get(i).cloned()).collect()).unwrap_or_default();
             }
-            None => {}
+            Some(Page::AllArtists) | None => {}
         }
         match self.screen {
             Screen::Search => {
@@ -149,6 +152,7 @@ impl Panel {
         };
         let (title, sub) = match self.page.last() {
             Some(Page::Artist(_)) => ("IJROCHI", "Kawaii Radio · ijrochilar".to_string()),
+            Some(Page::AllArtists) => ("IJROCHILAR", format!("{} ta ijrochi", cx.artists.len())),
             Some(Page::Album(..)) => ("RELIZ", "Ma'lumot: Deezer".to_string()),
             None => (title, sub),
         };
@@ -168,6 +172,17 @@ impl Panel {
             hits.push(([px - 8.0, y - 4.0, px + 140.0, y + 28.0], Act::Back));
             y += 40.0;
             match pg {
+                Page::AllArtists => {
+                    // a grid of every artist, A to Z, six to a row
+                    let mut all: Vec<&crate::artists::Artist> = cx.artists.iter().collect();
+                    all.sort_by_key(|a| a.name.to_lowercase());
+                    for row in all.chunks(7) {
+                        if y + 110.0 > body[1] - 10.0 && y < body[3] + 10.0 {
+                            artist_strip(cv, img, &mut hits, px, y, row.to_vec(), body);
+                        }
+                        y += 116.0;
+                    }
+                }
                 Page::Artist(id) => self.artist_page(cv, tl, cx, img, &mut hits, &mut y, &id, (px, w, x1, body, row_h)),
                 Page::Album(aid, rid) => self.album_page(cv, cx, img, &mut hits, &mut y, &aid, &rid, (px, w, x1, body, row_h)),
             }
@@ -203,6 +218,10 @@ impl Panel {
                 }
                 if !found.is_empty() {
                     cv.text(Txt::new("IJROCHILAR", text::MONO, 12.0, px, y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+                    // all of them, A to Z
+                    let all = format!("BARCHASI ({}) ›", cx.artists.len());
+                    cv.text(Txt::new(all, text::VT, 20.0, x1 - 50.0, y - 4.0, c8(0xc4e078, 1.0)).align(Align::Right).clip(body));
+                    hits.push(([x1 - 230.0, y - 8.0, x1 - 40.0, y + 20.0], Act::AllArtists));
                     y += 20.0;
                     artist_strip(cv, img, &mut hits, px, y, found.into_iter().take(7).collect(), body);
                     y += 118.0;
@@ -260,6 +279,8 @@ impl Panel {
                     if !fav.is_empty() {
                         y += 6.0;
                         cv.text(Txt::new("SEVIMLI IJROCHILAR", text::MONO, 12.0, px, y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+                        cv.text(Txt::new(format!("BARCHA IJROCHILAR ({}) ›", cx.artists.len()), text::VT, 20.0, x1 - 50.0, y - 4.0, c8(0xc4e078, 1.0)).align(Align::Right).clip(body));
+                        hits.push(([x1 - 300.0, y - 8.0, x1 - 40.0, y + 20.0], Act::AllArtists));
                         y += 20.0;
                         artist_strip(cv, img, &mut hits, px, y, fav.into_iter().take(7).map(|x| x.1).collect(), body);
                         y += 124.0;

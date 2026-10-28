@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Kawaii Radio — Linux (Ubuntu / Debian / Mint / Pop!_OS) o'rnatuvchisi.
-# Bitta buyruq bilan: kerakli kutubxonalar (WebKitGTK, GStreamer ovoz kodeklari) avtomatik o'rnatiladi.
+# Bitta buyruq bilan: kerakli tizim kutubxonalari (ovoz, shifrlash) avtomatik o'rnatiladi.
 #   curl -fsSL https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/install-linux.sh | bash
 set -euo pipefail
 RAW=https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist

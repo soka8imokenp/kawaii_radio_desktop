@@ -1,6 +1,6 @@
 [package]
 name = "kawaii-radio"
-version = "0.1.0"
+version = "0.8.0"
 edition = "2024"
 
 [dependencies]
@@ -17,6 +17,7 @@ ureq = { version = "2.12", default-features = false, features = ["native-tls", "
 wgpu = "30"
 winit = "0.30"
 souvlaki = "0.8"
+minisign-verify = "0.2"
 arboard = { version = "3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
