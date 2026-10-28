@@ -2,7 +2,7 @@
 //! A tap on the decoded samples measures the level of each channel for the VU meters and LEVEL.
 
 use rodio::{Decoder, Player as Sink, Source};
-use std::io::Cursor;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,8 +12,13 @@ use std::time::Duration;
 pub struct Levels {
     pub l: AtomicU32,
     pub r: AtomicU32,
+    /// the last 2048 samples played (left channel), for the spectrum
+    ring: std::sync::Mutex<VecDeque<f32>>,
 }
 impl Levels {
+    pub fn samples(&self) -> Vec<f32> {
+        self.ring.lock().map(|r| r.iter().copied().collect()).unwrap_or_default()
+    }
     pub fn get(&self) -> (f32, f32) {
         (f32::from_bits(self.l.load(Ordering::Relaxed)), f32::from_bits(self.r.load(Ordering::Relaxed)))
     }
@@ -27,6 +32,7 @@ struct Tap<S> {
     idx: u16,
     acc: [f32; 2],
     n: u32,
+    mono: Vec<f32>,
 }
 
 impl<S: Source<Item = f32>> Iterator for Tap<S> {
@@ -38,6 +44,16 @@ impl<S: Source<Item = f32>> Iterator for Tap<S> {
         self.idx = self.idx.wrapping_add(1);
         if c == 0 || self.ch == 1 {
             self.n += 1;
+            self.mono.push(s);
+            if self.mono.len() >= 256 {
+                if let Ok(mut r) = self.levels.ring.lock() {
+                    r.extend(self.mono.drain(..));
+                    while r.len() > 2048 {
+                        r.pop_front();
+                    }
+                }
+                self.mono.clear();
+            }
         }
         if self.n >= 1024 {
             let l = (self.acc[0] / self.n as f32).sqrt();
@@ -64,27 +80,88 @@ impl<S: Source<Item = f32>> Source for Tap<S> {
     fn total_duration(&self) -> Option<Duration> {
         self.inner.total_duration()
     }
+    // seeking goes through to the decoder (without this the wrapper said "not supported" and the click did nothing)
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.inner.try_seek(pos)
+    }
+}
+
+/// A song ready to play: the streaming decoder, already at its place, with about a second decoded ahead (so the
+/// sound starts at once and a slow network does not stutter at the very start).
+pub struct Prepared {
+    pre: VecDeque<f32>,
+    inner: Decoder<crate::stream::Stream>,
+}
+
+impl Iterator for Prepared {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        self.pre.pop_front().or_else(|| self.inner.next())
+    }
+}
+
+impl Source for Prepared {
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> rodio::ChannelCount {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> rodio::SampleRate {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.pre.clear();
+        self.inner.try_seek(pos)
+    }
+}
+
+/// Open an mp3 URL for streaming, `offset()` into it (asked once the stream is open, so a slow start is counted),
+/// and decode the first second. Runs on a worker thread.
+pub fn prepare(url: &str, offset: impl FnOnce() -> Duration) -> Result<Prepared, String> {
+    let t0 = std::time::Instant::now();
+    let st = crate::stream::open(url)?;
+    crate::dlog(&format!("stream open {:?}", t0.elapsed()));
+    let len = st.len();
+    let mut dec = Decoder::builder().with_data(st).with_byte_len(len).with_seekable(true).with_coarse_seek(true).with_hint("mp3").build().map_err(|e| e.to_string())?;
+    let off = offset();
+    if off > Duration::from_millis(500) {
+        let _ = dec.try_seek(off);
+    }
+    crate::dlog(&format!("decoder + seek {off:?} {:?}", t0.elapsed()));
+    let ch: u16 = dec.channels().into();
+    let sr: u32 = dec.sample_rate().into();
+    let mut pre = VecDeque::with_capacity((sr * ch as u32) as usize);
+    for _ in 0..(sr as usize * ch as usize) {
+        match dec.next() {
+            Some(s) => pre.push_back(s),
+            None => break,
+        }
+    }
+    crate::dlog(&format!("prebuffered {:?}", t0.elapsed()));
+    Ok(Prepared { pre, inner: dec })
 }
 
 pub struct Player {
     _stream: rodio::MixerDeviceSink,
-    sink: Sink,
+    sink: Arc<Sink>,
     pub levels: Arc<Levels>,
 }
 
 impl Player {
     pub fn new() -> Result<Self, String> {
         let stream = rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| e.to_string())?;
-        let sink = Sink::connect_new(stream.mixer());
+        let sink = Arc::new(Sink::connect_new(stream.mixer()));
         Ok(Player { _stream: stream, sink, levels: Arc::new(Levels::default()) })
     }
 
-    /// Replace what is playing with this mp3, starting `offset` into it.
-    pub fn play(&self, mp3: Vec<u8>, offset: Duration) -> Result<(), String> {
-        let dec = Decoder::new(Cursor::new(mp3)).map_err(|e| e.to_string())?;
-        let ch: u16 = dec.channels().into();
-        let src = dec.skip_duration(offset);
-        let tap = Tap { inner: src, levels: self.levels.clone(), ch, idx: 0, acc: [0.0; 2], n: 0 };
+    /// Replace what is playing with this song.
+    pub fn play(&self, src: Prepared) -> Result<(), String> {
+        let ch: u16 = src.channels().into();
+        let tap = Tap { inner: src, levels: self.levels.clone(), ch, idx: 0, acc: [0.0; 2], n: 0, mono: Vec::with_capacity(256) };
         self.sink.stop();
         self.sink.append(tap);
         self.sink.play();
@@ -100,8 +177,12 @@ impl Player {
     pub fn pos(&self) -> Duration {
         self.sink.get_pos()
     }
+    /// Seek on a worker thread: the audio thread may have to wait for that part of the file to arrive.
     pub fn seek(&self, to: Duration) {
-        let _ = self.sink.try_seek(to);
+        let s = self.sink.clone();
+        std::thread::spawn(move || {
+            let _ = s.try_seek(to);
+        });
     }
     pub fn idle(&self) -> bool {
         self.sink.empty()

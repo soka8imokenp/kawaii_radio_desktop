@@ -101,8 +101,23 @@ pub fn url(path: &str) -> String {
     if path.starts_with("http") { path.to_string() } else { format!("{API}{path}") }
 }
 
+/// The track list from the server (gzip, a few MB), kept on disk for the next start.
 pub fn tracks() -> Result<HashMap<String, Track>, String> {
-    let v: serde_json::Value = agent().get(&url("/playlist.json")).call().map_err(|e| e.to_string())?.into_json().map_err(|e| e.to_string())?;
+    let mut body = String::new();
+    std::io::Read::read_to_string(&mut agent().get(&url("/playlist.json")).call().map_err(|e| e.to_string())?.into_reader(), &mut body).map_err(|e| e.to_string())?;
+    let m = parse_tracks(&body)?;
+    let _ = std::fs::create_dir_all(crate::store::dir());
+    let _ = std::fs::write(crate::store::dir().join("playlist.json"), &body);
+    Ok(m)
+}
+
+/// The track list saved last time (so the app has it at once, even on a slow network).
+pub fn tracks_cached() -> Option<HashMap<String, Track>> {
+    parse_tracks(&std::fs::read_to_string(crate::store::dir().join("playlist.json")).ok()?).ok()
+}
+
+fn parse_tracks(body: &str) -> Result<HashMap<String, Track>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| e.to_string())?;
     let list = if v.is_array() { v } else { v.get("tracks").cloned().unwrap_or_default() };
     let list: Vec<Track> = serde_json::from_value(list).map_err(|e| e.to_string())?;
     Ok(list.into_iter().map(|t| (t.id.clone(), t)).collect())

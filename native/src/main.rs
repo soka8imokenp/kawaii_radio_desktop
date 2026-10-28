@@ -6,6 +6,8 @@
 mod audio;
 mod chat;
 mod store;
+mod spectrum;
+mod stream;
 mod gfx;
 mod kid;
 mod net;
@@ -13,6 +15,8 @@ mod panel;
 mod receipt;
 mod scene;
 mod text;
+#[cfg(windows)]
+mod win;
 
 use gfx::{Batch, Gfx, Quad};
 use scene::Canvas;
@@ -33,8 +37,8 @@ const GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-dark.webp");
 /// What the network threads hand to the window thread.
 enum Msg {
     Tracks(HashMap<String, net::Track>),
-    /// an mp3 to play now, from `offset`, for this station / track
-    Tune { station: String, track: String, mp3: Vec<u8>, offset: Duration, start: i64, dur: i64, skew: i64 },
+    /// the song on air, streaming from its place now, for this station / track
+    Tune { station: String, track: String, src: audio::Prepared, start: i64, dur: i64, skew: i64 },
     Cover { track: String, img: image::RgbaImage },
     Chat(serde_json::Value),
     Image { url: String, img: Option<image::RgbaImage> },
@@ -45,7 +49,7 @@ enum Msg {
     Account(Option<serde_json::Value>),
     Toast(String),
     /// an mp3 of the listener's own choice (O'Z TANLOVIM), played from the start
-    Pick { track: String, mp3: Vec<u8> },
+    Pick { track: String, src: audio::Prepared },
     /// the account's progress after a sync: likes (id -> time), unliked, playlists
     Synced(serde_json::Value),
     Error(String),
@@ -100,7 +104,7 @@ struct State {
     station: String,
     playing: bool,
     volume: f32,
-    tracks: HashMap<String, net::Track>,
+    tracks: Arc<HashMap<String, net::Track>>,
     now: Option<String>,
     /// smoothed meter values and the VU needles' spring state (angle, speed)
     level: f32,
@@ -145,6 +149,11 @@ struct State {
     playlists: Vec<(String, String, Vec<String>)>,
     syncing: bool,
     last_sync: Instant,
+    /// the LCD waveform is held: dragging shows where, letting go seeks there (O'Z TANLOVIM)
+    scrub: Option<f32>,
+    spec: spectrum::Analyser,
+    /// the song asked for last (an older one arriving later is dropped)
+    want_pick: Option<String>,
 }
 
 struct App {
@@ -153,17 +162,33 @@ struct App {
     next_frame: Instant,
 }
 
-fn tune(proxy: EventLoopProxy<Msg>, station: String) {
+/// KR_DEBUG: a line in %TEMP%/kr_debug.log
+fn dlog(s: &str) {
+    if std::env::var_os("KR_DEBUG").is_some() {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("kr_debug.log")) {
+            let _ = writeln!(f, "{s}");
+        }
+    }
+}
+
+fn tune(proxy: EventLoopProxy<Msg>, station: String, known: Arc<HashMap<String, net::Track>>) {
     std::thread::spawn(move || {
         let res = (|| -> Result<Msg, String> {
-            let sch = net::schedule(&station)?;
-            let (slot, into) = sch.on_air().ok_or("efir bo'sh")?;
-            let tracks = net::tracks()?;
-            let t = tracks.get(&slot.id).ok_or("trek topilmadi")?;
             let t0 = Instant::now();
-            let mp3 = net::bytes(&t.audio_src)?;
-            // the download took a while: the station moved on, so start that much later
-            let offset = Duration::from_millis(into.max(0) as u64) + t0.elapsed();
+            let sch = net::schedule(&station)?;
+            let t_sch = Instant::now();
+            dlog(&format!("schedule {:?}", t0.elapsed()));
+            let (slot, into) = sch.on_air().ok_or("efir bo'sh")?;
+            // the track list the app already has (it is big: fetched again only if this song is not in it)
+            let fetched;
+            let t = match known.get(&slot.id) {
+                Some(t) => t,
+                None => {
+                    fetched = net::tracks()?;
+                    fetched.get(&slot.id).ok_or("trek topilmadi")?
+                }
+            };
             let cover = t.cover_art.clone();
             let (id, p2) = (slot.id.clone(), proxy.clone());
             // the cover for the trivision, decoded off the window thread
@@ -175,7 +200,9 @@ fn tune(proxy: EventLoopProxy<Msg>, station: String) {
                     }
                 }
             });
-            Ok(Msg::Tune { station, track: slot.id.clone(), mp3, offset, start: slot.start, dur: slot.duration, skew: sch.skew })
+            // streaming from where the station is now (counted when the stream is open, plus a little for the start)
+            let src = audio::prepare(&net::url(&t.audio_src), || Duration::from_millis(into.max(0) as u64) + t_sch.elapsed() + Duration::from_millis(250))?;
+            Ok(Msg::Tune { station, track: slot.id.clone(), src, start: slot.start, dur: slot.duration, skew: sch.skew })
         })();
         let _ = proxy.send_event(res.unwrap_or_else(Msg::Error));
     });
@@ -226,10 +253,13 @@ impl State {
             let nonce = format!("{:x}", net::now_ms());
             let _ = out.send(serde_json::json!({ "type": "send", "kind": kind, "body": body, "nonce": nonce }).to_string());
         }
-        self.chat.scroll = 0.0;
+        self.chat.goal = 0.0;
     }
 
     fn has_kp(&self) -> bool {
+        if self.chat.you.as_ref().is_some_and(|y| ["admin", "owner"].iter().any(|k| y.get(*k).and_then(|v| v.as_bool()).unwrap_or(false))) {
+            return true;
+        }
         let Some(a) = &self.acc else { return false };
         a.get("kpUntil").and_then(|v| v.as_i64()).is_some_and(|t| t > net::now_ms())
             || a.get("adm").and_then(|v| v.as_bool()).unwrap_or(false)
@@ -320,15 +350,18 @@ impl State {
         });
     }
     fn play_pick(&mut self, id: &str) {
+        dlog(&format!("play_pick {id}"));
         let Some(t) = self.tracks.get(id).cloned() else { return };
         self.pick = true;
         self.playing = true;
         self.tuning = true;
         let p = self.proxy.clone();
         let id = id.to_string();
-        std::thread::spawn(move || match net::bytes(&t.audio_src) {
-            Ok(mp3) => {
-                let _ = p.send_event(Msg::Pick { track: id, mp3 });
+        self.want_pick = Some(id.clone());
+        self.toast(&format!("{} · O'Z TANLOVIM", t.title.to_uppercase()));
+        std::thread::spawn(move || match audio::prepare(&net::url(&t.audio_src), || Duration::ZERO) {
+            Ok(src) => {
+                let _ = p.send_event(Msg::Pick { track: id, src });
             }
             Err(e) => {
                 let _ = p.send_event(Msg::Error(e));
@@ -415,6 +448,15 @@ impl State {
         }
     }
 
+    /// O'Z TANLOVIM: the waveform (x 622..1360) is the timeline.
+    fn seek_at(&mut self, x: f32) {
+        let f = ((x - 622.0) / 738.0).clamp(0.0, 1.0) as f64;
+        let dur = self.now.as_ref().and_then(|n| self.tracks.get(n)).map(|t| t.duration).unwrap_or(0.0);
+        if let (Some(p), true) = (&self.player, dur > 0.0) {
+            p.seek(Duration::from_secs_f64(f * dur));
+        }
+    }
+
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
         self.keys.iter().position(|k| x >= k.rect[0] && x <= k.rect[2] && y >= k.rect[1] && y <= k.rect[3])
     }
@@ -432,7 +474,7 @@ impl State {
                 if let Some(p) = &self.player {
                     if self.playing && p.idle() {
                         self.tuning = true;
-                        tune(proxy.clone(), self.station.clone());
+                        tune(proxy.clone(), self.station.clone(), self.tracks.clone());
                     }
                     p.set_paused(!self.playing);
                 }
@@ -458,16 +500,24 @@ impl State {
             "saqlash" => self.toast("SAQLASH · TEZ ORADA"),
             "prev" | "next" => {
                 if self.pick {
-                    self.pick_step(if id == "next" { 1 } else { -1 });
+                    // back: the start of this song first (after 3 s), then the song before
+                    if id == "prev" && self.player.as_ref().is_some_and(|p| p.pos().as_secs_f32() > 3.0) {
+                        if let Some(p) = &self.player {
+                            p.seek(Duration::ZERO);
+                        }
+                        self.toast("BOSHIDAN BOSHLANDI");
+                    } else {
+                        self.pick_step(if id == "next" { 1 } else { -1 });
+                    }
                 } else {
-                    self.toast("JONLI EFIR · O'TKAZIB BO'LMAYDI");
+                    self.toast(if id == "next" { "JONLI EFIR · OLDINGA YO'Q" } else { "JONLI EFIR · ORQAGA YO'Q" });
                 }
             }
             "slider" => {
                 if self.pick {
                     self.pick = false;
                     self.tuning = true;
-                    tune(proxy.clone(), self.station.clone());
+                    tune(proxy.clone(), self.station.clone(), self.tracks.clone());
                     self.toast("RADIO");
                 } else if self.has_kp() {
                     self.panel.screen = panel::Screen::Search;
@@ -498,7 +548,7 @@ impl State {
                     self.station = st.clone();
                     self.playing = true;
                     self.tuning = true;
-                    tune(proxy.clone(), st);
+                    tune(proxy.clone(), st, self.tracks.clone());
                 }
             }
             _ => {}
@@ -603,6 +653,11 @@ impl State {
                 halos.push(Quad::glow(64.0, y, 17.0, col));
             }
         }
+        // the printer's lamp while the head burns a receipt
+        if self.tape.busy() {
+            down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
+            halos.push(Quad::glow(1866.0, 50.0, 15.0, [1.0, 0.69, 0.27, 0.22]));
+        }
         // the volume ring around the knob
         let lit = (self.volume * 21.0).round() as i32;
         for i in 0..21 {
@@ -615,12 +670,24 @@ impl State {
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
         let mut flat = Batch { tex: None, quads: vec![], add: false, clip: None };
+        let mut lamps: Vec<Quad> = vec![];
         for (k, cx) in [240.0f32, 468.0].into_iter().enumerate() {
             let piv = [cx, 793.0];
             let rot = self.vu[k].0.to_radians();
-            flat.quads.push(Quad::flat(cx - 1.2 + 3.0, 723.0 + 4.0, 2.4, 70.0, [0.24, 0.12, 0.0, 0.35]).rotated([piv[0] + 3.0, piv[1] + 4.0], rot));
-            flat.quads.push(Quad::flat(cx - 1.2, 723.0, 2.4, 70.0, [0.07, 0.055, 0.045, 1.0]).rotated(piv, rot));
-            flat.quads.push(Quad::flat(cx - 5.0, 788.0, 10.0, 10.0, [0.1, 0.08, 0.06, 1.0]).rounded(5.0));
+            let sh = [60.0 / 255.0, 30.0 / 255.0, 0.0, 0.45];
+            flat.quads.push(Quad::needle(cx - 1.5 + 3.0, 723.0 + 4.0, 3.0, 70.0, 0.24, sh, sh, 1.6).rotated([piv[0] + 3.0, piv[1] + 4.0], rot));
+            flat.quads.push(Quad::needle(cx - 1.5, 723.0, 3.0, 70.0, 0.24, scene::rgb(0x100d0a), scene::rgb(0x2b2520), 0.0).rotated(piv, rot));
+            // the counterweight: a little dark cap at the pivot, lit from the upper left
+            flat.quads.push(Quad::glow(cx + 3.0, 797.0, 8.0, [0.24, 0.12, 0.0, 0.4]));
+            flat.quads.push(Quad::flat(cx - 5.5, 787.5, 11.0, 11.0, [0.0, 0.0, 0.0, 0.5]).rounded(5.5));
+            flat.quads.push(Quad::radial(cx - 5.0, 788.0, 10.0, 10.0, scene::rgb(0x3a322b), scene::rgb(0x15110d)).rounded(5.0));
+            flat.quads.push(Quad::glow(cx - 1.5, 791.0, 2.6, [0.55, 0.48, 0.42, 0.7]));
+            // the lamp behind the dial: a warm bloom that breathes very slightly like a filament
+            let ph = (self.started.elapsed().as_secs_f32() / 6.5).fract();
+            const FIL: [(f32, f32); 7] = [(0.0, 0.92), (0.17, 1.0), (0.31, 0.9), (0.46, 0.97), (0.63, 0.88), (0.8, 1.0), (1.0, 0.92)];
+            let fl = FIL.windows(2).find(|w| ph <= w[1].0).map(|w| w[0].1 + (w[1].1 - w[0].1) * (ph - w[0].0) / (w[1].0 - w[0].0)).unwrap_or(0.92);
+            lamps.push(Quad::glow(cx, 765.0, 64.0, [1.0, 0.6, 0.27, 0.12 * fl]));
+            lamps.push(Quad::glow(cx, 765.0, 36.0, [1.0, 0.5, 0.18, 0.05 * fl]));
         }
         let mut cv = Canvas { batches: vec![base, down, Batch { tex: None, quads: halos, add: true, clip: None }], texts: vec![], clip: None, mask: None };
         let mut over = Canvas::new();
@@ -634,12 +701,23 @@ impl State {
         self.tv.draw(&mut cv);
         let (title, artist) = track.as_ref().map(|t| (t.title.clone(), t.artist.clone())).unwrap_or(("KAWAII RADIO".into(), "ulanmoqda…".into()));
         if self.panel.screen == panel::Screen::Home {
-            self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist);
+            if self.lyrics.lines.is_empty() {
+                let samples = self.player.as_ref().map(|p| p.levels.samples()).unwrap_or_default();
+                self.spec.update(&samples, self.playing, self.started.elapsed().as_secs_f32());
+            }
+            self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist, &self.spec);
         }
         let station = if self.pick { "O'Z TANLOVIM" } else { match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" } };
         let line1 = format!("♫ {title} · {artist}");
         let foot = track.as_ref().map(|t| format!("{station} · {} · {} BPM · ENERGIYA {}%", t.category.to_uppercase(), t.bpm.round(), t.energy.round())).unwrap_or_default();
-        scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur);
+        let (mx, my) = self.cursor;
+        let ghost = match self.scrub {
+            Some(x) => Some(x),
+            None if self.pick && (595.0..1387.0).contains(&mx) && (677.0..829.0).contains(&my) => Some(mx),
+            None => None,
+        }
+        .map(|x| (x - 622.0) / 738.0);
+        scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur, ghost);
         self.drum += self.drum_kick * 0.02 * 57.3 * (dt * 60.0);
         self.drum_kick *= 0.9f32.powf(dt * 60.0);
         scene::draw_drum(&mut cv, &mut over, self.drum);
@@ -744,11 +822,14 @@ impl State {
             if a < 2.6 {
                 let tt = text::Txt::new(t.clone(), text::VT, 24.0, 960.0, 646.0, [35, 43, 27, 255]).align(text::Align::Center);
                 let tw = self.text.measure(&tt) + 40.0;
-                over.flat(Quad::flat(960.0 - tw / 2.0, 640.0, tw, 38.0, [0.62, 0.70, 0.52, 0.96]).rounded(8.0));
+                // (the tag is drawn with the device, under the texts, so its words are on top of it)
+                cv.flat(Quad::flat(960.0 - tw / 2.0 + 2.0, 643.0, tw, 38.0, [0.0, 0.0, 0.0, 0.35]).rounded(8.0));
+                cv.flat(Quad::flat(960.0 - tw / 2.0, 640.0, tw, 38.0, [0.62, 0.70, 0.52, 0.97]).rounded(8.0));
                 over.text(tt);
             }
         }
         cv.batches.push(flat);
+        cv.batches.push(Batch { tex: None, quads: lamps, add: true, clip: None });
         // the rendered cover glass over everything, except the lyrics tube (it has its own lens)
         let mut glass = Batch { tex: Some(self.glass), quads: vec![], add: false, clip: None };
         let [gx0, gy0, gx1, gy1] = [618.0, 198.0, 1362.0, 626.0];
@@ -773,7 +854,12 @@ impl ApplicationHandler<Msg> for App {
             .with_inner_size(LogicalSize::new(1280.0, 720.0))
             .with_min_inner_size(LogicalSize::new(480.0, 270.0))
             .with_decorations(false);
+        // Windows: the DWM shadow on, so Windows 11 also rounds the corners of the borderless window
+        #[cfg(windows)]
+        let attrs = winit::platform::windows::WindowAttributesExtWindows::with_undecorated_shadow(attrs, true);
         let window = Arc::new(el.create_window(attrs).expect("window"));
+        #[cfg(windows)]
+        win::setup(&window);
         let mut gfx = pollster::block_on(Gfx::new(window.clone()));
         let load = |g: &mut Gfx, b: &[u8]| g.texture_image(b).expect("plate");
         let up = load(&mut gfx, PLATE_UP);
@@ -814,7 +900,8 @@ impl ApplicationHandler<Msg> for App {
                 let _ = proxy.send_event(Msg::Tracks(t));
             }
         });
-        tune(self.proxy.clone(), "jpop".into());
+        let cached = Arc::new(net::tracks_cached().unwrap_or_default());
+        tune(self.proxy.clone(), "jpop".into(), cached.clone());
         self.st = Some(State {
             gfx,
             up,
@@ -827,7 +914,7 @@ impl ApplicationHandler<Msg> for App {
             station: "jpop".into(),
             playing: true,
             volume,
-            tracks: HashMap::new(),
+            tracks: cached,
             now: None,
             level: 0.0,
             leds: [0.0; 18],
@@ -866,6 +953,9 @@ impl ApplicationHandler<Msg> for App {
             playlists: vec![],
             syncing: false,
             last_sync: Instant::now() - Duration::from_secs(290),
+            scrub: None,
+            want_pick: None,
+            spec: spectrum::Analyser::new(),
         });
         // sign-in state from last time; links from later copies; the kawaii:// scheme
         if let Some(st) = self.st.as_mut() {
@@ -891,7 +981,7 @@ impl ApplicationHandler<Msg> for App {
     fn user_event(&mut self, _el: &ActiveEventLoop, msg: Msg) {
         let Some(st) = self.st.as_mut() else { return };
         match msg {
-            Msg::Tracks(t) => st.tracks = t,
+            Msg::Tracks(t) => st.tracks = Arc::new(t),
             Msg::Chat(v) => {
                 if v.get("type").and_then(|t| t.as_str()) == Some("welcome") && st.acc.is_some() {
                     st.chat_profile();
@@ -920,13 +1010,14 @@ impl ApplicationHandler<Msg> for App {
                 }).unwrap_or_default();
                 st.store.set("playlists", serde_json::to_value(&st.playlists).unwrap());
             }
-            Msg::Pick { track, mp3 } => {
-                st.tuning = false;
-                if !st.pick {
+            Msg::Pick { track, src } => {
+                if !st.pick || st.want_pick.as_deref() != Some(track.as_str()) {
                     return;
                 }
+                st.tuning = false;
                 if let Some(p) = &st.player {
-                    let _ = p.play(mp3, Duration::ZERO);
+                    let r = p.play(src);
+                    dlog(&format!("pick {track} -> {r:?}"));
                     p.set_paused(false);
                 }
                 st.playing = true;
@@ -1006,13 +1097,13 @@ impl ApplicationHandler<Msg> for App {
                     st.tv.show(tex);
                 }
             }
-            Msg::Tune { station, track, mp3, offset, start, dur, skew } => {
+            Msg::Tune { station, track, src, start, dur, skew } => {
                 st.tuning = false;
-                if station != st.station {
+                if station != st.station || st.pick {
                     return;
                 }
                 if let Some(p) = &st.player {
-                    if let Err(e) = p.play(mp3, offset) {
+                    if let Err(e) = p.play(src) {
                         eprintln!("play: {e}");
                     }
                     p.set_paused(!st.playing);
@@ -1069,7 +1160,12 @@ impl ApplicationHandler<Msg> for App {
         match ev {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(s) => st.gfx.resize(s.width, s.height),
-            WindowEvent::CursorMoved { position, .. } => st.cursor = st.gfx.to_stage(position.x, position.y),
+            WindowEvent::CursorMoved { position, .. } => {
+                st.cursor = st.gfx.to_stage(position.x, position.y);
+                if st.scrub.is_some() {
+                    st.scrub = Some(st.cursor.0);
+                }
+            }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 let (x, y) = st.cursor;
                 match state {
@@ -1086,11 +1182,11 @@ impl ApplicationHandler<Msg> for App {
                         }
                         st.act(a);
                     }
-                    ElementState::Pressed if st.pick && (595.0..1387.0).contains(&x) && (700.0..800.0).contains(&y) => {
-                        let f = ((x - 622.0) / 738.0).clamp(0.0, 1.0) as f64;
-                        let dur = st.now.as_ref().and_then(|n| st.tracks.get(n)).map(|t| t.duration).unwrap_or(0.0);
-                        if let Some(p) = &st.player {
-                            p.seek(Duration::from_secs_f64(f * dur));
+                    ElementState::Pressed if (595.0..1387.0).contains(&x) && (677.0..829.0).contains(&y) => {
+                        if st.pick {
+                            st.scrub = Some(x);
+                        } else {
+                            st.toast("JONLI EFIR · O'TKAZIB BO'LMAYDI");
                         }
                     }
                     ElementState::Pressed => match st.key_at(x, y) {
@@ -1108,6 +1204,9 @@ impl ApplicationHandler<Msg> for App {
                         }
                     },
                     ElementState::Released => {
+                        if let Some(sx) = st.scrub.take() {
+                            st.seek_at(sx);
+                        }
                         if let Some(i) = st.pressed.take() {
                             if st.key_at(x, y) == Some(i) {
                                 let id = st.keys[i].id;
@@ -1181,13 +1280,13 @@ impl ApplicationHandler<Msg> for App {
                 if st.panel.screen != panel::Screen::Home && x >= lx0 && x <= lx1 && y >= ly0 && y <= ly1 {
                     st.panel.scroll -= wd;
                 } else if x >= px0 && x <= px1 && y >= py0 && y <= py1 {
-                    st.tape.scroll -= wd * 0.6;
+                    st.tape.goal -= wd * 0.6;
                 } else if x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 {
                     let d = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y * 60.0,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32,
                     };
-                    st.chat.scroll += d;
+                    st.chat.goal += d;
                 } else if ((x - 1250.0).powi(2) + (y - 958.0).powi(2)).sqrt() < 110.0 {
                     let d = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y * 0.05,
@@ -1205,10 +1304,11 @@ impl ApplicationHandler<Msg> for App {
                     st.next_check = Instant::now() + Duration::from_secs(2);
                     if st.player.as_ref().is_some_and(|p| p.idle()) {
                         if st.pick {
+                            dlog("idle -> next");
                             st.pick_step(1);
                         } else {
                             st.tuning = true;
-                            tune(self.proxy.clone(), st.station.clone());
+                            tune(self.proxy.clone(), st.station.clone(), st.tracks.clone());
                         }
                     }
                     if st.token.is_some() && st.last_sync.elapsed() > Duration::from_secs(300) {

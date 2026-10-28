@@ -77,6 +77,18 @@ impl Quad {
     pub fn radial(x: f32, y: f32, w: f32, h: f32, inner: [f32; 4], outer: [f32; 4]) -> Self {
         Quad { rect: [x, y, w, h], uv: outer, color: inner, pivot: [0.0, 0.0], rot: 0.0, kind: 8.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
+    /// Scanlines plus an aperture grille (vertical lines every 3rd device column) of alpha `cols`.
+    pub fn scan2(x: f32, y: f32, w: f32, h: f32, rows: f32, cols: f32) -> Self {
+        Quad { uv: [cols, 0.0, 0.0, 0.0], ..Self::scan(x, y, w, h, rows) }
+    }
+    /// CSS inset box-shadow: colour at the walls of the rounded rect, fading out `depth` px in.
+    pub fn inset(x: f32, y: f32, w: f32, h: f32, r: f32, depth: f32, color: [f32; 4]) -> Self {
+        Quad { rect: [x, y, w, h], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 9.0, radius: r, _pad: depth, mask: [0.0; 4], mask_r: [0.0; 2] }
+    }
+    /// A tapered blade (top width = `taper` x bottom width), `top` -> `bottom` colour, edges blurred by `soft`.
+    pub fn needle(x: f32, y: f32, w: f32, h: f32, taper: f32, top: [f32; 4], bottom: [f32; 4], soft: f32) -> Self {
+        Quad { rect: [x, y, w, h], uv: bottom, color: top, pivot: [0.0, 0.0], rot: 0.0, kind: 10.0, radius: soft, _pad: taper, mask: [0.0; 4], mask_r: [0.0; 2] }
+    }
     pub fn rounded(mut self, r: f32) -> Self {
         self.radius = r;
         self
@@ -111,6 +123,44 @@ pub struct Batch {
     pub clip: Option<[f32; 4]>,
 }
 
+/// The phosphor glow of the texts: they are drawn once more, in their glow colour, into a half-size target, blurred
+/// there (a separable Gaussian, twice: a tight core and a wide bleed), and added onto the picture under the crisp text.
+struct Bloom {
+    size: (u32, u32),
+    views: [wgpu::TextureView; 2],
+    binds: [wgpu::BindGroup; 2],
+}
+
+const BLOOM: &str = r#"
+struct Dir { d: vec2<f32>, k: f32, _p: f32 };
+@group(0) @binding(0) var<uniform> dir: Dir;
+@group(1) @binding(0) var tex: texture_2d<f32>;
+@group(1) @binding(1) var samp: sampler;
+struct V { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex
+fn vs(@builtin(vertex_index) i: u32) -> V {
+    let p = vec2(f32((i << 1u) & 2u), f32(i & 2u));
+    var o: V;
+    o.pos = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+    o.uv = vec2(p.x, 1.0 - p.y);
+    return o;
+}
+@fragment
+fn blur(v: V) -> @location(0) vec4<f32> {
+    var w = array<f32, 5>(0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+    var c = textureSample(tex, samp, v.uv) * w[0];
+    for (var i = 1; i < 5; i++) {
+        let o = dir.d * f32(i);
+        c += (textureSample(tex, samp, v.uv + o) + textureSample(tex, samp, v.uv - o)) * w[i];
+    }
+    return c;
+}
+@fragment
+fn comp(v: V) -> @location(0) vec4<f32> {
+    return textureSample(tex, samp, v.uv) * dir.k;
+}
+"#;
+
 pub struct Gfx {
     pub window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -127,6 +177,11 @@ pub struct Gfx {
     white: usize,
     /// the stage's place in the window (px): offset and scale
     pub fit: (f32, f32, f32),
+    bloom: Option<Bloom>,
+    blur_pipe: wgpu::RenderPipeline,
+    comp_pipe: wgpu::RenderPipeline,
+    /// uniforms: blur H, V (1 texel), H, V (2.5 texels), the composite's strength
+    dirs: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
 }
 
 const SHADER: &str = r#"
@@ -202,6 +257,7 @@ fn fs(o: Out) -> @location(0) vec4<f32> {
 
 fn shade(o: Out) -> vec4<f32> {
     let t = textureSample(tex, samp, o.uv);   // first: sampling must happen in uniform control flow
+    let fw = max(fwidth(o.local.x * o.size.x * 0.5), 0.001);   // one device pixel, in stage px
     // signed distance to the quad's rounded rect (stage px), and a 1 px antialiased mask
     let half = o.size * 0.5;
     let q = abs(o.local * half) - half + vec2(o.radius);
@@ -224,15 +280,21 @@ fn shade(o: Out) -> vec4<f32> {
             return vec4(c.rgb, c.a * mask);
         }
         case 4u: {
-            // scanlines in the window's own pixel rows
-            let row = u32(o.pos.y) % 3u;
-            return vec4(0.0, 0.0, 0.0, select(0.0, o.color.a, row == 0u) * mask);
+            // scanlines in the window's own pixel rows, and a fainter aperture grille in its columns (uvraw.x)
+            let ra = select(0.0, o.color.a, u32(o.pos.y) % 3u == 0u);
+            let ca = select(0.0, o.uvraw.x, u32(o.pos.x) % 3u == 0u);
+            return vec4(0.0, 0.0, 0.0, (1.0 - (1.0 - ra) * (1.0 - ca)) * mask);
         }
         case 5u: {
-            // light outside a big circle (uvraw = centre x, y, radius, softness; stage px): a curved glass reflection
+            // a curved glass reflection: the CSS radial-gradient stops (transparent 69%, .085 69.8%, .05 82%,
+            // .02 94%, transparent 100%) of an ellipse (uvraw = centre x, y, x radius; dir = x/y aspect)
             let asp = select(1.0, o.dir, o.dir > 0.0);
-            let d = length((sp - o.uvraw.xy) * vec2(1.0, asp));
-            let a = smoothstep(o.uvraw.z, o.uvraw.z + o.uvraw.w, d) * (1.0 - 0.7 * smoothstep(o.uvraw.z + o.uvraw.w, o.uvraw.z + o.uvraw.w * 14.0, d));
+            let f = length((sp - o.uvraw.xy) * vec2(1.0, asp)) / o.uvraw.z;
+            var a = 0.0;
+            if (f >= 0.69 && f < 0.698) { a = mix(0.0, 0.085, (f - 0.69) / 0.008); }
+            else if (f >= 0.698 && f < 0.82) { a = mix(0.085, 0.05, (f - 0.698) / 0.122); }
+            else if (f >= 0.82 && f < 0.94) { a = mix(0.05, 0.02, (f - 0.82) / 0.12); }
+            else if (f >= 0.94 && f < 1.0) { a = mix(0.02, 0.0, (f - 0.94) / 0.06); }
             return vec4(o.color.rgb, o.color.a * a * mask);
         }
         case 6u: {
@@ -247,6 +309,21 @@ fn shade(o: Out) -> vec4<f32> {
             let g = fract(sp / o.uvraw.x) * o.uvraw.x - vec2(o.uvraw.x * 0.5);
             let a = clamp(o.uvraw.y - length(g) + 0.5, 0.0, 1.0);
             return vec4(o.color.rgb, o.color.a * a * mask);
+        }
+        case 9u: {
+            // light / shadow inside a rounded rect, strongest at its wall, gone `dir` px in (CSS inset box-shadow)
+            let k = clamp(1.0 + sd / o.dir, 0.0, 1.0);
+            return vec4(o.color.rgb, o.color.a * k * k * mask);
+        }
+        case 10u: {
+            // a needle: a blade narrowing to the top (dir = its top width / bottom width), colour top -> bottom,
+            // its edges antialiased (or blurred by `radius` stage px, for its shadow)
+            let f = o.local.y * 0.5 + 0.5;
+            let hw = half.x * mix(o.dir, 1.0, f);
+            let soft = max(o.radius, fw);
+            let a = clamp((hw - abs(o.local.x * half.x)) / soft + 0.5, 0.0, 1.0);
+            let c = mix(o.color, o.uvraw, f);
+            return vec4(c.rgb, c.a * a);
         }
         default: {
             // radial gradient: color in the middle -> uvraw at the edge (ellipse filling the quad)
@@ -357,7 +434,52 @@ impl Gfx {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0) };
+        // the glow: blur passes (replace) and the composite (added onto the picture)
+        let bshader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: None, source: wgpu::ShaderSource::Wgsl(BLOOM.into()) });
+        let dir_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                count: None,
+            }],
+        });
+        let blayout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(&dir_layout), Some(&tex_layout)], immediate_size: 0 });
+        let bmake = |entry: &str, blend: Option<wgpu::BlendState>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&blayout),
+                vertex: wgpu::VertexState { module: &bshader, entry_point: Some("vs"), compilation_options: Default::default(), buffers: &[] },
+                fragment: Some(wgpu::FragmentState {
+                    module: &bshader,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: wgpu::ColorWrites::ALL })],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let blur_pipe = bmake("blur", None);
+        let comp_pipe = bmake(
+            "comp",
+            Some(wgpu::BlendState {
+                color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+            }),
+        );
+        let dirs = (0..5)
+            .map(|_| {
+                let b = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+                let bg = device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &dir_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: b.as_entire_binding() }] });
+                (b, bg)
+            })
+            .collect();
+        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs };
         g.white = g.texture_rgba(1, 1, &[255, 255, 255, 255]);
         g.update_view();
         g
@@ -368,6 +490,43 @@ impl Gfx {
         self.config.height = h.max(1);
         self.surface.configure(&self.device, &self.config);
         self.update_view();
+        self.bloom = None;
+    }
+
+    /// The glow targets at half the window's size (made again after a resize).
+    fn bloom(&mut self) {
+        let size = ((self.config.width / 2).max(1), (self.config.height / 2).max(1));
+        if self.bloom.as_ref().is_some_and(|b| b.size == size) {
+            return;
+        }
+        let mk = || {
+            let t = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            t.create_view(&wgpu::TextureViewDescriptor::default())
+        };
+        let views = [mk(), mk()];
+        let bind = |v: &wgpu::TextureView| {
+            self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.tex_layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(v) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) }],
+            })
+        };
+        let binds = [bind(&views[0]), bind(&views[1])];
+        let (tx, ty) = (1.0 / size.0 as f32, 1.0 / size.1 as f32);
+        let k = std::env::var("KR_GLOW").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0);
+        for (i, d) in [[tx, 0.0, 0.0, 0.0], [0.0, ty, 0.0, 0.0], [tx * 2.5, 0.0, 0.0, 0.0], [0.0, ty * 2.5, 0.0, 0.0], [0.0, 0.0, k, 0.0]].iter().enumerate() {
+            self.queue.write_buffer(&self.dirs[i].0, 0, bytemuck::cast_slice(d));
+        }
+        self.bloom = Some(Bloom { size, views, binds });
     }
 
     /// Fit the 16:9 stage into the window (letterbox), and the matching stage -> clip transform.
@@ -439,8 +598,42 @@ impl Gfx {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let mut text = text;
+        let mut glow = false;
         if let Some((tl, txts)) = text.as_mut() {
-            tl.prepare(&self.device, &self.queue, (self.config.width, self.config.height), self.fit, txts);
+            let half = ((self.config.width / 2).max(1), (self.config.height / 2).max(1));
+            glow = tl.prepare(&self.device, &self.queue, (self.config.width, self.config.height), half, self.fit, txts);
+        }
+        if glow {
+            self.bloom();
+            let b = self.bloom.as_ref().unwrap();
+            let pass_to = |enc: &mut wgpu::CommandEncoder, v: &wgpu::TextureView| -> wgpu::RenderPass<'static> {
+                enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: v,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                })
+                .forget_lifetime()
+            };
+            if let Some((tl, _)) = text.as_ref() {
+                let mut p = pass_to(&mut enc, &b.views[0]);
+                tl.render_glow(&mut p);
+            }
+            // A -> B (H), B -> A (V), twice: 1 texel apart, then 2.5 texels apart
+            for (k, (src, dst)) in [(0usize, 1usize), (1, 0), (0, 1), (1, 0)].into_iter().enumerate() {
+                let mut p = pass_to(&mut enc, &b.views[dst]);
+                p.set_pipeline(&self.blur_pipe);
+                p.set_bind_group(0, &self.dirs[k].1, &[]);
+                p.set_bind_group(1, &b.binds[src], &[]);
+                p.draw(0..3, 0..1);
+            }
         }
         let all: Vec<&Batch> = batches.iter().chain(over.iter()).collect();
         let bufs: Vec<_> = all
@@ -464,6 +657,13 @@ impl Gfx {
             pass.set_bind_group(0, &self.view_bind, &[]);
             for (n, (b, buf)) in all.iter().zip(&bufs).enumerate() {
                 if n == batches.len() {
+                    if let (true, Some(bl)) = (glow, self.bloom.as_ref()) {
+                        pass.set_scissor_rect(0, 0, self.config.width, self.config.height);
+                        pass.set_pipeline(&self.comp_pipe);
+                        pass.set_bind_group(0, &self.dirs[4].1, &[]);
+                        pass.set_bind_group(1, &bl.binds[0], &[]);
+                        pass.draw(0..3, 0..1);
+                    }
                     if let Some((tl, _)) = text.as_ref() {
                         tl.render(&mut pass);
                     }

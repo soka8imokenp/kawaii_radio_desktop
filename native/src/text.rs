@@ -118,6 +118,9 @@ pub struct TextLayer {
     viewport: Viewport,
     atlas: TextAtlas,
     renderer: TextRenderer,
+    /// the glow copies of the texts, drawn into the half-size glow target (blurred there by the GPU)
+    glow_viewport: Viewport,
+    glow_renderer: TextRenderer,
     cache: HashMap<String, (Buffer, u64)>,
     frame: u64,
 }
@@ -132,7 +135,9 @@ impl TextLayer {
         let viewport = Viewport::new(device, &cache);
         let mut atlas = TextAtlas::new(device, queue, &cache, format);
         let renderer = TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
-        TextLayer { fs, swash: SwashCache::new(), viewport, atlas, renderer, cache: HashMap::new(), frame: 0 }
+        let glow_viewport = Viewport::new(device, &cache);
+        let glow_renderer = TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
+        TextLayer { fs, swash: SwashCache::new(), viewport, atlas, renderer, glow_viewport, glow_renderer, cache: HashMap::new(), frame: 0 }
     }
 
     /// The width of a one-line text, stage px (for layout).
@@ -179,39 +184,38 @@ impl TextLayer {
         self.cache.insert(key.to_string(), (b, frame));
     }
 
-    /// Lay the texts out for this frame (stage px -> window px with `fit` = (offset x, offset y, scale)).
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: (u32, u32), fit: (f32, f32, f32), texts: &[Txt]) {
+    /// Lay the texts out for this frame (stage px -> window px with `fit` = (offset x, offset y, scale)), and their
+    /// glow copies for the half-size glow target (`half`). True when there is any glow to draw.
+    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: (u32, u32), half: (u32, u32), fit: (f32, f32, f32), texts: &[Txt]) -> bool {
         self.frame += 1;
-        // halos first: the same text in the glow colour, drawn around the glyphs on two rings (a cheap blur)
-        let mut all: Vec<Txt> = Vec::with_capacity(texts.len() * 2);
-        for t in texts {
-            if let (Some((gc, r)), false) = (t.glow, std::env::var_os("KR_NOGLOW").is_some()) {
-                let mut g = t.clone();
-                g.glow = None;
-                for sp in &mut g.spans {
-                    sp.color = [gc[0], gc[1], gc[2], ((gc[3] as f32) * (sp.color[3] as f32 / 255.0)) as u8];
-                }
-                for (k, rr) in [(8, r), (6, r * 0.5)] {
-                    for i in 0..k {
-                        let a = i as f32 / k as f32 * std::f32::consts::TAU;
-                        let mut gi = g.clone();
-                        gi.x += a.cos() * rr;
-                        gi.y += a.sin() * rr;
-                        all.push(gi);
+        let glows: Vec<Txt> = if std::env::var_os("KR_NOGLOW").is_some() {
+            vec![]
+        } else {
+            texts
+                .iter()
+                .filter_map(|t| {
+                    let (gc, _) = t.glow?;
+                    let mut g = t.clone();
+                    g.glow = None;
+                    // a span glows by its own brightness (the dim, not yet sung part of a line glows less)
+                    let lum = |c: [u8; 4]| (0.3 * c[0] as f32 + 0.59 * c[1] as f32 + 0.11 * c[2] as f32) / 255.0;
+                    let gl = lum(gc).max(0.2);
+                    for sp in &mut g.spans {
+                        let k = (lum(sp.color) / gl).min(1.0).powf(1.6);
+                        sp.color = [gc[0], gc[1], gc[2], ((gc[3] as f32) * k * (sp.color[3] as f32 / 255.0)) as u8];
                     }
-                }
-            }
-        }
-        all.extend(texts.iter().cloned());
-        let texts = &all[..];
+                    Some(g)
+                })
+                .collect()
+        };
         let keys: Vec<String> = texts.iter().map(|t| t.key()).collect();
-        for (t, k) in texts.iter().zip(&keys) {
+        let gkeys: Vec<String> = glows.iter().map(|t| t.key()).collect();
+        for (t, k) in texts.iter().zip(&keys).chain(glows.iter().zip(&gkeys)) {
             self.ensure(t, k);
         }
-        let (ox, oy, s) = fit;
-        let mut areas = Vec::with_capacity(texts.len());
-        for (t, k) in texts.iter().zip(&keys) {
-            let b = &self.cache[k].0;
+        let cache = &self.cache;
+        let area = |t: &Txt, k: &String, (ox, oy, s): (f32, f32, f32)| {
+            let b = &cache[k].0;
             let w = b.layout_runs().map(|r| r.line_w).fold(0.0, f32::max);
             // Center / Right without a wrap width: anchor the line at x
             let x = match (t.align, t.width) {
@@ -222,7 +226,7 @@ impl TextLayer {
                 _ => t.x,
             };
             let a = (t.alpha.clamp(0.0, 1.0) * 255.0) as u8;
-            areas.push(TextArea {
+            TextArea {
                 buffer: b,
                 left: ox + x * s,
                 top: oy + t.y * s,
@@ -235,16 +239,39 @@ impl TextLayer {
                 },
                 default_color: Color::rgba(255, 255, 255, a),
                 custom_glyphs: &[],
-            });
-        }
+            }
+        };
+        let areas: Vec<TextArea> = texts.iter().zip(&keys).map(|(t, k)| area(t, k, fit)).collect();
+        let hs = half.0 as f32 / size.0.max(1) as f32;
+        let gfit = (fit.0 * hs, fit.1 * hs, fit.2 * hs);
+        // the glow is a little wider than its text: the clip grows by the blur's reach
+        let gareas: Vec<TextArea> = glows
+            .iter()
+            .zip(&gkeys)
+            .map(|(t, k)| {
+                let mut t = t.clone();
+                t.clip = [t.clip[0] - 12.0, t.clip[1] - 12.0, t.clip[2] + 12.0, t.clip[3] + 12.0];
+                let mut a = area(&t, k, gfit);
+                a.buffer = &cache[k].0;
+                a
+            })
+            .collect();
         self.viewport.update(queue, Resolution { width: size.0, height: size.1 });
+        self.glow_viewport.update(queue, Resolution { width: half.0, height: half.1 });
         if let Err(e) = self.renderer.prepare(device, queue, &mut self.fs, &mut self.atlas, &self.viewport, areas, &mut self.swash) {
             if std::env::var_os("KR_DEBUG").is_some() {
                 eprintln!("text prepare: {e:?}");
             }
         }
+        let any = !gareas.is_empty();
+        let _ = self.glow_renderer.prepare(device, queue, &mut self.fs, &mut self.atlas, &self.glow_viewport, gareas, &mut self.swash);
         let frame = self.frame;
         self.cache.retain(|_, v| frame - v.1 < 120);
+        any
+    }
+
+    pub fn render_glow(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let _ = self.glow_renderer.render(&self.atlas, &self.glow_viewport, pass);
     }
 
     pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {

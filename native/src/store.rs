@@ -8,7 +8,7 @@ pub struct Store {
     data: Map<String, Value>,
 }
 
-fn dir() -> PathBuf {
+pub fn dir() -> PathBuf {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);
     #[cfg(not(windows))]

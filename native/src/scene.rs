@@ -99,22 +99,26 @@ impl Lyrics {
         self.anim.clear();
     }
 
-    pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas, tl: &mut text::TextLayer, t: f64, title: &str, artist: &str) {
+    pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas, tl: &mut text::TextLayer, t: f64, title: &str, artist: &str, spec: &crate::spectrum::Analyser) {
         let dt = self.last.elapsed().as_secs_f32().min(0.1);
         self.last = Instant::now();
         let [x0, y0, x1, y1] = LY;
         let (w, h) = (x1 - x0, y1 - y0);
-        // the phosphor backplate: radial(135% 125% at 50% 44%, #20271b, #171d14 42%, #0d110b 72%, #050705)
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050705)).rounded(37.0));
-        // (every radial quad is exactly the tube, rounded like it: nothing spills over the device)
-        cv.flat(Quad::radial(x0, y0, w, h, rgb(0x20271b), rgb(0x0b0f09)).rounded(37.0));
-        cv.flat(Quad::radial(x0, y0, w, h, rgba(0x96aa5a, 0.06), rgba(0x96aa5a, 0.0)).rounded(37.0));
-        cv.flat(Quad::dots(x0, y0, w, h, 5.0, 1.1, rgba(0x96af5f, 0.07)).rounded(37.0));
+        // the phosphor backplate: radial(135% 125% at 50% 44%, #20271b, #171d14 42%, #0d110b 72%, #050705) and a
+        // faint olive bloom (70% 60% at 42% 46%); the big gradients are cut to the tube by its rounded mask
+        cv.mask = Some((LY, 37.0));
+        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050705)));
+        let (rx, ry) = (w * 1.35, h * 1.25);
+        cv.flat(Quad::radial(x0 + w * 0.5 - rx, y0 + h * 0.44 - ry, rx * 2.0, ry * 2.0, rgb(0x20271b), rgb(0x050705)));
+        let (rx, ry) = (w * 0.7 * 0.72, h * 0.6 * 0.72);
+        cv.flat(Quad::radial(x0 + w * 0.42 - rx, y0 + h * 0.46 - ry, rx * 2.0, ry * 2.0, rgba(0x96aa5a, 0.075), rgba(0x96aa5a, 0.0)));
+        cv.flat(Quad::dots(x0, y0, w, h, 5.0, 1.1, rgba(0x96af5f, 0.06)));
+        cv.mask = None;
         // header: a green dot, the title, the artist, a hairline
         let hx = 610.0 + 34.0;
         cv.light(Quad::glow(hx + 3.0, 190.0 + 34.0, 8.0, rgba(0x4be38f, 0.9)));
         cv.flat(Quad::flat(hx, 190.0 + 31.0, 6.0, 6.0, rgb(0x7dffb8)).rounded(3.0));
-        let tt = Txt::new(title, text::MONO, 16.0, hx + 16.0, 190.0 + 23.0, c8(0xeef0e6, 1.0)).weight(600).glow([230, 240, 210, 7], 2.2);
+        let tt = Txt::new(title, text::MONO, 16.0, hx + 16.0, 190.0 + 23.0, c8(0xeef0e6, 1.0)).weight(600).glow([230, 240, 210, 70], 2.2);
         let tw = tl.measure(&tt).min(430.0);
         cv.text(tt.clip([hx, y0, hx + 16.0 + 430.0, y1]));
         cv.text(Txt::new(artist, text::MONO, 15.0, hx + 28.0 + tw, 190.0 + 24.0, c8(0x7b8263, 1.0)).clip([hx, y0, x1 - 40.0, y1]));
@@ -124,7 +128,33 @@ impl Lyrics {
         let (bx, by, bw) = (650.0, 266.0, 656.0);
         let clip = [x0 + 8.0, 256.0, x1 - 40.0, y1 - 10.0];
         if self.lines.is_empty() {
-            cv.text(Txt::new("♪ MATNSIZ · SPEKTR", text::MONO, 20.0, bx, by + 62.0, c8(0x7c8456, 1.0)).weight(500).clip(clip));
+            cv.text(Txt::new("♪ MATNSIZ · SPEKTR", text::MONO, 20.0, bx, by + 6.0, c8(0x7c8456, 1.0)).weight(500).clip(clip).glow([205, 215, 130, 70], 3.0));
+            // no lyrics: the display becomes a dot-matrix spectrum of the real signal (64 x 30 round pixels; unlit
+            // dots stay faintly visible behind the glass, a falling peak dot on every column)
+            let (vx, vy, vw, vh) = (652.0, 300.0, 700.0 - 30.0, 300.0);
+            let (cols, rows) = (64usize, 30usize);
+            let (cw, rh) = (vw / cols as f32, vh / rows as f32);
+            let dot = cw.min(rh) * 0.36;
+            for c in 0..cols {
+                let hgt = (spec.cols[c] * rows as f32).round() as usize;
+                let pk = spec.peaks[c].round() as usize;
+                for r in 0..rows {
+                    let lit = r < hgt;
+                    let col = if lit {
+                        if r as f32 > rows as f32 * 0.82 { rgb(0xeaffb0) } else { rgba(0xb2ce68, 0.55 + 0.45 * r as f32 / rows as f32) }
+                    } else if r == pk {
+                        rgba(0xd6f08c, 0.8)
+                    } else {
+                        rgba(0x788c46, 0.07)
+                    };
+                    let (x, y) = (vx + c as f32 * cw + cw / 2.0, vy + vh - (r as f32 + 0.5) * rh);
+                    cv.flat(Quad::flat(x - dot, y - dot, dot * 2.0, dot * 2.0, col).rounded(dot));
+                }
+                if hgt > 0 {
+                    let top = vy + vh - hgt as f32 * rh;
+                    cv.light(Quad::glow(vx + c as f32 * cw + cw / 2.0, top + 4.0, 9.0, rgba(0xc4e078, 0.12)));
+                }
+            }
         } else {
             let i = self.lines.iter().rposition(|l| t >= l.t);
             // targets: two before, the sung one (big, warm, its sung part bright), three after
@@ -174,7 +204,7 @@ impl Lyrics {
                 let s = &self.lines[*idx].s;
                 let now = Some(*idx) == i;
                 let mut tx = Txt::new(s.clone(), text::MONO, a.size, bx, by + a.y, c8(a.color, a.alpha)).weight(if now { 600 } else { 500 }).clip(clip)
-                    .glow([205, 215, 130, if now { 9 } else { 5 }], if now { 3.0 } else { 2.2 });
+                    .glow([230, 220, 130, if now { 150 } else { 90 }], if now { 3.0 } else { 2.2 });
                 if now {
                     // karaoke: the sung part bright, the rest dim (by time within the line)
                     let t0 = self.lines[*idx].t;
@@ -193,10 +223,10 @@ impl Lyrics {
                 cv.text(tx);
             }
             if i.is_none() {
-                cv.text(Txt::new("♪ ♪ ♪", text::MONO, 34.0, bx, by + 104.0, c8(0x6d7450, 1.0)).clip(clip));
+                cv.text(Txt::new("♪ ♪ ♪", text::MONO, 34.0, bx, by + 104.0, c8(0x6d7450, 1.0)).clip(clip).glow([205, 215, 130, 80], 3.0));
             }
             if let Some(tr) = tr {
-                cv.text(Txt::new(tr, text::MONO, 17.0, bx + 2.0, by + 104.0 + hh + 10.0, c8(0xa3a978, 1.0)).clip(clip));
+                cv.text(Txt::new(tr, text::MONO, 17.0, bx + 2.0, by + 104.0 + hh + 10.0, c8(0xa3a978, 1.0)).clip(clip).glow([190, 200, 120, 90], 3.0));
             }
             // the progress rail on the right
             let n = self.lines.len().min(14);
@@ -212,7 +242,6 @@ impl Lyrics {
             }
         }
         // the lens: scanlines, a deep shadow at the walls, a vignette, one faint reflection, the rim
-        over.flat(Quad::scan(x0, y0, w, h, 0.30).rounded(37.0));
         lens(over, LY, 37.0);
     }
 }
@@ -228,20 +257,41 @@ pub fn lens_light(over: &mut Canvas, r: [f32; 4], rad: f32) {
     over.light(Quad::glow(x1 - rad * 0.45, y0 + rad * 0.45, rad * 0.9, rgba(0xffffff, 0.1)));
 }
 
-/// The glass in front of a picture tube: a shadow at the walls, the light along the top, one curved reflection
-/// (CSS: radial-gradient(150% 130% at -14% 122%, transparent 69%, light 69.8%, …)), and the polished rim.
+/// The glass in front of the lyrics tube (the Tauri CSS #lyr::after and its rim SVG): it bulges out of the bezel,
+/// so its edges look sideways and mirror the room (a pale Fresnel band), the middle stays deep, one curved reflection
+/// crosses it, scanlines and an aperture grille in device pixels, a dark gasket, a fine rim and glinting corners.
 pub fn lens(over: &mut Canvas, r: [f32; 4], rad: f32) {
     let [x0, y0, x1, y1] = r;
     let (w, h) = (x1 - x0, y1 - y0);
-    over.flat(Quad::radial(x0, y0, w, h, rgba(0, 0.0), rgba(0, 0.42)).rounded(rad));
-    over.flat(Quad::rim(x0, y0, w, h, rad, 20.0, rgba(0, 0.32), rgba(0, 0.42)));
-    over.flat(Quad::grad(x0, y0, w, h * 0.12, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true).rounded(rad));
-    let (rx, ry) = (1.5 * w * 0.69, 1.3 * h * 0.69);
-    over.flat(Quad::arc_light(x0, y0, w, h, [x0 - 0.14 * w, y0 + 1.22 * h], rx, 8.0, rx / ry, rgba(0xcddedc, 0.09)).rounded(rad));
-    over.light(Quad::glow(x1 - w * 0.16, y0 + h * 0.16, w * 0.2, rgba(0xc8d7e1, 0.035)));
-    over.flat(Quad::rim(x0 + 0.5, y0 + 0.5, w - 1.0, h - 1.0, rad, 1.6, rgba(0xeef6ff, 0.42), rgba(0xeef6ff, 0.12)));
-    over.light(Quad::glow(x1 - rad * 0.45, y0 + rad * 0.45, rad * 0.9, rgba(0xffffff, 0.12)));
-    over.light(Quad::glow(x0 + rad * 0.45, y0 + rad * 0.45, rad * 0.7, rgba(0xffffff, 0.06)));
+    over.mask = Some((r, rad));
+    // the middle stays deep: radial(70% 62% at 48% 52%, rgba(0,0,0,.22), transparent)
+    let (rx, ry) = (w * 0.7, h * 0.62);
+    over.flat(Quad::radial(x0 + w * 0.48 - rx, y0 + h * 0.52 - ry, rx * 2.0, ry * 2.0, rgba(0, 0.22), rgba(0, 0.0)));
+    // scanlines .30, aperture grille .10
+    over.flat(Quad::scan2(x0, y0, w, h, 0.30, 0.10));
+    // the curved reflection: radial(150% 130% at -14% 122%, transparent 69%, .085 69.8%, .05 82%, .02 94%, transparent)
+    over.flat(Quad::arc_light(x0, y0, w, h, [x0 - 0.14 * w, y0 + 1.22 * h], 1.5 * w, 0.0, (1.5 * w) / (1.3 * h), rgba(0xcddedc, 0.7)));
+    // the light along the top: linear(180deg, rgba(225,240,255,.07), transparent 12%), inset 0 18px 26px -6px .07
+    over.flat(Quad::grad(x0, y0, w, h * 0.12, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true));
+    over.flat(Quad::grad(x0, y0, w, 40.0, rgba(0xd2e1eb, 0.06), rgba(0xd2e1eb, 0.0), true));
+    // the Fresnel band at the walls: inset 0 0 26px 8px rgba(160,182,172,.11); the gasket's shadow: inset 5px .6
+    over.flat(Quad::inset(x0, y0, w, h, rad, 34.0, rgba(0xa0b6ac, 0.11)));
+    over.flat(Quad::rim(x0, y0, w, h, rad, 5.0, rgba(0, 0.6), rgba(0, 0.6)));
+    over.mask = None;
+    // the rim (SVG): a 3 px dark gasket, a black hairline, then the glass edge, bright on top, dim below
+    over.flat(Quad::rim(x0, y0, w, h, rad, 3.0, rgb(0x050605), rgb(0x050605)));
+    over.flat(Quad::rim(x0 + 3.0, y0 + 3.0, w - 6.0, h - 6.0, rad - 3.0, 1.0, rgba(0, 0.7), rgba(0, 0.7)));
+    over.flat(Quad::rim(x0 + 3.8, y0 + 3.8, w - 7.6, h - 7.6, rad - 3.8, 1.3, rgba(0xeef6ff, 0.42), rgba(0xeef6ff, 0.12)));
+    // glints where the rim turns the corners: top right (strong), top left, bottom right (faint)
+    let saved = over.clip;
+    for (cx, cy, reach, a) in [(x1, y0, 70.0, 0.85), (x0, y0, 55.0, 0.5), (x1, y1, 45.0, 0.22)] {
+        for (k, f) in [(1.0, 0.25), (0.6, 0.3), (0.3, 0.45)] {
+            let d = reach * k;
+            over.clip = Some([cx - d, cy - d, cx + d, cy + d]);
+            over.flat(Quad::rim(x0 + 3.8, y0 + 3.8, w - 7.6, h - 7.6, rad - 3.8, 1.6, rgba(0xffffff, a * f), rgba(0xffffff, a * f)));
+        }
+    }
+    over.clip = saved;
 }
 
 /* ───────── the LCD (#lcd: 595,677 792x152) */
@@ -268,7 +318,8 @@ fn fmt(s: f64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
-pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64, dur: f64) {
+/// `ghost`: O'Z TANLOVIM, the cursor over the waveform: where a click would jump (a faint head and its time).
+pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64, dur: f64, ghost: Option<f32>) {
     let (ox, oy, lw) = (595.0f32, 677.0f32, 792.0f32);
     let wv = lw - 54.0;
     let ink = 0x232b1b;
@@ -297,6 +348,12 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
         cv.flat(Quad::flat(x, oy + 77.0 - h / 2.0, wv / n * 0.62, *h, rgba(ink, if on { 1.0 } else { 0.18 })));
     }
     cv.flat(Quad::flat(ox + 27.0 + frac * wv, oy + 47.0, 3.0, 62.0, rgb(ink)));
+    if let (Some(g), true) = (ghost, dur > 0.0) {
+        let gx = ox + 27.0 + g.clamp(0.0, 1.0) * wv;
+        cv.flat(Quad::flat(gx, oy + 47.0, 2.0, 62.0, rgba(ink, 0.45)));
+        let tx = Txt::new(fmt(g as f64 * dur), text::VT, 20.0, gx + 6.0, oy + 46.0, c8(ink, 0.8));
+        cv.text(if gx > ox + lw - 120.0 { Txt { x: gx - 6.0, ..tx }.align(Align::Right) } else { tx });
+    }
     cv.flat(Quad::flat(ox + 27.0, oy + 117.0, wv, 1.0, rgba(ink, 0.18)));
     lcd_text(cv, Txt::new(foot, text::VT, 22.0, ox + 29.0, oy + 122.0, c8(ink, 1.0)).clip(clip));
 }
@@ -386,30 +443,65 @@ pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
     over.mask = None;
 }
 
-/* ───────── the trivision (#tv: 156,196 436x432): 15 three-sided slats, a wave of 120° turns */
+/* ───────── the trivision (#tv: 156,196 436x432): 15 three-sided prisms, a wave of 120° turns */
 pub struct Trivision {
-    pub cur: Option<usize>,
-    pub next: Option<usize>,
+    /// the cover printed on each of the three faces
+    faces: [Option<usize>; 3],
+    /// how many 120° turns the slats have made (the face showing is step % 3)
+    step: i32,
+    /// the turn in progress started here
     start: Option<Instant>,
 }
 
 pub const TV: [f32; 4] = [156.0, 196.0, 592.0, 628.0];
 const NS: usize = 15;
 
+/// CSS cubic-bezier(x1, y1, x2, y2) at time `t` (0..1): Newton steps on x, then y.
+fn bezier(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
+    let f = |a: f32, b: f32, u: f32| 3.0 * a * u * (1.0 - u) * (1.0 - u) + 3.0 * b * u * u * (1.0 - u) + u * u * u;
+    let df = |a: f32, b: f32, u: f32| 3.0 * a * (1.0 - u) * (1.0 - u) + 6.0 * (b - a) * u * (1.0 - u) + 3.0 * (1.0 - b) * u * u;
+    let mut u = t;
+    for _ in 0..8 {
+        let d = df(x1, x2, u);
+        if d.abs() < 1e-5 {
+            break;
+        }
+        u = (u - (f(x1, x2, u) - t) / d).clamp(0.0, 1.0);
+    }
+    f(y1, y2, u)
+}
+
+/// The printed face bulges a little (CSS .face::after): a dark edge, a bright left rim, a soft specular strip down the
+/// middle, falling into shadow on the right. `u` 0..1 across the face -> a brightness change.
+fn bulge(u: f32) -> f32 {
+    const ST: [(f32, f32); 8] = [(0.0, -0.42), (0.05, 0.16), (0.16, 0.05), (0.36, 0.13), (0.5, 0.02), (0.62, 0.0), (0.86, -0.18), (1.0, -0.45)];
+    for k in 1..ST.len() {
+        if u <= ST[k].0 {
+            let (a, b) = (ST[k - 1], ST[k]);
+            return a.1 + (b.1 - a.1) * (u - a.0) / (b.0 - a.0);
+        }
+    }
+    -0.45
+}
+
 impl Trivision {
     pub fn new() -> Self {
-        Trivision { cur: None, next: None, start: None }
+        Trivision { faces: [None; 3], step: 0, start: None }
     }
-    /// A new cover: the slats turn to it in a wave (the first one just appears).
+    /// A new cover: printed on the face that comes next, then the slats turn to it in a wave (the first one is just there).
     pub fn show(&mut self, tex: usize) {
-        if self.cur.is_none() {
-            self.cur = Some(tex);
+        if self.faces.iter().all(|f| f.is_none()) {
+            self.faces[0] = Some(tex);
             return;
         }
-        if let (Some(n), Some(_)) = (self.next, self.start) {
-            self.cur = Some(n);
+        if self.faces[(self.step.rem_euclid(3)) as usize] == Some(tex) && self.start.is_none() {
+            return;
         }
-        self.next = Some(tex);
+        // a turn still running: it ends at once
+        if self.start.take().is_some() {
+            self.step += 1;
+        }
+        self.faces[((self.step + 1).rem_euclid(3)) as usize] = Some(tex);
         self.start = Some(Instant::now());
     }
 
@@ -417,55 +509,67 @@ impl Trivision {
         let [x0, y0, x1, y1] = TV;
         let (w, h) = (x1 - x0, y1 - y0);
         let sw = w / NS as f32;
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x0c0d0f)).rounded(14.0));
+        // apothem of the prism (a face is sw wide, the cross-section an equilateral triangle)
+        let ap = sw / (2.0 * 3f32.sqrt());
+        cv.mask = Some((TV, 14.0));
+        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x0c0d0f)));
         let el = self.start.map(|s| s.elapsed().as_secs_f32()).unwrap_or(0.0);
         let mut done = self.start.is_some();
+        let (cx_tv, cy) = (x0 + w / 2.0, y0 + h / 2.0);
+        // a little perspective (the eye ~1500 px in front): a turning face comes forward and grows
+        let eye = 1500.0;
         for i in 0..NS {
-            // each slat starts 38 ms after its neighbour and turns in 0.62 s with a small overshoot
-            let p = ((el - i as f32 * 0.038) / 0.62).clamp(0.0, 1.0);
+            // each slat starts 38 ms after its neighbour, turns in 0.62 s, cubic-bezier(.34, 1.56, .64, 1) (overshoots)
+            let p = if self.start.is_some() { ((el - i as f32 * 0.038) / 0.62).clamp(0.0, 1.0) } else { 0.0 };
             if p < 1.0 {
                 done = false;
             }
-            let e = if self.start.is_some() { ease_back(p) } else { 0.0 };
-            let th = e * 120f32.to_radians();
-            // a prism seen from the front: the leaving face shrinks to the right edge, the arriving face grows
-            // from the left one; a face is lit by how much it faces us
-            let faces: [(Option<usize>, f32, f32); 2] = [(self.cur, th.cos().max(0.0), 0.0), (self.next, (th - 120f32.to_radians()).cos().max(0.0), 1.0)];
-            let sx = x0 + i as f32 * sw;
-            let mut acc = 0.0;
-            for (tex, vis, side) in faces {
-                let Some(tex) = tex else { continue };
-                if vis <= 0.001 || (side == 1.0 && self.start.is_none()) {
+            let e = if self.start.is_some() { bezier(0.34, 1.56, 0.64, 1.0, p) } else { 0.0 };
+            let rot = -((self.step as f32 + e) * 120.0).to_radians();
+            let sx = x0 + (i as f32 + 0.5) * sw;
+            for k in 0..3 {
+                // face k's normal points at angle phi (0 = at the viewer)
+                let phi = rot + (k as f32 * 120.0).to_radians();
+                let facing = phi.cos();
+                if facing <= 0.02 {
                     continue;
                 }
-                let fw = sw * vis;
-                let fx = if side == 0.0 { sx + sw - fw } else { sx + acc };
-                acc += fw;
-                let u0 = i as f32 / NS as f32;
-                let q = Quad {
-                    rect: [fx + 0.7, y0, (fw - 1.4).max(0.0), h],
-                    uv: [u0, 0.0, 1.0 / NS as f32, 1.0],
-                    color: [0.55 + 0.45 * vis, 0.55 + 0.45 * vis, 0.55 + 0.45 * vis, 1.0],
-                    pivot: [0.0, 0.0],
-                    rot: 0.0,
-                    kind: 0.0,
-                    radius: 0.0,
-                    _pad: 0.0,
-                    mask: [0.0; 4],
-                    mask_r: [0.0; 2],
-                };
-                cv.quad(Some(tex), q);
+                // light from the upper left front: a face turned to the right darkens
+                let light = 0.55 + 0.45 * facing + 0.12 * (-phi.sin()).max(0.0) - 0.1 * phi.sin().max(0.0);
+                let strips = 8;
+                for j in 0..strips {
+                    let (s0, s1) = (j as f32 / strips as f32, (j + 1) as f32 / strips as f32);
+                    // a point across the face (-sw/2..sw/2) -> x and depth
+                    let at = |u: f32| {
+                        let d = (u - 0.5) * sw;
+                        let x = sx + ap * phi.sin() + d * phi.cos();
+                        let z = ap * phi.cos() - d * phi.sin();
+                        let k = eye / (eye - z);
+                        (cx_tv + (x - cx_tv) * k, k)
+                    };
+                    let ((xa, ka), (xb, kb)) = (at(s0), at(s1));
+                    if xb - xa < 0.05 {
+                        continue;
+                    }
+                    let kk = (ka + kb) * 0.5;
+                    let hh = h * kk;
+                    let b = (light * (1.0 + bulge((s0 + s1) * 0.5) * 0.8)).max(0.0);
+                    // a dark gap between slats: the face's own edges are inset a little
+                    let (ia, ib) = (if j == 0 { 1.3 } else { 0.0 }, if j == strips - 1 { 1.3 } else { 0.0 });
+                    let rect = [xa + ia * facing, cy - hh / 2.0, (xb - xa - (ia + ib) * facing).max(0.0), hh];
+                    match self.faces[k] {
+                        Some(tex) => {
+                            let u0 = (i as f32 + s0) / NS as f32;
+                            let q = Quad { rect, uv: [u0, 0.0, (s1 - s0) / NS as f32, 1.0], color: [b, b, b, 1.0], ..Quad::full() };
+                            cv.quad(Some(tex), q);
+                        }
+                        None => cv.flat(Quad { rect, ..Quad::flat(0.0, 0.0, 0.0, 0.0, [0.086 * b, 0.09 * b, 0.1 * b, 1.0]) }),
+                    }
+                }
             }
-            // the printed face bulges a little (CSS: rgba(0,0,0,.24) 0, .05 10%, white .05 40%, transparent 70%,
-            // black .14 100%), with a dark gap between the slats
-            cv.flat(Quad::grad(sx, y0, sw * 0.1, h, rgba(0, 0.24), rgba(0, 0.05), false));
-            cv.flat(Quad::grad(sx + sw * 0.1, y0, sw * 0.3, h, rgba(0, 0.05), [1.0, 1.0, 1.0, 0.05], false));
-            cv.flat(Quad::grad(sx + sw * 0.4, y0, sw * 0.3, h, [1.0, 1.0, 1.0, 0.05], [1.0, 1.0, 1.0, 0.0], false));
-            cv.flat(Quad::grad(sx + sw * 0.7, y0, sw * 0.3, h, rgba(0, 0.0), rgba(0, 0.14), false));
-            cv.flat(Quad::flat(sx + sw - 0.7, y0, 1.4, h, rgba(0x08090a, 0.85)));
         }
         if done {
-            self.cur = self.next.take();
+            self.step += 1;
             self.start = None;
         }
         // deep inside the device: shadow under the housing lips and at the side walls
@@ -473,12 +577,6 @@ impl Trivision {
         cv.flat(Quad::grad(x0, y1 - 28.0, w, 28.0, rgba(0, 0.0), rgba(0, 0.82), true));
         cv.flat(Quad::grad(x0, y0, 22.0, h, rgba(0, 0.65), rgba(0, 0.0), false));
         cv.flat(Quad::grad(x1 - 22.0, y0, 22.0, h, rgba(0, 0.0), rgba(0, 0.65), false));
+        cv.mask = None;
     }
-}
-
-fn ease_back(t: f32) -> f32 {
-    // cubic-bezier(.34, 1.56, .64, 1) ~ easeOutBack
-    let c1 = 1.70158;
-    let c3 = c1 + 1.0;
-    1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
 }

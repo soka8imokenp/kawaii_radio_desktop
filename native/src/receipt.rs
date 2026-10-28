@@ -32,7 +32,10 @@ pub struct Tape {
     rolls: Vec<Receipt>,
     /// px of tape between the newest receipt's top and the window's top (feeding) + scroll
     pub scroll: f32,
+    /// where the mouse wheel wants the tape (the tape eases there)
+    pub goal: f32,
     feed: Option<(Instant, f32)>,
+    last: Instant,
 }
 
 fn layout(t: &Track, tl: &mut text::TextLayer) -> Receipt {
@@ -54,8 +57,10 @@ fn layout(t: &Track, tl: &mut text::TextLayer) -> Receipt {
     put(&mut items, &mut y, Txt::new(t.artist.clone(), text::MONO, 17.0, x, 0.0, c8(0x2a2521, 1.0)).weight(500).wrap(w), 2.0);
     let d = t.duration.max(0.0) as u64;
     put(&mut items, &mut y, Txt::new(format!("{} · {}:{:02} · {} BPM", t.category, d / 60, d % 60, t.bpm.round()), text::MONO, 15.0, x, 0.0, c8(INK, 1.0)), 6.0);
+    // ENERGIYA ▮▮▮▮▮▮▮▮▯▯▯▯ 70%: the label, twelve cells, the number after them
     items.push((y, Item::Energy((t.energy / 100.0 * 12.0).round() as u32)));
-    put(&mut items, &mut y, Txt::new(format!("ENERGIYA                         {}%", t.energy.round()), text::MONO, 12.0, x, 0.0, c8(0x3a3530, 1.0)), 10.0);
+    items.push((y, Item::Text(Txt::new(format!("{}%", t.energy.round()), text::MONO, 12.0, x + 82.0 + 12.0 * 15.0 + 4.0, 0.0, c8(0x3a3530, 1.0)))));
+    put(&mut items, &mut y, Txt::new("ENERGIYA", text::MONO, 12.0, x, 0.0, c8(0x3a3530, 1.0)), 10.0);
     items.push((y, Item::Rule));
     y += 14.0;
     let info = t.info.clone().unwrap_or_default();
@@ -81,7 +86,7 @@ fn layout(t: &Track, tl: &mut text::TextLayer) -> Receipt {
 
 impl Tape {
     pub fn new() -> Self {
-        Tape { rolls: vec![], scroll: 0.0, feed: None }
+        Tape { rolls: vec![], scroll: 0.0, goal: 0.0, feed: None, last: Instant::now() }
     }
 
     /// Print a receipt for this track (`animate` = feed + burn, else it is just there).
@@ -93,9 +98,21 @@ impl Tape {
         } else {
             r.burn = Some(Instant::now() - std::time::Duration::from_secs(60));
         }
+        // a print still running finishes at once
+        if let Some(r0) = self.rolls.first_mut() {
+            if r0.burn.is_none_or(|b| b.elapsed().as_secs_f32() < 30.0) {
+                r0.burn = Some(Instant::now() - std::time::Duration::from_secs(60));
+            }
+        }
         self.rolls.insert(0, r);
         self.rolls.truncate(12);
         self.scroll = 0.0;
+        self.goal = 0.0;
+    }
+
+    /// The head is burning (or the roller pulling): the printer's lamp is on.
+    pub fn busy(&self) -> bool {
+        self.feed.is_some() || self.rolls.first().is_some_and(|r| r.burn.is_some_and(|b| b.elapsed().as_secs_f32() / 0.08 * 21.0 < r.height))
     }
 
     pub fn draw(&mut self, cv: &mut Canvas, over: &mut Canvas) -> (usize, usize) {
@@ -112,6 +129,11 @@ impl Tape {
                 }
             }
         }
+        let dt = self.last.elapsed().as_secs_f32().min(0.1);
+        self.last = Instant::now();
+        if self.feed.is_none() {
+            self.scroll += (self.goal - self.scroll) * (1.0 - (-dt / 0.09).exp());
+        }
         cv.clip = Some(WIN);
         cv.flat(Quad::flat(x0, y0, x1 - x0, y1 - y0, rgb(0xf3f1ea)));
         let mut y = y0 - feed_off - self.scroll;
@@ -124,6 +146,11 @@ impl Tape {
                 None => -1.0,
             };
             if top + r.height > y0 && top < y1 {
+                // the head burns row by row: everything below it is still blank paper; the paper buzzes a little
+                let burning = rev >= 0.0 && rev < r.height;
+                let cut = if burning { (top + rev).clamp(y0, y1) } else { y1 };
+                let jx = if burning { ((rev * 7.0) as i32 % 2) as f32 * 0.4 } else { 0.0 };
+                cv.clip = Some([x0, y0, x1, cut]);
                 for (iy, it) in &r.items {
                     if *iy > rev {
                         continue;
@@ -133,7 +160,8 @@ impl Tape {
                         Item::Text(t) => {
                             let mut t = t.clone();
                             t.y = yy;
-                            t.clip = WIN;
+                            t.x += jx;
+                            t.clip = [x0, y0, x1, cut];
                             cv.text(t);
                         }
                         Item::Rule => {
@@ -145,7 +173,7 @@ impl Tape {
                         }
                         Item::Energy(n) => {
                             for k in 0..12 {
-                                cv.flat(Quad::flat(x0 + 100.0 + k as f32 * 15.0, yy + 1.0, 12.0, 12.0, rgb(if k < *n { 0x3a3530 } else { 0xc9c6be })));
+                                cv.flat(Quad::flat(x0 + 18.0 + 82.0 + k as f32 * 15.0, yy + 2.0, 12.0, 12.0, rgb(if k < *n { 0x3a3530 } else { 0xc9c6be })));
                             }
                         }
                         Item::Barcode(h) => {
@@ -160,8 +188,9 @@ impl Tape {
                         }
                     }
                 }
+                cv.clip = Some(WIN);
                 // the line just burnt is paler for a moment (thermal paper develops)
-                if rev >= 0.0 && rev < r.height {
+                if burning {
                     cv.flat(Quad::grad(x0, top + rev - 26.0, x1 - x0, 26.0, rgba(0xf3f1ea, 0.0), rgba(0xf3f1ea, 0.55), true));
                 }
             }
@@ -171,7 +200,9 @@ impl Tape {
             }
         }
         cv.clip = None;
-        self.scroll = self.scroll.clamp(0.0, (total - (y1 - y0)).max(0.0));
+        let max = (total - (y1 - y0)).max(0.0);
+        self.goal = self.goal.clamp(0.0, max);
+        self.scroll = self.scroll.clamp(0.0, max);
         // the platen bows the paper: darker at both edges, a soft sheen; shadow under the head and over the roller
         over.flat(Quad::grad(x0, y0, 30.0, y1 - y0, rgba(0, 0.14), rgba(0, 0.0), false));
         over.flat(Quad::grad(x1 - 30.0, y0, 30.0, y1 - y0, rgba(0, 0.0), rgba(0, 0.16), false));

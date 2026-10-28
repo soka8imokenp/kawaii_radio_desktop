@@ -96,8 +96,12 @@ pub struct Chat {
     pub live: i64,
     pub pinned: Option<String>,
     pub up: bool,
-    /// px scrolled up from the newest message
+    /// px scrolled up from the newest message: where the wheel wants it, and where it is (eased toward it)
+    pub goal: f32,
     pub scroll: f32,
+    /// who the chat server says we are (admin / owner rights)
+    pub you: Option<Value>,
+    last: Instant,
     pub stickers: HashMap<String, String>,
     pub out: Option<Sender<String>>,
     started: Instant,
@@ -111,7 +115,7 @@ fn c8(hex: u32, a: f32) -> [u8; 4] {
 
 impl Chat {
     pub fn new() -> Self {
-        Chat { msgs: vec![], online: 0, live: 0, pinned: None, up: false, scroll: 0.0, stickers: HashMap::new(), out: None, started: Instant::now() }
+        Chat { msgs: vec![], online: 0, live: 0, pinned: None, up: false, goal: 0.0, scroll: 0.0, you: None, last: Instant::now(), stickers: HashMap::new(), out: None, started: Instant::now() }
     }
 
     pub fn on_server(&mut self, v: &Value) {
@@ -128,7 +132,9 @@ impl Chat {
                 self.msgs = v.get("history").and_then(|h| h.as_array()).map(|a| a.iter().filter_map(ChatMsg::from).collect()).unwrap_or_default();
                 presence(self, v);
                 self.room(v.get("room"));
+                self.you = v.get("you").cloned().filter(|y| !y.is_null());
             }
+            "you" => self.you = v.get("you").cloned().or_else(|| Some(v.clone())),
             "msg" => {
                 if let Some(m) = v.get("m").and_then(ChatMsg::from) {
                     self.msgs.push(m);
@@ -181,7 +187,7 @@ impl Chat {
         let (px, inner) = (x0 + 22.0, w - 42.0);
         // header
         cv.light(Quad::glow(px + 60.0, y0 + 30.0, 50.0, rgba(0x6effaa, 0.12)));
-        cv.text(Txt::new("CH·01 CHAT", text::VT, 28.0, px, y0 + 14.0, c8(0x9dffc4, 1.0)).glow([110, 255, 170, 16], 3.0));
+        cv.text(Txt::new("CH·01 CHAT", text::VT, 28.0, px, y0 + 14.0, c8(0x9dffc4, 1.0)).glow([110, 255, 170, 150], 3.0));
         let status = if self.up { format!("{} onlayn · {} radioda", self.online, self.live) } else { "qayta ulanmoqda…".into() };
         cv.text(Txt::new(status, text::VT, 19.0, px + 132.0, y0 + 21.0, c8(0x6f9c84, 1.0)).clip([x0, y0, x1 - 70.0, y1]));
         let blink = (self.started.elapsed().as_secs_f32() / 0.8) as i32 % 2 == 0;
@@ -208,89 +214,92 @@ impl Chat {
             }
             top += 36.0;
         }
-        // messages, laid out bottom-up from the newest
+        // messages, laid out bottom-up from the newest: first every message's height, so the scroll range is exact
+        // and the view never jumps back at the end; the scroll eases toward where the wheel wants it
         let clip = [x0 + 6.0, top, x1 - 6.0, y1 - 8.0];
+        let text_of = |m: &ChatMsg| Txt::new(m.body.clone(), text::MR, 17.0, px + 42.0, 0.0, c8(0xe2f6e8, 1.0)).weight(500).wrap(inner - 42.0).line(23.5).glow([110, 255, 170, 60], 2.2);
+        let heights: Vec<f32> = self
+            .msgs
+            .iter()
+            .rev()
+            .map(|m| {
+                let body_h = match m.kind.as_str() {
+                    "sticker" => 116.0,
+                    "track" => 62.0,
+                    _ => tl.measure2(&text_of(m)).1 + 2.0,
+                };
+                (22.0 + body_h).max(34.0)
+            })
+            .collect();
+        let total: f32 = heights.iter().map(|h| h + 12.0).sum();
+        let max = (total - (y1 - 14.0 - top)).max(0.0);
+        self.goal = self.goal.clamp(0.0, max);
+        let dt = self.last.elapsed().as_secs_f32().min(0.1);
+        self.last = Instant::now();
+        self.scroll += (self.goal - self.scroll) * (1.0 - (-dt / 0.07).exp());
+        if (self.goal - self.scroll).abs() < 0.3 {
+            self.scroll = self.goal;
+        }
+        self.scroll = self.scroll.clamp(0.0, max);
         cv.clip = Some(clip);
         let mut y = y1 - 14.0 + self.scroll;
-        let mut total = 0.0;
-        for m in self.msgs.iter().rev() {
-            let body_h;
-            let mut body: Vec<Box<dyn FnOnce(&mut Canvas, f32)>> = vec![];
+        for (m, mh) in self.msgs.iter().rev().zip(heights) {
+            y -= mh;
+            if y > y1 {
+                y -= 12.0;
+                continue;
+            }
+            if y + mh < top - 4.0 {
+                break;
+            }
+            let ink = name_ink(&m.name);
+            // avatar: the picture, or a coloured disc with the initial
+            let av = m.avatar.as_ref().and_then(|u| img(u));
+            if let Some(a) = av {
+                let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
+                cv.quad(Some(a), Quad { rect: [px, y + 2.0, 32.0, 32.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 7.0, ..q });
+            } else {
+                let n: u32 = m.name.chars().map(|c| c as u32).sum();
+                cv.flat(Quad::flat(px, y + 2.0, 32.0, 32.0, rgb(GLYPH[(n % 6) as usize])).rounded(7.0));
+                let ini: String = m.name.trim().chars().next().map(|c| c.to_uppercase().collect()).unwrap_or("?".into());
+                cv.text(Txt::new(ini, text::VT, 22.0, px + 16.0, y + 6.0, c8(0x07140c, 1.0)).align(Align::Center).clip(clip));
+            }
+            let [ir, ig, ib, _] = c8(ink, 1.0);
+            cv.text(Txt::new(m.name.clone(), text::MR, 15.0, px + 42.0, y, c8(ink, 1.0)).weight(700).clip([clip[0], clip[1], x1 - 70.0, clip[3]]).glow([ir, ig, ib, 110], 2.6));
+            cv.text(Txt::new(chrono_hm(m.ts), text::VT, 16.0, x1 - 20.0, y + 2.0, c8(0x5f8a73, 1.0)).align(Align::Right).clip(clip));
+            let by = y + 22.0;
             match m.kind.as_str() {
                 "sticker" => {
-                    body_h = 116.0;
                     let u = self.sticker_url(&m.body);
                     let tex = if u.ends_with(".webm") || u.ends_with(".mp4") { None } else { img(&u) };
-                    let bx = px + 42.0;
-                    body.push(Box::new(move |cv: &mut Canvas, by: f32| {
-                        if let Some(t) = tex {
-                            let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
-                            let q = Quad { rect: [bx, by + 4.0, 110.0, 110.0], uv: [0.0, 0.0, 1.0, 1.0], ..q };
-                            cv.quad(Some(t), q);
-                        }
-                    }));
+                    if let Some(t) = tex {
+                        let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
+                        cv.quad(Some(t), Quad { rect: [px + 42.0, by + 4.0, 110.0, 110.0], uv: [0.0, 0.0, 1.0, 1.0], ..q });
+                    }
                 }
                 "track" => {
-                    body_h = 62.0;
+                    let bx = px + 42.0;
                     let t = tracks.get(&m.body).cloned();
                     let cover = t.as_ref().and_then(|t| img(&crate::net::url(&t.cover_art)));
-                    let bx = px + 42.0;
-                    body.push(Box::new(move |cv: &mut Canvas, by: f32| {
-                        cv.flat(Quad::flat(bx, by + 4.0, 330.0, 56.0, rgba(0x9dffc4, 0.06)).rounded(8.0));
-                        if let Some(c) = cover {
-                            let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
-                            cv.quad(Some(c), Quad { rect: [bx + 6.0, by + 10.0, 44.0, 44.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 5.0, ..q });
-                        }
-                        let (ti, ar) = t.map(|t| (t.title, t.artist)).unwrap_or(("qo'shiq".into(), String::new()));
-                        let cl = [bx, by.max(clip[1]), bx + 324.0, (by + 60.0).min(clip[3])];
-                        cv.text(Txt::new(format!("♪ {ti}"), text::MR, 15.0, bx + 60.0, by + 12.0, c8(0xe2f6e8, 1.0)).weight(700).clip(cl));
-                        cv.text(Txt::new(ar, text::MR, 13.0, bx + 60.0, by + 33.0, c8(0x8fb89f, 1.0)).weight(500).clip(cl));
-                    }));
+                    cv.flat(Quad::flat(bx, by + 4.0, 330.0, 56.0, rgba(0x9dffc4, 0.06)).rounded(8.0));
+                    if let Some(c) = cover {
+                        let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
+                        cv.quad(Some(c), Quad { rect: [bx + 6.0, by + 10.0, 44.0, 44.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 5.0, ..q });
+                    }
+                    let (ti, ar) = t.map(|t| (t.title, t.artist)).unwrap_or(("qo'shiq".into(), String::new()));
+                    let cl = [bx, by.max(clip[1]), bx + 324.0, (by + 60.0).min(clip[3])];
+                    cv.text(Txt::new(format!("♪ {ti}"), text::MR, 15.0, bx + 60.0, by + 12.0, c8(0xe2f6e8, 1.0)).weight(700).clip(cl));
+                    cv.text(Txt::new(ar, text::MR, 13.0, bx + 60.0, by + 33.0, c8(0x8fb89f, 1.0)).weight(500).clip(cl));
                 }
                 _ => {
-                    let t = Txt::new(m.body.clone(), text::MR, 17.0, px + 42.0, 0.0, c8(0xe2f6e8, 1.0)).weight(500).wrap(inner - 42.0).line(23.5).glow([110, 255, 170, 4], 2.2);
-                    let (_, th) = tl.measure2(&t);
-                    body_h = th + 2.0;
-                    body.push(Box::new(move |cv: &mut Canvas, by: f32| {
-                        let mut t = t;
-                        t.y = by + 1.0;
-                        t.clip = clip;
-                        cv.text(t);
-                    }));
-                }
-            }
-            let mh = (22.0 + body_h).max(34.0);
-            y -= mh;
-            total += mh + 12.0;
-            if y + mh >= top - 4.0 && y <= y1 {
-                let ink = name_ink(&m.name);
-                // avatar: the picture, or a coloured disc with the initial
-                let av = m.avatar.as_ref().and_then(|u| img(u));
-                if let Some(a) = av {
-                    let q = Quad::plate_cut(0.0, 0.0, 1920.0, 1080.0, 1.0);
-                    cv.quad(Some(a), Quad { rect: [px, y + 2.0, 32.0, 32.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 7.0, ..q });
-                } else {
-                    let n: u32 = m.name.chars().map(|c| c as u32).sum();
-                    cv.flat(Quad::flat(px, y + 2.0, 32.0, 32.0, rgb(GLYPH[(n % 6) as usize])).rounded(7.0));
-                    let ini: String = m.name.trim().chars().next().map(|c| c.to_uppercase().collect()).unwrap_or("?".into());
-                    cv.text(Txt::new(ini, text::VT, 22.0, px + 16.0, y + 6.0, c8(0x07140c, 1.0)).align(Align::Center).clip(clip));
-                }
-                cv.light(Quad::glow(px + 70.0, y + 10.0, 40.0, rgba(ink, 0.06)));
-                let [ir, ig, ib, _] = c8(ink, 1.0);
-                cv.text(Txt::new(m.name.clone(), text::MR, 15.0, px + 42.0, y, c8(ink, 1.0)).weight(700).clip([clip[0], clip[1], x1 - 70.0, clip[3]]).glow([ir, ig, ib, 12], 2.6));
-                let tm = chrono_hm(m.ts);
-                cv.text(Txt::new(tm, text::VT, 16.0, x1 - 20.0, y + 2.0, c8(0x5f8a73, 1.0)).align(Align::Right).clip(clip));
-                let by = y + 22.0;
-                for f in body {
-                    f(cv, by);
+                    let mut t = text_of(m);
+                    t.y = by + 1.0;
+                    t.clip = clip;
+                    cv.text(t);
                 }
             }
             y -= 12.0;
-            if y < top - 900.0 {
-                break;
-            }
         }
-        self.scroll = self.scroll.clamp(0.0, (total - (y1 - top)).max(0.0));
         cv.clip = None;
         // the tube: scanlines, dark corners
         over.flat(Quad::scan(x0, y0, w, h, 0.28).rounded(32.0));
@@ -340,25 +349,30 @@ fn local_offset_secs() -> i64 {
     })
 }
 
-/// The listeners VFD (966,120 398x50): a counter and a row of pixel people.
+/// The listeners VFD (#lis: 812,120 552x50): a counter, and a row of pixel people that bob to the music.
 pub fn draw_listeners(cv: &mut Canvas, n: i64, t: f32, level: f32) {
-    let (x, y) = (966.0, 120.0);
+    let (x, y, w, h) = (812.0, 120.0, 552.0, 50.0);
     let ink = 0x7dffcf;
-    cv.light(Quad::glow(x + 40.0, y + 25.0, 40.0, rgba(ink, 0.15)));
-    cv.text(Txt::new(format!("{:03}", n.clamp(0, 999)), text::VT, 40.0, x + 14.0, y + 2.0, c8(ink, 1.0)));
-    cv.text(Txt::new("TINGLOVCHI", text::BAR, 9.0, x + 16.0, y + 36.0, c8(ink, 0.5)).weight(600));
-    // a pixel person (7 x 11): head, body, arms, legs
+    // the smoked window's dot mesh
+    cv.mask = Some(([x, y, x + w, y + h], 12.0));
+    cv.flat(Quad::dots(x, y, w, h, 4.0, 1.0, rgba(ink, 0.06)));
+    cv.mask = None;
+    cv.text(Txt::new(format!("{:03}", n.clamp(0, 999)), text::VT, 40.0, x + 14.0, y + 1.0, c8(ink, 1.0)).glow([125, 255, 207, 140], 3.0));
+    cv.text(Txt::new("T I N G L O V C H I", text::BAR, 9.0, x + 16.0, y + 37.0, c8(ink, 0.5)).weight(600));
+    // a pixel person (7 x 11 cells of 2 px): head, body, arms, legs
     const P: [(f32, f32, f32, f32); 6] = [(2., 0., 3., 3.), (1., 4., 5., 4.), (0., 4., 1., 3.), (6., 4., 1., 3.), (1., 8., 2., 3.), (4., 8., 2., 3.)];
-    for k in 0..20 {
+    const N: usize = 20;
+    let x_end = x + w - 14.0;
+    for k in 0..N {
         let on = (k as i64) < n;
-        let px = x + 92.0 + k as f32 * 14.6;
+        let px = x_end - (N - k) as f32 * 20.0 + 6.0;
         let bob = if on { ((t / 0.16 + k as f32 * 1.3).sin().max(0.0)) * level * 4.0 } else { 0.0 };
-        let py = y + 14.0 - bob;
+        let py = y + h - 10.0 - 22.0 - bob;
         if on {
-            cv.light(Quad::glow(px + 7.0, py + 11.0, 12.0, rgba(ink, 0.25)));
+            cv.light(Quad::glow(px + 7.0, py + 11.0, 13.0, rgba(ink, 0.22)));
         }
         for (rx, ry, rw, rh) in P {
-            cv.flat(Quad::flat(px + rx * 1.5, py + 4.0 + ry * 1.5, rw * 1.5, rh * 1.5, rgba(ink, if on { 1.0 } else { 0.09 })));
+            cv.flat(Quad::flat(px + rx * 2.0, py + ry * 2.0, rw * 2.0, rh * 2.0, rgba(ink, if on { 1.0 } else { 0.09 })));
         }
     }
 }
