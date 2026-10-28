@@ -13,19 +13,29 @@ pub struct Canvas {
     pub texts: Vec<Txt>,
     /// new quads are drawn only inside this stage rect
     pub clip: Option<[f32; 4]>,
+    /// and only inside this rounded rect (rect, radius)
+    pub mask: Option<([f32; 4], f32)>,
 }
 
 impl Canvas {
     pub fn new() -> Self {
-        Canvas { batches: vec![], texts: vec![], clip: None }
+        Canvas { batches: vec![], texts: vec![], clip: None, mask: None }
     }
-    pub fn quad(&mut self, tex: Option<usize>, q: Quad) {
+    pub fn quad(&mut self, tex: Option<usize>, mut q: Quad) {
+        if let Some((m, r)) = self.mask {
+            q.mask = m;
+            q.mask_r = [r, 0.0];
+        }
         match self.batches.last_mut() {
             Some(b) if b.tex == tex && !b.add && b.clip == self.clip => b.quads.push(q),
             _ => self.batches.push(Batch { tex, quads: vec![q], add: false, clip: self.clip }),
         }
     }
-    pub fn light(&mut self, q: Quad) {
+    pub fn light(&mut self, mut q: Quad) {
+        if let Some((m, r)) = self.mask {
+            q.mask = m;
+            q.mask_r = [r, 0.0];
+        }
         match self.batches.last_mut() {
             Some(b) if b.tex.is_none() && b.add && b.clip == self.clip => b.quads.push(q),
             _ => self.batches.push(Batch { tex: None, quads: vec![q], add: true, clip: self.clip }),
@@ -294,6 +304,9 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
 /* ───────── the tuner drum (#drum: 258,866 500x92 — a brushed graphite cylinder with a printed scale) */
 pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
     let (ox, oy, w, h, r) = (258.0f32, 866.0f32, 494.0f32, 92.0f32, 239.0f32);
+    let win = ([ox, oy, ox + w, oy + h], 18.0);
+    cv.mask = Some(win);
+    over.mask = Some(win);
     // body: the cylinder's shading across its width
     let st = [0x0c0d0f, 0x25282d, 0x40444b, 0x565b63, 0x3a3e45, 0x212328, 0x0b0c0e];
     let ps = [0.0, 0.1, 0.3, 0.42, 0.62, 0.88, 1.0];
@@ -369,6 +382,8 @@ pub fn draw_drum(cv: &mut Canvas, over: &mut Canvas, angle_deg: f32) {
     over.light(Quad::glow(px, oy + h / 2.0, 14.0, rgba(0xe63c28, 0.25)));
     over.flat(Quad::grad(px - 4.0, oy + 6.0, 4.0, h - 12.0, rgb(0x7e1a16), rgb(0xec7466), false).rounded(2.0));
     over.flat(Quad::grad(px, oy + 6.0, 4.0, h - 12.0, rgb(0xec7466), rgb(0x8e1d18), false).rounded(2.0));
+    cv.mask = None;
+    over.mask = None;
 }
 
 /* ───────── the trivision (#tv: 156,196 436x432): 15 three-sided slats, a wave of 120° turns */
@@ -436,6 +451,8 @@ impl Trivision {
                     kind: 0.0,
                     radius: 0.0,
                     _pad: 0.0,
+                    mask: [0.0; 4],
+                    mask_r: [0.0; 2],
                 };
                 cv.quad(Some(tex), q);
             }

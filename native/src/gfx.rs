@@ -23,6 +23,9 @@ pub struct Quad {
     /// corner radius (stage px) of a rounded-rect mask; 0 = none
     pub radius: f32,
     pub _pad: f32,
+    /// a rounded-rect clip in stage px (x0, y0, x1, y1; all 0 = none) and its corner radius
+    pub mask: [f32; 4],
+    pub mask_r: [f32; 2],
 }
 
 impl Quad {
@@ -37,40 +40,42 @@ impl Quad {
             kind: 0.0,
             radius: 0.0,
             _pad: 0.0,
+            mask: [0.0; 4],
+            mask_r: [0.0; 2],
         }
     }
     pub fn full() -> Self {
         Self::plate_cut(0.0, 0.0, STAGE_W, STAGE_H, 1.0)
     }
     pub fn flat(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Self {
-        Quad { rect: [x, y, w, h], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 1.0, radius: 0.0, _pad: 0.0 }
+        Quad { rect: [x, y, w, h], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 1.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     pub fn glow(cx: f32, cy: f32, r: f32, color: [f32; 4]) -> Self {
-        Quad { rect: [cx - r, cy - r, 2.0 * r, 2.0 * r], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 2.0, radius: 0.0, _pad: 0.0 }
+        Quad { rect: [cx - r, cy - r, 2.0 * r, 2.0 * r], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 2.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// A linear gradient from `a` to `b`, left -> right (`vertical` = top -> bottom).
     pub fn grad(x: f32, y: f32, w: f32, h: f32, a: [f32; 4], b: [f32; 4], vertical: bool) -> Self {
-        Quad { rect: [x, y, w, h], uv: b, color: a, pivot: [0.0, 0.0], rot: 0.0, kind: 3.0, radius: 0.0, _pad: if vertical { 1.0 } else { 0.0 } }
+        Quad { rect: [x, y, w, h], uv: b, color: a, pivot: [0.0, 0.0], rot: 0.0, kind: 3.0, radius: 0.0, _pad: if vertical { 1.0 } else { 0.0 }, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// Dark scanlines in the window's own pixel rows (every 3rd row), so they never beat against the screen.
     pub fn scan(x: f32, y: f32, w: f32, h: f32, alpha: f32) -> Self {
-        Quad { rect: [x, y, w, h], uv: [0.0; 4], color: [0.0, 0.0, 0.0, alpha], pivot: [0.0, 0.0], rot: 0.0, kind: 4.0, radius: 0.0, _pad: 0.0 }
+        Quad { rect: [x, y, w, h], uv: [0.0; 4], color: [0.0, 0.0, 0.0, alpha], pivot: [0.0, 0.0], rot: 0.0, kind: 4.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// Light outside a circle (centre, radius, softness in stage px): a curved reflection band.
     pub fn arc_light(x: f32, y: f32, w: f32, h: f32, c: [f32; 2], r: f32, soft: f32, aspect: f32, color: [f32; 4]) -> Self {
-        Quad { rect: [x, y, w, h], uv: [c[0], c[1], r, soft], color, pivot: [0.0, 0.0], rot: 0.0, kind: 5.0, radius: 0.0, _pad: aspect }
+        Quad { rect: [x, y, w, h], uv: [c[0], c[1], r, soft], color, pivot: [0.0, 0.0], rot: 0.0, kind: 5.0, radius: 0.0, _pad: aspect, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// A rounded-rect rim of `width`, fading from `top` to `bottom`.
     pub fn rim(x: f32, y: f32, w: f32, h: f32, r: f32, width: f32, top: [f32; 4], bottom: [f32; 4]) -> Self {
-        Quad { rect: [x, y, w, h], uv: bottom, color: top, pivot: [0.0, 0.0], rot: 0.0, kind: 6.0, radius: r, _pad: width }
+        Quad { rect: [x, y, w, h], uv: bottom, color: top, pivot: [0.0, 0.0], rot: 0.0, kind: 6.0, radius: r, _pad: width, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// A dot mesh (pitch, dot radius in stage px).
     pub fn dots(x: f32, y: f32, w: f32, h: f32, pitch: f32, dot: f32, color: [f32; 4]) -> Self {
-        Quad { rect: [x, y, w, h], uv: [pitch, dot, 0.0, 0.0], color, pivot: [0.0, 0.0], rot: 0.0, kind: 7.0, radius: 0.0, _pad: 0.0 }
+        Quad { rect: [x, y, w, h], uv: [pitch, dot, 0.0, 0.0], color, pivot: [0.0, 0.0], rot: 0.0, kind: 7.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     /// A radial gradient filling the quad: `inner` in the middle -> `outer` at the edge.
     pub fn radial(x: f32, y: f32, w: f32, h: f32, inner: [f32; 4], outer: [f32; 4]) -> Self {
-        Quad { rect: [x, y, w, h], uv: outer, color: inner, pivot: [0.0, 0.0], rot: 0.0, kind: 8.0, radius: 0.0, _pad: 0.0 }
+        Quad { rect: [x, y, w, h], uv: outer, color: inner, pivot: [0.0, 0.0], rot: 0.0, kind: 8.0, radius: 0.0, _pad: 0.0, mask: [0.0; 4], mask_r: [0.0; 2] }
     }
     pub fn rounded(mut self, r: f32) -> Self {
         self.radius = r;
@@ -138,6 +143,8 @@ struct Inst {
     @location(4) rot: f32,
     @location(5) kind: f32,
     @location(6) radius: vec2<f32>,
+    @location(7) mask: vec4<f32>,
+    @location(8) mask_r: vec2<f32>,
 };
 struct Out {
     @builtin(position) pos: vec4<f32>,
@@ -150,6 +157,8 @@ struct Out {
     @location(6) uvraw: vec4<f32>,
     @location(7) dir: f32,
     @location(8) stage: vec2<f32>,
+    @location(9) mask: vec4<f32>,
+    @location(10) mask_r: f32,
 };
 
 @vertex
@@ -173,11 +182,25 @@ fn vs(@builtin(vertex_index) vi: u32, i: Inst) -> Out {
     o.uvraw = i.uv;
     o.dir = i.radius.y;
     o.stage = p;
+    o.mask = i.mask;
+    o.mask_r = i.mask_r.x;
     return o;
 }
 
 @fragment
 fn fs(o: Out) -> @location(0) vec4<f32> {
+    var c = shade(o);
+    if (o.mask.z > o.mask.x) {
+        let mc = (o.mask.xy + o.mask.zw) * 0.5;
+        let mh = (o.mask.zw - o.mask.xy) * 0.5;
+        let mq = abs(o.stage - mc) - mh + vec2(o.mask_r);
+        let md = length(max(mq, vec2(0.0))) + min(max(mq.x, mq.y), 0.0) - o.mask_r;
+        c.a = c.a * clamp(0.5 - md, 0.0, 1.0);
+    }
+    return c;
+}
+
+fn shade(o: Out) -> vec4<f32> {
     let t = textureSample(tex, samp, o.uv);   // first: sampling must happen in uniform control flow
     // signed distance to the quad's rounded rect (stage px), and a 1 px antialiased mask
     let half = o.size * 0.5;
@@ -288,7 +311,7 @@ impl Gfx {
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(&view_layout), Some(&tex_layout)], immediate_size: 0 });
-        let attrs = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x2, 4 => Float32, 5 => Float32, 6 => Float32x2];
+        let attrs = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x2, 4 => Float32, 5 => Float32, 6 => Float32x2, 7 => Float32x4, 8 => Float32x2];
         let make = |blend: wgpu::BlendState| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,

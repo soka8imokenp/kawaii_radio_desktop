@@ -622,7 +622,7 @@ impl State {
             flat.quads.push(Quad::flat(cx - 1.2, 723.0, 2.4, 70.0, [0.07, 0.055, 0.045, 1.0]).rotated(piv, rot));
             flat.quads.push(Quad::flat(cx - 5.0, 788.0, 10.0, 10.0, [0.1, 0.08, 0.06, 1.0]).rounded(5.0));
         }
-        let mut cv = Canvas { batches: vec![base, down, Batch { tex: None, quads: halos, add: true, clip: None }], texts: vec![], clip: None };
+        let mut cv = Canvas { batches: vec![base, down, Batch { tex: None, quads: halos, add: true, clip: None }], texts: vec![], clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
         let (pos, dur) = if self.pick {
