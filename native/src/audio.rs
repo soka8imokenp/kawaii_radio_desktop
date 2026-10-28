@@ -90,7 +90,7 @@ impl<S: Source<Item = f32>> Source for Tap<S> {
 /// sound starts at once and a slow network does not stutter at the very start).
 pub struct Prepared {
     pre: VecDeque<f32>,
-    inner: Decoder<crate::stream::Stream>,
+    inner: Box<dyn Source<Item = f32> + Send>,
 }
 
 impl Iterator for Prepared {
@@ -142,7 +142,7 @@ pub fn prepare(url: &str, offset: impl FnOnce() -> Duration) -> Result<Prepared,
         }
     }
     crate::dlog(&format!("prebuffered {:?}", t0.elapsed()));
-    Ok(Prepared { pre, inner: dec })
+    Ok(Prepared { pre, inner: Box::new(dec) })
 }
 
 #[derive(Clone, Copy)]
@@ -202,6 +202,12 @@ fn synth(kind: Sfx) -> Vec<f32> {
         }
     }
     out.iter().map(|v| v * 0.55).collect()
+}
+
+/// A song kept on this computer (SAQLASH), from memory.
+pub fn prepare_bytes(mp3: Vec<u8>) -> Result<Prepared, String> {
+    let dec = Decoder::try_from(std::io::Cursor::new(mp3)).map_err(|e| e.to_string())?;
+    Ok(Prepared { pre: VecDeque::new(), inner: Box::new(dec) })
 }
 
 pub struct Player {

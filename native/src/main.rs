@@ -3,6 +3,7 @@
 // app itself (symphonia + cpal), so it needs no system codecs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod artists;
 mod audio;
 mod chat;
 mod store;
@@ -15,6 +16,7 @@ mod panel;
 mod receipt;
 mod scene;
 mod text;
+mod vault;
 #[cfg(windows)]
 mod win;
 
@@ -102,6 +104,11 @@ enum Msg {
     Toast(String),
     /// an mp3 of the listener's own choice (O'Z TANLOVIM), played from the start
     Pick { track: String, src: audio::Prepared },
+    /// the artist pages from the cloud; a discography fetched (None while loading or missing)
+    Artists(Vec<artists::Artist>),
+    Disco(i64, Option<artists::Disco>),
+    /// SAQLASH: a song kept (or failed)
+    Saved(String, bool),
     /// the system's media controls (keyboard media keys, the Windows volume flyout, Linux MPRIS)
     Media(souvlaki::MediaControlEvent),
     /// a theme's plates, decoded (up, down, glass, logo patch)
@@ -163,6 +170,12 @@ struct State {
     /// the bunny and the chassis patch under it
     logo: (usize, usize),
     media: Option<souvlaki::MediaControls>,
+    artists: Vec<artists::Artist>,
+    discos: HashMap<i64, Option<artists::Disco>>,
+    /// songs kept on this computer, and the key that scrambles them
+    saved: Vec<String>,
+    vault_key: Vec<u8>,
+    saving: Option<String>,
     /// this frame's lights that bloom (LED filaments)
     bloom_q: Vec<Quad>,
     /// the station's schedule from the last tune, the next song being opened (id, start) and the one ready
@@ -485,7 +498,8 @@ impl State {
         let id = id.to_string();
         self.want_pick = Some(id.clone());
         self.toast(&format!("{} · O'Z TANLOVIM", t.title.to_uppercase()));
-        std::thread::spawn(move || match audio::prepare(&net::url(&t.audio_src), || Duration::ZERO) {
+        let kept = vault::has(&id).then(|| self.vault_key.clone());
+        std::thread::spawn(move || match kept.and_then(|k| vault::load(&k, &id)).map(audio::prepare_bytes).unwrap_or_else(|| audio::prepare(&net::url(&t.audio_src), || Duration::ZERO)) {
             Ok(src) => {
                 let _ = p.send_event(Msg::Pick { track: id, src });
             }
@@ -508,6 +522,26 @@ impl State {
         use panel::Act;
         match a {
             Act::Close => self.go(panel::Screen::Home),
+            Act::OpenArtist(id) => {
+                self.panel.page.push(panel::Page::Artist(id));
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
+            Act::OpenAlbum(a, r) => {
+                self.panel.page.push(panel::Page::Album(a, r));
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
+            Act::Unsave(id) => {
+                vault::remove(&id);
+                self.saved = vault::list();
+                self.toast("O'CHIRILDI");
+            }
+            Act::Back if !self.panel.page.is_empty() => {
+                self.panel.page.pop();
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
             Act::Back => {
                 self.panel.open = None;
                 self.panel.scroll = 0.0;
@@ -575,6 +609,9 @@ impl State {
             minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
             songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
             light: self.light,
+            artists: &self.artists,
+            discos: &self.discos,
+            saved: &self.saved,
         }
     }
 
@@ -594,6 +631,8 @@ impl State {
         }
         self.screen_anim = Some((Instant::now(), self.panel.screen));
         self.panel.screen = s;
+        self.panel.page.clear();
+        self.panel.open = None;
     }
 
     /// KUN (light chassis) / TUN (graphite): the plates are swapped (decoded in the background the first time).
@@ -642,6 +681,31 @@ impl State {
             _ if btm => R::South,
             _ => return None,
         })
+    }
+
+    /// SAQLASH: keep the song playing on this computer (Kawaii Pass), scrambled so only this app plays it.
+    fn save_now(&mut self) {
+        let Some(id) = self.now.clone() else { return };
+        if !self.has_kp() {
+            self.toast(if self.acc.is_none() { "SAQLASH · KAWAII ID BILAN KIRING" } else { "SAQLASH · KAWAII PASS KERAK" });
+            return;
+        }
+        if vault::has(&id) {
+            self.toast("ALLAQACHON SAQLANGAN · KUTUBXONA");
+            return;
+        }
+        if self.saving.is_some() {
+            self.toast("SAQLANMOQDA…");
+            return;
+        }
+        let Some(t) = self.tracks.get(&id).cloned() else { return };
+        self.saving = Some(id.clone());
+        self.toast("SAQLANMOQDA…");
+        let (p, key) = (self.proxy.clone(), self.vault_key.clone());
+        std::thread::spawn(move || {
+            let ok = net::bytes(&t.audio_src).ok().is_some_and(|b| vault::save(&key, &id, b).is_ok());
+            let _ = p.send_event(Msg::Saved(id, ok));
+        });
     }
 
     /// Tell the system what plays (title, artist, cover, playing / paused).
@@ -786,7 +850,7 @@ impl State {
                     self.tape.print(&t, &mut self.text, true);
                 }
             }
-            "saqlash" => self.toast("SAQLASH · TEZ ORADA"),
+            "saqlash" => self.save_now(),
             "prev" | "next" => {
                 if self.pick {
                     // back: the start of this song first (after 3 s), then the song before
@@ -882,6 +946,7 @@ impl State {
             "nav3" => self.panel.screen == panel::Screen::Profile,
             "gear" => self.panel.screen == panel::Screen::Settings,
             "heart" => self.now.as_ref().is_some_and(|n| self.liked.contains(n)),
+            "saqlash" => self.now.as_ref().is_some_and(|n| self.saved.contains(n)),
             "sl_radio" | "sl_pick" => false,
             "st0" | "st1" | "st2" => !self.pick && STATIONS[id[2..].parse::<usize>().unwrap()] == self.station,
             _ => false,
@@ -1239,6 +1304,9 @@ impl State {
                     minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
                     songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
                     light: self.light,
+                    artists: &self.artists,
+                    discos: &self.discos,
+                    saved: &self.saved,
                 };
                 let real = panel.screen;
                 panel.screen = shown;
@@ -1246,6 +1314,15 @@ impl State {
                 panel.draw(&mut cv, &mut over, &mut self.text, &cx, &mut img);
                 let m1 = (marker(&mut cv), marker(&mut over));
                 panel.screen = real;
+                if let Some(d) = panel.want_disco.take() {
+                    if !self.discos.contains_key(&d) {
+                        self.discos.insert(d, None);
+                        let p = self.proxy.clone();
+                        std::thread::spawn(move || {
+                            let _ = p.send_event(Msg::Disco(d, artists::disco(d)));
+                        });
+                    }
+                }
                 if let Some((reveal, k)) = phase {
                     for (a, b) in [(m_ly, m_ly_end), (m0, m1)] {
                         if reveal {
@@ -1444,6 +1521,11 @@ impl ApplicationHandler<Msg> for App {
             edge: None,
             slots: vec![],
             media: None,
+            artists: artists::cached(),
+            discos: HashMap::new(),
+            saved: vault::list(),
+            vault_key: vec![],
+            saving: None,
             bloom_q: vec![],
             preload: None,
             preloaded: None,
@@ -1523,6 +1605,23 @@ impl ApplicationHandler<Msg> for App {
                     }
                 }
             }
+            // this install's key for the kept songs (made once)
+            st.vault_key = match st.store.get("vault").and_then(|v| v.as_str()).map(String::from) {
+                Some(k) => k.into_bytes(),
+                None => {
+                    let mut b = [0u8; 24];
+                    let _ = store::random(&mut b);
+                    let k: String = b.iter().map(|x| format!("{x:02x}")).collect();
+                    st.store.set("vault", k.clone().into());
+                    k.into_bytes()
+                }
+            };
+            let p6 = self.proxy.clone();
+            std::thread::spawn(move || {
+                if let Some(a) = artists::fetch() {
+                    let _ = p6.send_event(Msg::Artists(a));
+                }
+            });
             if st.store.get("theme").and_then(|v| v.as_str()) == Some("light") {
                 st.set_theme(true);
             }
@@ -1643,6 +1742,16 @@ impl ApplicationHandler<Msg> for App {
                 }
             }
             Msg::Stickers(m) => st.chat.stickers = m,
+            Msg::Artists(a) => st.artists = a,
+            Msg::Disco(d, x) => {
+                st.discos.insert(d, Some(x.unwrap_or_default()));
+            }
+            Msg::Saved(id, ok) => {
+                st.saving = None;
+                st.saved = vault::list();
+                st.toast(if ok { "SAQLANDI · INTERNETSIZ HAM TINGLANADI" } else { "SAQLAB BO'LMADI" });
+                let _ = id;
+            }
             Msg::Media(e) => {
                 use souvlaki::MediaControlEvent as E;
                 match e {

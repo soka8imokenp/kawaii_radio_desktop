@@ -29,6 +29,16 @@ pub enum Act {
     Update,
     FocusSearch,
     Theme(bool),
+    OpenArtist(String),
+    OpenAlbum(String, String),
+    Unsave(String),
+}
+
+/// A page opened over a screen (an artist, one of their releases); ‹ ORQAGA goes back.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Page {
+    Artist(String),
+    Album(String, String),
 }
 
 pub struct Panel {
@@ -42,6 +52,10 @@ pub struct Panel {
     /// the open list in KUTUBXONA: "liked" or a playlist id
     pub open: Option<String>,
     pub hits: Vec<([f32; 4], Act)>,
+    /// artist / album pages opened over the screen
+    pub page: Vec<Page>,
+    /// a discography the page needs (main.rs fetches it)
+    pub want_disco: Option<i64>,
 }
 
 fn c8(hex: u32, a: f32) -> [u8; 4] {
@@ -65,11 +79,14 @@ pub struct Ctx<'a> {
     pub minutes: u64,
     pub songs: u64,
     pub light: bool,
+    pub artists: &'a [crate::artists::Artist],
+    pub discos: &'a HashMap<i64, Option<crate::artists::Disco>>,
+    pub saved: &'a [String],
 }
 
 impl Panel {
     pub fn new() -> Self {
-        Panel { screen: Screen::Home, query: String::new(), scroll: 0.0, goal: 0.0, max: 0.0, last: std::time::Instant::now(), open: None, hits: vec![] }
+        Panel { screen: Screen::Home, query: String::new(), scroll: 0.0, goal: 0.0, max: 0.0, last: std::time::Instant::now(), open: None, hits: vec![], page: vec![], want_disco: None }
     }
 
     pub fn hit(&self, x: f32, y: f32) -> Option<Act> {
@@ -78,6 +95,15 @@ impl Panel {
 
     /// The songs the panel lists now (search results, or the open list in the library).
     pub fn list(&self, cx: &Ctx) -> Vec<Track> {
+        match self.page.last() {
+            Some(Page::Artist(id)) => return cx.artists.iter().find(|a| &a.id == id).map(|a| a.songs(cx.tracks)).unwrap_or_default(),
+            Some(Page::Album(aid, rid)) => {
+                let a = cx.artists.iter().find(|a| &a.id == aid);
+                let r = a.and_then(|a| a.deezer).and_then(|d| cx.discos.get(&d)).and_then(|d| d.as_ref()).and_then(|d| d.releases.iter().find(|r| &r.id == rid));
+                return r.map(|r| r.ours().iter().filter_map(|i| cx.tracks.get(i).cloned()).collect()).unwrap_or_default();
+            }
+            None => {}
+        }
         match self.screen {
             Screen::Search => {
                 let q = norm(self.query.trim());
@@ -88,6 +114,7 @@ impl Panel {
             }
             Screen::Library => match self.open.as_deref() {
                 Some("liked") => cx.liked.iter().rev().filter_map(|id| cx.tracks.get(id).cloned()).collect(),
+                Some("saved") => cx.saved.iter().filter_map(|id| cx.tracks.get(id).cloned()).collect(),
                 Some(p) => cx.playlists.iter().find(|x| x.0 == p).map(|x| x.2.iter().filter_map(|id| cx.tracks.get(id).cloned()).collect()).unwrap_or_default(),
                 None => vec![],
             },
@@ -120,6 +147,11 @@ impl Panel {
             Screen::Settings => ("SOZLAMALAR", format!("KR-01 DESK · v{}", cx.version)),
             Screen::Home => unreachable!(),
         };
+        let (title, sub) = match self.page.last() {
+            Some(Page::Artist(_)) => ("IJROCHI", "Kawaii Radio · ijrochilar".to_string()),
+            Some(Page::Album(..)) => ("RELIZ", "Ma'lumot: Deezer".to_string()),
+            None => (title, sub),
+        };
         cv.text(Txt::new(title, text::VT, 34.0, px, y0 + 16.0, c8(0xe6ff9a, 1.0)));
         let tw = tl.measure(&Txt::new(title, text::VT, 34.0, 0.0, 0.0, [0; 4]));
         cv.text(Txt::new(sub, text::MONO, 13.0, px + tw + 16.0, y0 + 30.0, c8(0x8f9a6a, 1.0)));
@@ -131,6 +163,21 @@ impl Panel {
         let mut y = body[1] + 8.0 - self.scroll;
         let row_h = 58.0;
         let mut hits = std::mem::take(&mut self.hits);
+        if let Some(pg) = self.page.last().cloned() {
+            cv.text(Txt::new("‹ ORQAGA", text::VT, 22.0, px, y, c8(0xc4e078, 1.0)).clip(body));
+            hits.push(([px - 8.0, y - 4.0, px + 140.0, y + 28.0], Act::Back));
+            y += 40.0;
+            match pg {
+                Page::Artist(id) => self.artist_page(cv, tl, cx, img, &mut hits, &mut y, &id, (px, w, x1, body, row_h)),
+                Page::Album(aid, rid) => self.album_page(cv, cx, img, &mut hits, &mut y, &aid, &rid, (px, w, x1, body, row_h)),
+            }
+            self.hits = hits;
+            let total = y + self.scroll - body[1];
+            self.max = (total - (body[3] - body[1]) + 20.0).max(0.0);
+            cv.clip = None;
+            let _ = over;
+            return;
+        }
         match self.screen {
             Screen::Search => {
                 // the search field
@@ -145,6 +192,23 @@ impl Panel {
                 }
                 hits.push((f, Act::FocusSearch));
                 y += 58.0;
+                // IJROCHILAR: the artists whose name matches (all of them, most songs first, when nothing is typed)
+                let q = norm(self.query.trim());
+                let mut found: Vec<&crate::artists::Artist> = cx.artists.iter().filter(|a| q.is_empty() || norm(&a.name).contains(&q) || a.aliases.iter().any(|x| norm(x).contains(&q))).collect();
+                if q.is_empty() {
+                    let n = |a: &crate::artists::Artist| cx.tracks.values().filter(|t| a.sings(&t.artist)).count();
+                    let mut sc: Vec<(usize, &crate::artists::Artist)> = found.iter().map(|a| (n(a), *a)).collect();
+                    sc.sort_by(|a, b| b.0.cmp(&a.0));
+                    found = sc.into_iter().map(|x| x.1).collect();
+                }
+                if !found.is_empty() {
+                    cv.text(Txt::new("IJROCHILAR", text::MONO, 12.0, px, y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+                    y += 20.0;
+                    artist_strip(cv, img, &mut hits, px, y, found.into_iter().take(7).collect(), body);
+                    y += 118.0;
+                    cv.text(Txt::new("QO'SHIQLAR", text::MONO, 12.0, px, y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+                    y += 22.0;
+                }
                 let list = self.list(cx);
                 rows(cv, list, &mut y, &mut hits, "Hech narsa topilmadi.", cx, img, (px, w, x1, body, row_h));
             }
@@ -154,9 +218,24 @@ impl Panel {
                     hits.push(([px - 8.0, y - 4.0, px + 140.0, y + 28.0], Act::Back));
                     y += 38.0;
                     let list = self.list(cx);
-                    rows(cv, list, &mut y, &mut hits, "Bu ro'yxat bo'sh.", cx, img, (px, w, x1, body, row_h));
+                    let saved_list = self.open.as_deref() == Some("saved");
+                    let y_list = y;
+                    let ids: Vec<String> = list.iter().map(|t| t.id.clone()).collect();
+                    rows(cv, list, &mut y, &mut hits, if saved_list { "Hali hech narsa yuklanmagan. Qo'shiq chalayotganda SAQLASH tugmasini bosing (Kawaii Pass)." } else { "Bu ro'yxat bo'sh." }, cx, img, (px, w, x1, body, row_h));
+                    if saved_list {
+                        for (k, id) in ids.into_iter().enumerate() {
+                            let ry = y_list + k as f32 * row_h;
+                            if ry + row_h > body[1] && ry < body[3] {
+                                cv.text(Txt::new("×", text::VT, 26.0, x1 - 112.0, ry + 8.0, c8(0xff8a7a, 0.9)).clip(body));
+                                hits.push(([x1 - 122.0, ry, x1 - 86.0, ry + 40.0], Act::Unsave(id)));
+                            }
+                        }
+                    }
                 } else {
-                    let mut items: Vec<(String, String, Vec<String>)> = vec![("liked".into(), "♥ SEVIMLILAR".into(), cx.liked.iter().rev().cloned().collect())];
+                    let mut items: Vec<(String, String, Vec<String>)> = vec![
+                        ("liked".into(), "♥ SEVIMLILAR".into(), cx.liked.iter().rev().cloned().collect()),
+                        ("saved".into(), "⬇ YUKLANGANLAR".into(), cx.saved.to_vec()),
+                    ];
                     items.extend(cx.playlists.iter().cloned());
                     for (id, name, ids) in items {
                         let cover = ids.iter().filter_map(|i| cx.tracks.get(i)).next().and_then(|t| img(&crate::net::url(&t.cover_art)));
@@ -169,6 +248,21 @@ impl Panel {
                         cv.text(Txt::new("›", text::VT, 30.0, x1 - 50.0, y + 8.0, c8(0x9fb070, 1.0)).clip(body));
                         hits.push(([px - 8.0, y - 4.0, x1 - 30.0, y + 58.0], Act::OpenList(id)));
                         y += 66.0;
+                    }
+                    // SEVIMLI IJROCHILAR: the artists of the liked songs, the most liked first
+                    let mut fav: Vec<(usize, &crate::artists::Artist)> = cx
+                        .artists
+                        .iter()
+                        .map(|a| (cx.liked.iter().filter_map(|id| cx.tracks.get(id)).filter(|t| a.sings(&t.artist)).count(), a))
+                        .filter(|x| x.0 > 0)
+                        .collect();
+                    fav.sort_by(|a, b| b.0.cmp(&a.0));
+                    if !fav.is_empty() {
+                        y += 6.0;
+                        cv.text(Txt::new("SEVIMLI IJROCHILAR", text::MONO, 12.0, px, y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+                        y += 20.0;
+                        artist_strip(cv, img, &mut hits, px, y, fav.into_iter().take(7).map(|x| x.1).collect(), body);
+                        y += 124.0;
                     }
                     if cx.acc.is_none() {
                         cv.text(Txt::new("Telefondagi pleylistlar va sevimlilar Kawaii ID bilan kirgandan keyin shu yerda chiqadi.", text::MONO, 14.0, px, y + 6.0, c8(0x8f9a6a, 1.0)).wrap(w - 90.0).clip(body));
@@ -280,6 +374,157 @@ impl Panel {
         self.max = (total - (body[3] - body[1]) + 20.0).max(0.0);
         cv.clip = None;
         let _ = over;
+    }
+}
+
+/// A row of artist photos (round) with their names; a click opens the artist.
+fn artist_strip(cv: &mut Canvas, img: &mut dyn FnMut(&str) -> Option<usize>, hits: &mut Vec<([f32; 4], Act)>, px: f32, y: f32, list: Vec<&crate::artists::Artist>, body: [f32; 4]) {
+    for (k, a) in list.into_iter().enumerate() {
+        let x = px + k as f32 * 96.0;
+        let pic = a.thumb.as_ref().or(a.picture.as_ref()).and_then(|u| img(u));
+        cv.flat(Quad::flat(x + 6.0, y, 76.0, 76.0, rgba(0xc4e078, 0.25)).rounded(38.0));
+        match pic {
+            Some(t) => cv.quad(Some(t), Quad { rect: [x + 8.0, y + 2.0, 72.0, 72.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 36.0, ..Quad::full() }),
+            None => cv.flat(Quad::flat(x + 8.0, y + 2.0, 72.0, 72.0, rgb(0x1d2a20)).rounded(36.0)),
+        }
+        cv.text(Txt::new(a.name.clone(), text::MR, 13.0, x + 44.0, y + 82.0, c8(0xe6ff9a, 1.0)).weight(700).align(Align::Center).clip([x, body[1], x + 90.0, body[3]]));
+        hits.push(([x, y, x + 90.0, y + 102.0], Act::OpenArtist(a.id.clone())));
+    }
+}
+
+impl Panel {
+    /// An artist: photo, who they are, the story, the best-known songs, our songs (playable), the discography.
+    #[allow(clippy::too_many_arguments)]
+    fn artist_page(&mut self, cv: &mut Canvas, tl: &mut text::TextLayer, cx: &Ctx, img: &mut dyn FnMut(&str) -> Option<usize>, hits: &mut Vec<([f32; 4], Act)>, y: &mut f32, id: &str, g: (f32, f32, f32, [f32; 4], f32)) {
+        let (px, w, x1, body, _) = g;
+        let Some(a) = cx.artists.iter().find(|a| a.id == id) else { return };
+        let pic = a.picture.as_ref().or(a.thumb.as_ref()).and_then(|u| img(u));
+        match pic {
+            Some(t) => cv.quad(Some(t), Quad { rect: [px, *y, 128.0, 128.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 16.0, ..Quad::full() }),
+            None => cv.flat(Quad::flat(px, *y, 128.0, 128.0, rgb(0x1d2a20)).rounded(16.0)),
+        }
+        let tx = px + 146.0;
+        let tw = x1 - 50.0 - tx;
+        cv.text(Txt::new(a.name.clone(), text::MR, 28.0, tx, *y, c8(0xe6ff9a, 1.0)).weight(800).clip(body).glow([230, 255, 154, 50], 2.0));
+        let tag = Txt::new(a.tagline.clone(), text::MR, 15.0, tx, *y + 42.0, c8(0xc9d79a, 1.0)).weight(500).wrap(tw).line(21.0).clip(body);
+        let (_, th) = tl.measure2(&tag);
+        cv.text(tag);
+        let meta: Vec<&str> = [a.genre.as_str(), a.origin.as_str(), a.since.as_str()].into_iter().filter(|s| !s.is_empty()).collect();
+        cv.text(Txt::new(meta.join(" · "), text::MONO, 13.0, tx, *y + 50.0 + th, c8(0x8f9a6a, 1.0)).wrap(tw).clip(body));
+        *y += (140.0f32).max(74.0 + th);
+        let label = |cv: &mut Canvas, y: &mut f32, t: &str| {
+            cv.text(Txt::new(t, text::MONO, 12.0, px, *y, c8(0xa9b97a, 1.0)).weight(700).clip(body));
+            *y += 22.0;
+        };
+        if !a.bio.is_empty() {
+            label(cv, y, "IJROCHI HAQIDA");
+            for para in &a.bio {
+                let t = Txt::new(para.clone(), text::MR, 15.0, px, *y, c8(0xd6dcc0, 1.0)).weight(500).wrap(w - 90.0).line(22.0).clip(body);
+                let (_, h) = tl.measure2(&t);
+                cv.text(t);
+                *y += h + 10.0;
+            }
+            if let Some(src) = &a.picture_source {
+                cv.text(Txt::new(format!("Rasm: {src}"), text::MONO, 11.0, px, *y, c8(0x6b7350, 1.0)).clip(body));
+                *y += 20.0;
+            }
+            *y += 6.0;
+        }
+        if !a.known.is_empty() {
+            label(cv, y, "ENG MASHHUR QO'SHIQLARI");
+            let mut cx_ = px;
+            for k in &a.known {
+                let t = Txt::new(format!("♪ {k}"), text::MR, 14.0, 0.0, 0.0, c8(0xe6ff9a, 1.0)).weight(600);
+                let cw = tl.measure(&t) + 22.0;
+                if cx_ + cw > x1 - 40.0 {
+                    cx_ = px;
+                    *y += 36.0;
+                }
+                cv.flat(Quad::flat(cx_, *y, cw, 28.0, rgba(0xc4e078, 0.1)).rounded(14.0));
+                cv.text(Txt { x: cx_ + 11.0, y: *y + 5.0, clip: body, ..t });
+                cx_ += cw + 8.0;
+            }
+            *y += 44.0;
+        }
+        let songs = a.songs(cx.tracks);
+        label(cv, y, &format!("KAWAII RADIO'DA · {} TA QO'SHIQ", songs.len()));
+        rows(cv, songs, y, hits, "Hozircha bu ijrochining qo'shig'i efirda yo'q.", cx, img, g);
+        *y += 8.0;
+        // the discography
+        if let Some(d) = a.deezer {
+            match cx.discos.get(&d) {
+                Some(Some(disco)) if !disco.releases.is_empty() => {
+                    label(cv, y, &format!("DISKOGRAFIYA · {}", disco.releases.len()));
+                    for r in &disco.releases {
+                        if *y + 60.0 > body[1] - 10.0 && *y < body[3] + 10.0 {
+                            match r.thumb.as_ref().or(r.cover.as_ref()).and_then(|u| img(u)) {
+                                Some(t) => cv.quad(Some(t), Quad { rect: [px, *y, 52.0, 52.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 6.0, ..Quad::full() }),
+                                None => cv.flat(Quad::flat(px, *y, 52.0, 52.0, rgb(0x1d2a20)).rounded(6.0)),
+                            }
+                            let cl = [body[0], body[1].max(*y - 4.0), x1 - 60.0, body[3]];
+                            cv.text(Txt::new(r.title.clone(), text::MR, 16.0, px + 66.0, *y + 4.0, c8(0xe6ff9a, 1.0)).weight(700).clip(cl));
+                            let ours = r.ours().len();
+                            let mut sub = format!("{} · {}", r.kind_uz(), r.year.map(|v| v.to_string()).unwrap_or_default());
+                            if ours > 0 {
+                                sub += &format!(" · Kawaii Radio'da: {ours}");
+                            }
+                            cv.text(Txt::new(sub, text::MR, 13.0, px + 66.0, *y + 28.0, c8(if ours > 0 { 0xc4e078 } else { 0x8f9a6a }, 1.0)).weight(500).clip(cl));
+                            cv.text(Txt::new("›", text::VT, 30.0, x1 - 50.0, *y + 8.0, c8(0x9fb070, 1.0)).clip(body));
+                            hits.push(([px - 8.0, (*y - 4.0).max(body[1]), x1 - 30.0, (*y + 58.0).min(body[3])], Act::OpenAlbum(a.id.clone(), r.id.clone())));
+                        }
+                        *y += 64.0;
+                    }
+                }
+                Some(Some(_)) => {}
+                Some(None) => {
+                    cv.text(Txt::new("DISKOGRAFIYA · yuklanmoqda…", text::MONO, 13.0, px, *y, c8(0x8f9a6a, 1.0)).clip(body));
+                    *y += 30.0;
+                }
+                None => self.want_disco = Some(d),
+            }
+        }
+    }
+
+    /// One release: its cover, what it is, the track list (our songs lit and playable).
+    #[allow(clippy::too_many_arguments)]
+    fn album_page(&mut self, cv: &mut Canvas, cx: &Ctx, img: &mut dyn FnMut(&str) -> Option<usize>, hits: &mut Vec<([f32; 4], Act)>, y: &mut f32, aid: &str, rid: &str, g: (f32, f32, f32, [f32; 4], f32)) {
+        let (px, _w, x1, body, _) = g;
+        let Some(a) = cx.artists.iter().find(|a| a.id == aid) else { return };
+        let Some(r) = a.deezer.and_then(|d| cx.discos.get(&d)).and_then(|d| d.as_ref()).and_then(|d| d.releases.iter().find(|r| r.id == rid)) else { return };
+        match r.cover.as_ref().or(r.thumb.as_ref()).and_then(|u| img(u)) {
+            Some(t) => cv.quad(Some(t), Quad { rect: [px, *y, 140.0, 140.0], uv: [0.0, 0.0, 1.0, 1.0], radius: 10.0, ..Quad::full() }),
+            None => cv.flat(Quad::flat(px, *y, 140.0, 140.0, rgb(0x1d2a20)).rounded(10.0)),
+        }
+        let tx = px + 158.0;
+        cv.text(Txt::new(r.title.clone(), text::MR, 24.0, tx, *y + 4.0, c8(0xe6ff9a, 1.0)).weight(800).wrap(x1 - 50.0 - tx).line(30.0).clip(body));
+        cv.text(Txt::new(a.name.clone(), text::MR, 15.0, tx, *y + 72.0, c8(0xc9d79a, 1.0)).weight(600).clip(body));
+        let total: i64 = r.tracks.iter().map(|t| t.duration).sum();
+        let date = r.date.clone().or(r.year.map(|v| v.to_string())).unwrap_or_default();
+        cv.text(Txt::new(format!("{} · {} · {} ta trek · {} daq", r.kind_uz(), date, r.tracks.len(), total / 60), text::MONO, 13.0, tx, *y + 98.0, c8(0x8f9a6a, 1.0)).clip(body));
+        *y += 160.0;
+        for t in &r.tracks {
+            if *y + 36.0 > body[1] - 10.0 && *y < body[3] + 10.0 {
+                let ours = t.track.as_ref().filter(|id| cx.tracks.contains_key(*id));
+                let now = ours.is_some_and(|id| cx.now == Some(id.as_str()));
+                if now {
+                    cv.flat(Quad::flat(px - 8.0, *y - 4.0, x1 - 30.0 - px, 34.0, rgba(0xc4e078, 0.08)).rounded(6.0));
+                }
+                let ink = if ours.is_some() { 0xe6ff9a } else { 0x6f7856 };
+                cv.text(Txt::new(format!("{:02}", t.n), text::VT, 22.0, px, *y, c8(0x7c8456, 1.0)).clip(body));
+                cv.text(Txt::new(t.title.clone(), text::MR, 15.0, px + 40.0, *y + 3.0, c8(ink, 1.0)).weight(if ours.is_some() { 700 } else { 500 }).clip([body[0], body[1], x1 - 140.0, body[3]]));
+                if ours.is_some() {
+                    cv.text(Txt::new("▶ EFIRDA", text::VT, 18.0, x1 - 130.0, *y + 2.0, c8(0xc4e078, 0.9)).clip(body));
+                }
+                cv.text(Txt::new(format!("{}:{:02}", t.duration / 60, t.duration % 60), text::VT, 22.0, x1 - 52.0, *y, c8(0x9fb070, 1.0)).align(Align::Right).clip(body));
+                if let Some(id) = ours {
+                    hits.push(([px - 8.0, (*y - 4.0).max(body[1]), x1 - 30.0, (*y + 30.0).min(body[3])], Act::Play(id.clone())));
+                }
+            }
+            *y += 36.0;
+        }
+        *y += 10.0;
+        cv.text(Txt::new("Ma'lumot: Deezer", text::MONO, 11.0, px, *y, c8(0x6b7350, 1.0)).clip(body));
+        *y += 24.0;
     }
 }
 

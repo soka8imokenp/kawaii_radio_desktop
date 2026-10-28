@@ -49,6 +49,10 @@ impl Store {
 }
 
 /// Random bytes without another dependency: the OS's own source.
+pub fn random(buf: &mut [u8]) -> std::io::Result<()> {
+    getrandom(buf)
+}
+
 fn getrandom(buf: &mut [u8]) -> std::io::Result<()> {
     #[cfg(windows)]
     {
