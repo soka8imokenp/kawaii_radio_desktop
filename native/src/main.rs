@@ -4,6 +4,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod chat;
+mod store;
 mod gfx;
 mod net;
 mod scene;
@@ -30,6 +32,9 @@ enum Msg {
     /// an mp3 to play now, from `offset`, for this station / track
     Tune { station: String, track: String, mp3: Vec<u8>, offset: Duration, start: i64, dur: i64, skew: i64 },
     Cover { track: String, img: image::RgbaImage },
+    Chat(serde_json::Value),
+    Image { url: String, img: Option<image::RgbaImage> },
+    Stickers(HashMap<String, String>),
     Error(String),
 }
 
@@ -99,6 +104,12 @@ struct State {
     over: Vec<Batch>,
     texts: Vec<text::Txt>,
     covers: HashMap<String, usize>,
+    store: store::Store,
+    chat: chat::Chat,
+    /// pictures by URL: Some(texture) once loaded, None while loading (or failed)
+    images: HashMap<String, Option<usize>>,
+    started: Instant,
+    proxy: EventLoopProxy<Msg>,
 }
 
 struct App {
@@ -226,9 +237,9 @@ impl State {
             }
         }
 
-        let base = Batch { tex: Some(self.up), quads: vec![Quad::full()], add: false };
+        let base = Batch { tex: Some(self.up), quads: vec![Quad::full()], add: false, clip: None };
         // pressed / latched keys: their own shape cut from the "down" plate, nothing around them changes
-        let mut down = Batch { tex: Some(self.down), quads: vec![], add: false };
+        let mut down = Batch { tex: Some(self.down), quads: vec![], add: false, clip: None };
         for i in 0..self.keys.len() {
             if self.key_down(i) {
                 let k = &self.keys[i];
@@ -253,7 +264,7 @@ impl State {
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
-        let mut flat = Batch { tex: None, quads: vec![], add: false };
+        let mut flat = Batch { tex: None, quads: vec![], add: false, clip: None };
         for (k, cx) in [240.0f32, 468.0].into_iter().enumerate() {
             let piv = [cx, 793.0];
             let rot = self.vu[k].0.to_radians();
@@ -261,7 +272,7 @@ impl State {
             flat.quads.push(Quad::flat(cx - 1.2, 723.0, 2.4, 70.0, [0.07, 0.055, 0.045, 1.0]).rotated(piv, rot));
             flat.quads.push(Quad::flat(cx - 5.0, 788.0, 10.0, 10.0, [0.1, 0.08, 0.06, 1.0]).rounded(5.0));
         }
-        let mut cv = Canvas { batches: vec![base, down], texts: vec![] };
+        let mut cv = Canvas { batches: vec![base, down], texts: vec![], clip: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
         let pos = if self.slot.0 > 0 { ((net::now_ms() + self.slot.2 - self.slot.0) as f64 / 1000.0).max(0.0) } else { 0.0 };
@@ -276,9 +287,34 @@ impl State {
         self.drum += self.drum_kick * 0.02 * 57.3 * (dt * 60.0);
         self.drum_kick *= 0.9f32.powf(dt * 60.0);
         scene::draw_drum(&mut cv, &mut over, self.drum);
+        chat::draw_listeners(&mut cv, self.chat.live, self.started.elapsed().as_secs_f32(), self.level);
+        {
+            let proxy = self.proxy.clone();
+            let images = &mut self.images;
+            let mut img = |u: &str| -> Option<usize> {
+                match images.get(u) {
+                    Some(t) => *t,
+                    None => {
+                        images.insert(u.to_string(), None);
+                        let (u2, p) = (u.to_string(), proxy.clone());
+                        std::thread::spawn(move || {
+                            let im = net::bytes(&u2).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| {
+                                let i = i.to_rgba8();
+                                let (w, h) = i.dimensions();
+                                let k = (220.0 / w.max(h) as f32).min(1.0);
+                                image::imageops::resize(&i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1), image::imageops::FilterType::Triangle)
+                            });
+                            let _ = p.send_event(Msg::Image { url: u2, img: im });
+                        });
+                        None
+                    }
+                }
+            };
+            self.chat.draw(&mut cv, &mut over, &mut self.text, &self.tracks, &mut img);
+        }
         cv.batches.push(flat);
         // the rendered cover glass over everything, except the lyrics tube (it has its own lens)
-        let mut glass = Batch { tex: Some(self.glass), quads: vec![], add: false };
+        let mut glass = Batch { tex: Some(self.glass), quads: vec![], add: false, clip: None };
         let [gx0, gy0, gx1, gy1] = [618.0, 198.0, 1362.0, 626.0];
         glass.quads.push(Quad::plate_cut(0.0, 0.0, 1920.0, gy0, 1.0));
         glass.quads.push(Quad::plate_cut(0.0, gy1, 1920.0, 1080.0, 1.0));
@@ -308,6 +344,28 @@ impl ApplicationHandler<Msg> for App {
         let down = load(&mut gfx, PLATE_DOWN);
         let glass = load(&mut gfx, GLASS);
         let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
+        // the chat: one socket, a hello with this computer's identity
+        let mut store = store::Store::open();
+        let (uid, key) = store.chat_id();
+        let mut chat = chat::Chat::new();
+        let (tx, rx) = std::sync::mpsc::channel();
+        chat.out = Some(tx);
+        let hello = serde_json::json!({ "type": "hello", "uid": uid, "key": key, "name": "Mehmon", "avatar": "p:0", "live": true, "fg": true,
+            "card": { "now": null, "likes": 0, "plays": 0, "minutes": 0 } });
+        let p3 = self.proxy.clone();
+        chat::connect(hello, rx, move |v| {
+            let _ = p3.send_event(Msg::Chat(v));
+        });
+        let p4 = self.proxy.clone();
+        std::thread::spawn(move || {
+            let r = (|| -> Option<HashMap<String, String>> {
+                let v: serde_json::Value = serde_json::from_slice(&net::bytes("/files/stickers/pack.json").ok()?).ok()?;
+                Some(v.get("stickers")?.as_array()?.iter().filter_map(|s| Some((s.get("id")?.as_str()?.to_string(), s.get("file")?.as_str()?.to_string()))).collect())
+            })();
+            if let Some(m) = r {
+                let _ = p4.send_event(Msg::Stickers(m));
+            }
+        });
         let player = audio::Player::new().map_err(|e| eprintln!("audio: {e}")).ok();
         let volume = 0.8;
         if let Some(p) = &player {
@@ -350,6 +408,11 @@ impl ApplicationHandler<Msg> for App {
             over: vec![],
             texts: vec![],
             covers: HashMap::new(),
+            store,
+            chat,
+            images: HashMap::new(),
+            started: Instant::now(),
+            proxy: self.proxy.clone(),
         });
         window.request_redraw();
     }
@@ -358,6 +421,15 @@ impl ApplicationHandler<Msg> for App {
         let Some(st) = self.st.as_mut() else { return };
         match msg {
             Msg::Tracks(t) => st.tracks = t,
+            Msg::Chat(v) => st.chat.on_server(&v),
+            Msg::Stickers(m) => st.chat.stickers = m,
+            Msg::Image { url, img } => {
+                let tex = img.map(|i| {
+                    let (w, h) = i.dimensions();
+                    st.gfx.texture_rgba(w, h, &i)
+                });
+                st.images.insert(url, tex);
+            }
             Msg::Cover { track, img } => {
                 let (w, h) = img.dimensions();
                 let tex = st.gfx.texture_rgba(w, h, &img);
@@ -434,7 +506,14 @@ impl ApplicationHandler<Msg> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = st.cursor;
-                if ((x - 1250.0).powi(2) + (y - 958.0).powi(2)).sqrt() < 110.0 {
+                let [cx0, cy0, cx1, cy1] = chat::TUBE;
+                if x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 {
+                    let d = match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y * 60.0,
+                        MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                    };
+                    st.chat.scroll += d;
+                } else if ((x - 1250.0).powi(2) + (y - 958.0).powi(2)).sqrt() < 110.0 {
                     let d = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y * 0.05,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32 * 0.002,

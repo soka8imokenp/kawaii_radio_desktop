@@ -11,22 +11,24 @@ use std::time::Instant;
 pub struct Canvas {
     pub batches: Vec<Batch>,
     pub texts: Vec<Txt>,
+    /// new quads are drawn only inside this stage rect
+    pub clip: Option<[f32; 4]>,
 }
 
 impl Canvas {
     pub fn new() -> Self {
-        Canvas { batches: vec![], texts: vec![] }
+        Canvas { batches: vec![], texts: vec![], clip: None }
     }
     pub fn quad(&mut self, tex: Option<usize>, q: Quad) {
         match self.batches.last_mut() {
-            Some(b) if b.tex == tex && !b.add => b.quads.push(q),
-            _ => self.batches.push(Batch { tex, quads: vec![q], add: false }),
+            Some(b) if b.tex == tex && !b.add && b.clip == self.clip => b.quads.push(q),
+            _ => self.batches.push(Batch { tex, quads: vec![q], add: false, clip: self.clip }),
         }
     }
     pub fn light(&mut self, q: Quad) {
         match self.batches.last_mut() {
-            Some(b) if b.tex.is_none() && b.add => b.quads.push(q),
-            _ => self.batches.push(Batch { tex: None, quads: vec![q], add: true }),
+            Some(b) if b.tex.is_none() && b.add && b.clip == self.clip => b.quads.push(q),
+            _ => self.batches.push(Batch { tex: None, quads: vec![q], add: true, clip: self.clip }),
         }
     }
     pub fn flat(&mut self, q: Quad) {

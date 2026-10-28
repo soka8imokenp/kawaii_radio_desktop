@@ -136,6 +136,19 @@ impl TextLayer {
         b.layout_runs().map(|r| r.line_w).fold(0.0, f32::max)
     }
 
+    /// Width and height (stage px) of a laid-out text.
+    pub fn measure2(&mut self, t: &Txt) -> (f32, f32) {
+        let key = t.key();
+        self.ensure(t, &key);
+        let b = &self.cache[&key].0;
+        let (mut w, mut n) = (0.0f32, 0);
+        for r in b.layout_runs() {
+            w = w.max(r.line_w);
+            n += 1;
+        }
+        (w, n as f32 * t.line)
+    }
+
     fn ensure(&mut self, t: &Txt, key: &str) {
         let frame = self.frame;
         if let Some(e) = self.cache.get_mut(key) {

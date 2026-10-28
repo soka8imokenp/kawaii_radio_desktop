@@ -86,6 +86,8 @@ pub struct Batch {
     pub quads: Vec<Quad>,
     /// additive blending (light), else normal alpha blending
     pub add: bool,
+    /// draw only inside this stage rect
+    pub clip: Option<[f32; 4]>,
 }
 
 pub struct Gfx {
@@ -400,6 +402,21 @@ impl Gfx {
                 }
                 let Some(buf) = buf else { continue };
                 pass.set_pipeline(if b.add { &self.pipe_add } else { &self.pipe_alpha });
+                let (ox, oy, s) = self.fit;
+                let (sw, sh) = (self.config.width as f32, self.config.height as f32);
+                match b.clip {
+                    Some([cx0, cy0, cx1, cy1]) => {
+                        let x = (ox + cx0 * s).clamp(0.0, sw);
+                        let y = (oy + cy0 * s).clamp(0.0, sh);
+                        let x2 = (ox + cx1 * s).clamp(0.0, sw);
+                        let y2 = (oy + cy1 * s).clamp(0.0, sh);
+                        if x2 - x < 1.0 || y2 - y < 1.0 {
+                            continue;
+                        }
+                        pass.set_scissor_rect(x as u32, y as u32, (x2 - x) as u32, (y2 - y) as u32);
+                    }
+                    None => pass.set_scissor_rect(0, 0, self.config.width, self.config.height),
+                }
                 pass.set_bind_group(1, &self.textures[b.tex.unwrap_or(self.white)].bind, &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..6, 0..b.quads.len() as u32);
