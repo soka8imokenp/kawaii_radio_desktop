@@ -9,6 +9,8 @@ mod store;
 mod gfx;
 mod kid;
 mod net;
+mod panel;
+mod receipt;
 mod scene;
 mod text;
 
@@ -42,6 +44,10 @@ enum Msg {
     /// the signed-in account (None = the token is no good any more)
     Account(Option<serde_json::Value>),
     Toast(String),
+    /// an mp3 of the listener's own choice (O'Z TANLOVIM), played from the start
+    Pick { track: String, mp3: Vec<u8> },
+    /// the account's progress after a sync: likes (id -> time), unliked, playlists
+    Synced(serde_json::Value),
     Error(String),
 }
 
@@ -129,6 +135,16 @@ struct State {
     tray: bool,
     toast: Option<(String, Instant)>,
     uid: (String, String),
+    panel: panel::Panel,
+    tape: receipt::Tape,
+    /// O'Z TANLOVIM: the listener's own choice instead of the live station
+    pick: bool,
+    pick_list: Vec<String>,
+    search_focus: bool,
+    liked: Vec<String>,
+    playlists: Vec<(String, String, Vec<String>)>,
+    syncing: bool,
+    last_sync: Instant,
 }
 
 struct App {
@@ -212,6 +228,192 @@ impl State {
         self.chat.scroll = 0.0;
     }
 
+    fn has_kp(&self) -> bool {
+        let Some(a) = &self.acc else { return false };
+        a.get("kpUntil").and_then(|v| v.as_i64()).is_some_and(|t| t > net::now_ms())
+            || a.get("adm").and_then(|v| v.as_bool()).unwrap_or(false)
+            || a.get("roles").and_then(|v| v.as_array()).is_some_and(|r| !r.is_empty())
+    }
+    fn toggle_like(&mut self) {
+        let Some(id) = self.now.clone() else { return };
+        let mut la: serde_json::Map<String, serde_json::Value> = self.store.get("likesAt").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        let mut ua: serde_json::Map<String, serde_json::Value> = self.store.get("unlikedAt").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        if let Some(i) = self.liked.iter().position(|x| *x == id) {
+            self.liked.remove(i);
+            la.remove(&id);
+            ua.insert(id.clone(), net::now_ms().into());
+            self.toast("SEVIMLILARDAN OLINDI");
+        } else {
+            self.liked.push(id.clone());
+            la.insert(id.clone(), net::now_ms().into());
+            ua.remove(&id);
+            self.toast("SEVIMLILARGA QO'SHILDI");
+        }
+        self.store.set("likesAt", la.into());
+        self.store.set("unlikedAt", ua.into());
+        self.store.set("liked", serde_json::to_value(&self.liked).unwrap());
+        self.last_sync = Instant::now() - Duration::from_secs(297);
+    }
+    /// The account sync (like the phone's Sync.kt): GET the account's copy, merge likes by time, keep its
+    /// playlists, write only this computer's own listening slot, POST the whole thing back.
+    fn sync(&mut self) {
+        let Some(token) = self.token.clone() else { return };
+        if self.syncing {
+            return;
+        }
+        self.syncing = true;
+        self.last_sync = Instant::now();
+        let (u, k) = self.uid.clone();
+        let mut la: serde_json::Map<String, serde_json::Value> = self.store.get("likesAt").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        for id in &self.liked {
+            la.entry(id.clone()).or_insert(net::now_ms().into());
+        }
+        let ua = self.store.get("unlikedAt").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        let slot = format!("desk-{}", u.get(5..13).unwrap_or("native"));
+        let p = self.proxy.clone();
+        std::thread::spawn(move || {
+            let r = (|| -> Option<serde_json::Value> {
+                let (st, body) = kid::api("/auth/sync", &token, &u, &k, None).ok()?;
+                if st != 200 {
+                    return None;
+                }
+                let remote = serde_json::from_str::<serde_json::Value>(&body).ok()?.get("data").cloned().filter(|v| v.is_object()).unwrap_or(serde_json::json!({}));
+                let now = net::now_ms();
+                let cutoff = now - 180 * 86_400_000;
+                let max = |a: &serde_json::Map<String, serde_json::Value>, b: Option<&serde_json::Value>| {
+                    let mut o = a.clone();
+                    if let Some(b) = b.and_then(|b| b.as_object()) {
+                        for (k, v) in b {
+                            let x = v.as_i64().unwrap_or(0).max(o.get(k).and_then(|y| y.as_i64()).unwrap_or(0));
+                            o.insert(k.clone(), x.into());
+                        }
+                    }
+                    o
+                };
+                let liked_at = max(&la, remote.get("likes"));
+                let un_at: serde_json::Map<_, _> = max(&ua, remote.get("unliked")).into_iter().filter(|(_, t)| t.as_i64().unwrap_or(0) > cutoff).collect();
+                let mut likes: Vec<(String, i64)> = liked_at.iter().map(|(k, v)| (k.clone(), v.as_i64().unwrap_or(0))).filter(|(k, t)| *t > un_at.get(k).and_then(|x| x.as_i64()).unwrap_or(0)).collect();
+                likes.sort_by_key(|x| x.1);
+                let likes_m: serde_json::Map<String, serde_json::Value> = likes.iter().map(|(k, t)| (k.clone(), (*t).into())).collect();
+                let unliked: serde_json::Map<String, serde_json::Value> = un_at.into_iter().filter(|(k, _)| !likes_m.contains_key(k)).collect();
+                let mut devices = remote.get("devices").and_then(|d| d.as_object().cloned()).unwrap_or_default();
+                let mut mine = devices.get(&slot).cloned().unwrap_or(serde_json::json!({}));
+                mine["seen"] = now.into();
+                if mine.get("stats").is_none() {
+                    mine["stats"] = serde_json::json!({});
+                }
+                devices.insert(slot.clone(), mine);
+                let mut merged = remote.clone();
+                merged["likes"] = likes_m.into();
+                merged["unliked"] = unliked.into();
+                if merged.get("playlists").is_none() {
+                    merged["playlists"] = serde_json::json!([]);
+                }
+                merged["devices"] = devices.into();
+                let (st2, _) = kid::api("/auth/sync", &token, &u, &k, Some(&merged.to_string())).ok()?;
+                (st2 == 200).then_some(merged)
+            })();
+            if let Some(m) = r {
+                let _ = p.send_event(Msg::Synced(m));
+            }
+        });
+    }
+    fn play_pick(&mut self, id: &str) {
+        let Some(t) = self.tracks.get(id).cloned() else { return };
+        self.pick = true;
+        self.playing = true;
+        self.tuning = true;
+        let p = self.proxy.clone();
+        let id = id.to_string();
+        std::thread::spawn(move || match net::bytes(&t.audio_src) {
+            Ok(mp3) => {
+                let _ = p.send_event(Msg::Pick { track: id, mp3 });
+            }
+            Err(e) => {
+                let _ = p.send_event(Msg::Error(e));
+            }
+        });
+    }
+    fn pick_step(&mut self, d: i64) {
+        let list = if self.pick_list.is_empty() { self.tracks.keys().cloned().collect::<Vec<_>>() } else { self.pick_list.clone() };
+        if list.is_empty() {
+            return;
+        }
+        let i = self.now.as_ref().and_then(|n| list.iter().position(|x| x == n)).map(|i| i as i64).unwrap_or(-1);
+        let n = (i + d).rem_euclid(list.len() as i64) as usize;
+        let id = list[n].clone();
+        self.play_pick(&id);
+    }
+    fn act(&mut self, a: panel::Act) {
+        use panel::Act;
+        match a {
+            Act::Close => self.panel.screen = panel::Screen::Home,
+            Act::Back => {
+                self.panel.open = None;
+                self.panel.scroll = 0.0;
+            }
+            Act::OpenList(id) => {
+                self.panel.open = Some(id);
+                self.panel.scroll = 0.0;
+            }
+            Act::FocusSearch => self.search_focus = true,
+            Act::Login => self.login(),
+            Act::Logout => {
+                if let Some(t) = self.token.take() {
+                    let (u, k) = self.uid.clone();
+                    std::thread::spawn(move || {
+                        let _ = kid::api("/auth/logout", &t, &u, &k, None);
+                    });
+                }
+                self.acc = None;
+                self.store.set("kidToken", serde_json::Value::Null);
+                self.store.set("kidAcc", serde_json::Value::Null);
+                self.chat_profile();
+                self.toast("KAWAII ID · CHIQILDI");
+            }
+            Act::Size(s) => {
+                let w = match s { "s" => 800.0, "m" => 1120.0, "l" => 1440.0, _ => 1920.0 };
+                let _ = self.gfx.window.request_inner_size(LogicalSize::new(w, w * 9.0 / 16.0));
+            }
+            Act::Full => {
+                let w = &self.gfx.window;
+                w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(winit::window::Fullscreen::Borderless(None)) });
+            }
+            Act::Update => {}
+            Act::Play(id) => {
+                if self.has_kp() {
+                    let cx_list = self.panel_list_ids();
+                    self.pick_list = cx_list;
+                    self.play_pick(&id);
+                } else {
+                    if let Some(t) = self.tracks.get(&id).cloned() {
+                        self.tape.print(&t, &mut self.text, true);
+                    }
+                    self.toast(if self.now.as_deref() == Some(id.as_str()) { "HOZIR EFIRDA" } else { "O'Z TANLOVIM · KAWAII PASS KERAK" });
+                }
+            }
+        }
+    }
+    fn panel_list_ids(&self) -> Vec<String> {
+        let cx = self.panel_ctx();
+        self.panel.list(&cx).into_iter().map(|t| t.id).collect()
+    }
+    fn panel_ctx(&self) -> panel::Ctx<'_> {
+        panel::Ctx {
+            tracks: &self.tracks,
+            liked: &self.liked,
+            playlists: &self.playlists,
+            acc: self.acc.as_ref(),
+            now: self.now.as_deref(),
+            version: env!("CARGO_PKG_VERSION"),
+            update: None,
+            search_focus: self.search_focus,
+            blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
+            minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
+            songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
+        }
+    }
+
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
         self.keys.iter().position(|k| x >= k.rect[0] && x <= k.rect[2] && y >= k.rect[1] && y <= k.rect[3])
     }
@@ -234,6 +436,46 @@ impl State {
                     p.set_paused(!self.playing);
                 }
             }
+            "nav0" | "nav1" | "nav2" | "nav3" | "gear" => {
+                let s = match id {
+                    "nav1" => panel::Screen::Search,
+                    "nav2" => panel::Screen::Library,
+                    "nav3" => panel::Screen::Profile,
+                    "gear" => panel::Screen::Settings,
+                    _ => panel::Screen::Home,
+                };
+                self.panel.screen = if self.panel.screen == s { panel::Screen::Home } else { s };
+                self.panel.scroll = 0.0;
+                self.search_focus = self.panel.screen == panel::Screen::Search;
+            }
+            "heart" => self.toggle_like(),
+            "tavsif" => {
+                if let Some(t) = self.now.as_ref().and_then(|i| self.tracks.get(i)).cloned() {
+                    self.tape.print(&t, &mut self.text, true);
+                }
+            }
+            "saqlash" => self.toast("SAQLASH · TEZ ORADA"),
+            "prev" | "next" => {
+                if self.pick {
+                    self.pick_step(if id == "next" { 1 } else { -1 });
+                } else {
+                    self.toast("JONLI EFIR · O'TKAZIB BO'LMAYDI");
+                }
+            }
+            "slider" => {
+                if self.pick {
+                    self.pick = false;
+                    self.tuning = true;
+                    tune(proxy.clone(), self.station.clone());
+                    self.toast("RADIO");
+                } else if self.has_kp() {
+                    self.panel.screen = panel::Screen::Search;
+                    self.search_focus = true;
+                    self.toast("O'Z TANLOVIM · QO'SHIQ TANLANG");
+                } else {
+                    self.toast("O'Z TANLOVIM · KAWAII PASS BILAN");
+                }
+            }
             "cid" | "compose" => {
                 if self.acc.is_some() {
                     self.compose.get_or_insert_with(String::new);
@@ -250,7 +492,8 @@ impl State {
             }
             "st0" | "st1" | "st2" => {
                 let st = STATIONS[id[2..].parse::<usize>().unwrap()].to_string();
-                if st != self.station {
+                if st != self.station || self.pick {
+                    self.pick = false;
                     self.station = st.clone();
                     self.playing = true;
                     self.tuning = true;
@@ -285,8 +528,14 @@ impl State {
         }
         match id {
             "play" => self.playing,
-            "nav0" => true,
-            "st0" | "st1" | "st2" => STATIONS[id[2..].parse::<usize>().unwrap()] == self.station,
+            "nav0" => self.panel.screen == panel::Screen::Home,
+            "nav1" => self.panel.screen == panel::Screen::Search,
+            "nav2" => self.panel.screen == panel::Screen::Library,
+            "nav3" => self.panel.screen == panel::Screen::Profile,
+            "gear" => self.panel.screen == panel::Screen::Settings,
+            "heart" => self.now.as_ref().is_some_and(|n| self.liked.contains(n)),
+            "slider" => self.pick,
+            "st0" | "st1" | "st2" => !self.pick && STATIONS[id[2..].parse::<usize>().unwrap()] == self.station,
             _ => false,
         }
     }
@@ -371,12 +620,18 @@ impl State {
         let mut cv = Canvas { batches: vec![base, down], texts: vec![], clip: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
-        let pos = if self.slot.0 > 0 { ((net::now_ms() + self.slot.2 - self.slot.0) as f64 / 1000.0).max(0.0) } else { 0.0 };
-        let dur = self.slot.1 as f64 / 1000.0;
+        let (pos, dur) = if self.pick {
+            (self.player.as_ref().map(|p| p.pos().as_secs_f64()).unwrap_or(0.0), track.as_ref().map(|t| t.duration).unwrap_or(0.0))
+        } else {
+            let pos = if self.slot.0 > 0 { ((net::now_ms() + self.slot.2 - self.slot.0) as f64 / 1000.0).max(0.0) } else { 0.0 };
+            (pos, self.slot.1 as f64 / 1000.0)
+        };
         self.tv.draw(&mut cv);
         let (title, artist) = track.as_ref().map(|t| (t.title.clone(), t.artist.clone())).unwrap_or(("KAWAII RADIO".into(), "ulanmoqda…".into()));
-        self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist);
-        let station = match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" };
+        if self.panel.screen == panel::Screen::Home {
+            self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist);
+        }
+        let station = if self.pick { "O'Z TANLOVIM" } else { match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" } };
         let line1 = format!("♫ {title} · {artist}");
         let foot = track.as_ref().map(|t| format!("{station} · {} · {} BPM · ENERGIYA {}%", t.category.to_uppercase(), t.bpm.round(), t.energy.round())).unwrap_or_default();
         scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur);
@@ -407,7 +662,28 @@ impl State {
                 }
             };
             self.chat.draw(&mut cv, &mut over, &mut self.text, &self.tracks, &mut img);
+            // the module over the lyrics display
+            let mut panel = std::mem::replace(&mut self.panel, panel::Panel::new());
+            {
+                let cx = panel::Ctx {
+                    tracks: &self.tracks,
+                    liked: &self.liked,
+                    playlists: &self.playlists,
+                    acc: self.acc.as_ref(),
+                    now: self.now.as_deref(),
+                    version: env!("CARGO_PKG_VERSION"),
+                    update: None,
+                    search_focus: self.search_focus,
+                    blink: (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0,
+                    minutes: self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) / 60,
+                    songs: self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0),
+                };
+                panel.draw(&mut cv, &mut over, &mut self.text, &cx, &mut img);
+            }
+            self.panel = panel;
         }
+        let (line, lines) = self.tape.draw(&mut cv, &mut over);
+        over.text(text::Txt::new(format!("QATOR {line:02}/{lines:02}"), text::VT, 18.0, 1773.0, 48.0, [35, 43, 27, 255]).align(text::Align::Center).clip([1703.0, 43.0, 1843.0, 73.0]));
         // the compose strip under the tube (an LCD): what is typed, a blinking block cursor
         let blink = (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0;
         let ink = [35u8, 43, 27, 255];
@@ -457,10 +733,14 @@ impl State {
                 }
             }
         }
-        // a toast on the LCD strip of the printer head for a moment
+        // a toast: a little LCD tag that appears over the deck for a moment
         if let Some((t, at)) = &self.toast {
-            if at.elapsed().as_secs_f32() < 2.6 {
-                over.text(text::Txt::new(t.clone(), text::VT, 22.0, 1773.0, 44.0, [35, 43, 27, 255]).align(text::Align::Center).clip([1703.0, 43.0, 1843.0, 73.0]));
+            let a = at.elapsed().as_secs_f32();
+            if a < 2.6 {
+                let tt = text::Txt::new(t.clone(), text::VT, 24.0, 960.0, 646.0, [35, 43, 27, 255]).align(text::Align::Center);
+                let tw = self.text.measure(&tt) + 40.0;
+                over.flat(Quad::flat(960.0 - tw / 2.0, 640.0, tw, 38.0, [0.62, 0.70, 0.52, 0.96]).rounded(8.0));
+                over.text(tt);
             }
         }
         cv.batches.push(flat);
@@ -572,11 +852,22 @@ impl ApplicationHandler<Msg> for App {
             tray: false,
             toast: None,
             uid: (uid.clone(), key.clone()),
+            panel: panel::Panel::new(),
+            tape: receipt::Tape::new(),
+            pick: false,
+            pick_list: vec![],
+            search_focus: false,
+            liked: vec![],
+            playlists: vec![],
+            syncing: false,
+            last_sync: Instant::now() - Duration::from_secs(290),
         });
         // sign-in state from last time; links from later copies; the kawaii:// scheme
         if let Some(st) = self.st.as_mut() {
             st.token = st.store.get("kidToken").and_then(|v| v.as_str()).map(String::from);
             st.acc = st.store.get("kidAcc").cloned().filter(|v| !v.is_null());
+            st.liked = st.store.get("liked").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+            st.playlists = st.store.get("playlists").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
             if st.token.is_some() {
                 st.refresh_account();
             }
@@ -607,6 +898,60 @@ impl ApplicationHandler<Msg> for App {
                 st.chat.on_server(&v)
             }
             Msg::Toast(t) => st.toast(&t),
+            Msg::Synced(m) => {
+                st.syncing = false;
+                let likes = m.get("likes").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+                let mut l: Vec<(String, i64)> = likes.iter().map(|(k, v)| (k.clone(), v.as_i64().unwrap_or(0))).collect();
+                l.sort_by_key(|x| x.1);
+                st.liked = l.into_iter().map(|x| x.0).collect();
+                st.store.set("liked", serde_json::to_value(&st.liked).unwrap());
+                st.store.set("likesAt", likes.into());
+                st.store.set("unlikedAt", m.get("unliked").cloned().unwrap_or_default());
+                st.playlists = m.get("playlists").and_then(|v| v.as_array()).map(|a| {
+                    a.iter().filter_map(|p| {
+                        Some((p.get("id")?.as_str()?.to_string(), p.get("name")?.as_str()?.to_string(),
+                            p.get("tracks")?.as_array()?.iter().filter_map(|x| x.as_str().map(String::from)).collect()))
+                    }).collect()
+                }).unwrap_or_default();
+                st.store.set("playlists", serde_json::to_value(&st.playlists).unwrap());
+            }
+            Msg::Pick { track, mp3 } => {
+                st.tuning = false;
+                if !st.pick {
+                    return;
+                }
+                if let Some(p) = &st.player {
+                    let _ = p.play(mp3, Duration::ZERO);
+                    p.set_paused(false);
+                }
+                st.playing = true;
+                if let Some(t) = st.tracks.get(&track).cloned() {
+                    st.gfx.window.set_title(&format!("{} · {} — Kawaii Radio", t.title, t.artist));
+                    let ly = t.lyrics.clone().unwrap_or_default();
+                    let rom = net::parse_lrc(ly.romaji.as_deref());
+                    let uz = net::parse_lrc(ly.uzbek.as_deref());
+                    let jp = net::parse_lrc(ly.kanji.as_deref());
+                    let main = if !rom.is_empty() { rom } else if !uz.is_empty() { uz.clone() } else { jp };
+                    st.lyrics.set(main, uz);
+                    st.tape.print(&t, &mut st.text, true);
+                }
+                if let Some(&tex) = st.covers.get(&track) {
+                    st.tv.show(tex);
+                } else if let Some(t) = st.tracks.get(&track) {
+                    let (cover, id, p2) = (t.cover_art.clone(), track.clone(), st.proxy.clone());
+                    std::thread::spawn(move || {
+                        if let Ok(b) = net::bytes(&cover) {
+                            if let Ok(img) = image::load_from_memory(&b) {
+                                let img = image::imageops::resize(&img.to_rgba8(), 436, 432, image::imageops::FilterType::Triangle);
+                                let _ = p2.send_event(Msg::Cover { track: id, img });
+                            }
+                        }
+                    });
+                }
+                st.wave = scene::wave_of(&track);
+                st.drum_kick += 40.0;
+                st.now = Some(track);
+            }
             Msg::Link(l) => {
                 st.gfx.window.focus_window();
                 if let Some((t, s)) = kid::parse_link(&l) {
@@ -629,6 +974,7 @@ impl ApplicationHandler<Msg> for App {
                             st.toast(&format!("SALOM, {n}"));
                         }
                         st.chat_profile();
+                        st.sync();
                     }
                     None => {
                         st.token = None;
@@ -682,6 +1028,10 @@ impl ApplicationHandler<Msg> for App {
                     st.tv.show(tex);
                 }
                 st.wave = scene::wave_of(&track);
+                if let Some(t) = st.tracks.get(&track).cloned() {
+                    let first = st.now.is_none();
+                    st.tape.print(&t, &mut st.text, !first);
+                }
                 if st.now.is_some() {
                     st.drum_kick += 40.0;
                 }
@@ -710,6 +1060,20 @@ impl ApplicationHandler<Msg> for App {
                             st.tray = false;
                         }
                     }
+                    ElementState::Pressed if st.panel.hit(x, y).is_some() => {
+                        let a = st.panel.hit(x, y).unwrap();
+                        if !matches!(a, panel::Act::FocusSearch) {
+                            st.search_focus = false;
+                        }
+                        st.act(a);
+                    }
+                    ElementState::Pressed if st.pick && (595.0..1387.0).contains(&x) && (700.0..800.0).contains(&y) => {
+                        let f = ((x - 622.0) / 738.0).clamp(0.0, 1.0) as f64;
+                        let dur = st.now.as_ref().and_then(|n| st.tracks.get(n)).map(|t| t.duration).unwrap_or(0.0);
+                        if let Some(p) = &st.player {
+                            p.seek(Duration::from_secs_f64(f * dur));
+                        }
+                    }
                     ElementState::Pressed => match st.key_at(x, y) {
                         Some(i) => {
                             if st.keys[i].id != "compose" && st.keys[i].id != "cid" {
@@ -733,6 +1097,27 @@ impl ApplicationHandler<Msg> for App {
                         }
                     }
                 }
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && st.search_focus && st.panel.screen == panel::Screen::Search => {
+                match &event.logical_key {
+                    WKey::Named(NamedKey::Escape) => st.search_focus = false,
+                    WKey::Named(NamedKey::Backspace) => {
+                        st.panel.query.pop();
+                    }
+                    WKey::Named(NamedKey::Enter) => st.search_focus = false,
+                    _ => {
+                        if let Some(t) = &event.text {
+                            st.panel.query.extend(t.chars().filter(|c| !c.is_control()));
+                            st.panel.scroll = 0.0;
+                        }
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == WKey::Named(NamedKey::Escape) && st.compose.is_none() => {
+                st.panel.screen = panel::Screen::Home;
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && event.logical_key == WKey::Named(NamedKey::F11) => {
+                st.act(panel::Act::Full);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && st.compose.is_some() => {
                 match &event.logical_key {
@@ -768,7 +1153,17 @@ impl ApplicationHandler<Msg> for App {
             WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = st.cursor;
                 let [cx0, cy0, cx1, cy1] = chat::TUBE;
-                if x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 {
+                let wd = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 60.0,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                };
+                let [lx0, ly0, lx1, ly1] = scene::LY;
+                let [px0, py0, px1, py1] = receipt::WIN;
+                if st.panel.screen != panel::Screen::Home && x >= lx0 && x <= lx1 && y >= ly0 && y <= ly1 {
+                    st.panel.scroll -= wd;
+                } else if x >= px0 && x <= px1 && y >= py0 && y <= py1 {
+                    st.tape.scroll -= wd * 0.6;
+                } else if x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 {
                     let d = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y * 60.0,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32,
@@ -790,8 +1185,15 @@ impl ApplicationHandler<Msg> for App {
                 if st.playing && !st.tuning && Instant::now() >= st.next_check {
                     st.next_check = Instant::now() + Duration::from_secs(2);
                     if st.player.as_ref().is_some_and(|p| p.idle()) {
-                        st.tuning = true;
-                        tune(self.proxy.clone(), st.station.clone());
+                        if st.pick {
+                            st.pick_step(1);
+                        } else {
+                            st.tuning = true;
+                            tune(self.proxy.clone(), st.station.clone());
+                        }
+                    }
+                    if st.token.is_some() && st.last_sync.elapsed() > Duration::from_secs(300) {
+                        st.sync();
                     }
                 }
                 let batches = st.frame();

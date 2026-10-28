@@ -97,6 +97,12 @@ impl Player {
     pub fn set_volume(&self, v: f32) {
         self.sink.set_volume(v);
     }
+    pub fn pos(&self) -> Duration {
+        self.sink.get_pos()
+    }
+    pub fn seek(&self, to: Duration) {
+        let _ = self.sink.try_seek(to);
+    }
     pub fn idle(&self) -> bool {
         self.sink.empty()
     }

@@ -36,6 +36,8 @@ pub struct Track {
     pub energy: f64,
     #[serde(default)]
     pub lyrics: Option<Lyrics>,
+    #[serde(default)]
+    pub info: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
