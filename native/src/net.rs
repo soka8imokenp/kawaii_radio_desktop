@@ -34,6 +34,41 @@ pub struct Track {
     pub bpm: f64,
     #[serde(default)]
     pub energy: f64,
+    #[serde(default)]
+    pub lyrics: Option<Lyrics>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Lyrics {
+    #[serde(default)]
+    pub uzbek: Option<String>,
+    #[serde(default)]
+    pub romaji: Option<String>,
+    #[serde(default)]
+    pub kanji: Option<String>,
+}
+
+/// One timed line of an LRC text.
+#[derive(Clone, Debug)]
+pub struct Line {
+    pub t: f64,
+    pub s: String,
+}
+
+pub fn parse_lrc(text: Option<&str>) -> Vec<Line> {
+    let mut out = vec![];
+    for raw in text.unwrap_or("").lines() {
+        let raw = raw.trim();
+        let Some(rest) = raw.strip_prefix('[') else { continue };
+        let Some((tm, txt)) = rest.split_once(']') else { continue };
+        let Some((m, sec)) = tm.split_once(':') else { continue };
+        let (Ok(m), Ok(sec)) = (m.trim().parse::<f64>(), sec.trim().parse::<f64>()) else { continue };
+        let txt = txt.trim();
+        if !txt.is_empty() {
+            out.push(Line { t: m * 60.0 + sec, s: txt.to_string() });
+        }
+    }
+    out
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -6,8 +6,11 @@
 mod audio;
 mod gfx;
 mod net;
+mod scene;
+mod text;
 
 use gfx::{Batch, Gfx, Quad};
+use scene::Canvas;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -25,7 +28,8 @@ const GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-dark.webp");
 enum Msg {
     Tracks(HashMap<String, net::Track>),
     /// an mp3 to play now, from `offset`, for this station / track
-    Tune { station: String, track: String, mp3: Vec<u8>, offset: Duration },
+    Tune { station: String, track: String, mp3: Vec<u8>, offset: Duration, start: i64, dur: i64, skew: i64 },
+    Cover { track: String, img: image::RgbaImage },
     Error(String),
 }
 
@@ -84,6 +88,17 @@ struct State {
     /// a tune request in flight (so the poller does not ask twice)
     tuning: bool,
     next_check: Instant,
+    text: text::TextLayer,
+    lyrics: scene::Lyrics,
+    tv: scene::Trivision,
+    wave: Vec<f32>,
+    /// the slot on air: its start (server ms), length (ms), and the server clock's skew
+    slot: (i64, i64, i64),
+    drum: f32,
+    drum_kick: f32,
+    over: Vec<Batch>,
+    texts: Vec<text::Txt>,
+    covers: HashMap<String, usize>,
 }
 
 struct App {
@@ -102,7 +117,18 @@ fn tune(proxy: EventLoopProxy<Msg>, station: String) {
             let mp3 = net::bytes(&t.audio_src)?;
             // the download took a while: the station moved on, so start that much later
             let offset = Duration::from_millis(into.max(0) as u64) + t0.elapsed();
-            Ok(Msg::Tune { station, track: slot.id.clone(), mp3, offset })
+            let cover = t.cover_art.clone();
+            let (id, p2) = (slot.id.clone(), proxy.clone());
+            // the cover for the trivision, decoded off the window thread
+            std::thread::spawn(move || {
+                if let Ok(b) = net::bytes(&cover) {
+                    if let Ok(img) = image::load_from_memory(&b) {
+                        let img = image::imageops::resize(&img.to_rgba8(), 436, 432, image::imageops::FilterType::Triangle);
+                        let _ = p2.send_event(Msg::Cover { track: id, img });
+                    }
+                }
+            });
+            Ok(Msg::Tune { station, track: slot.id.clone(), mp3, offset, start: slot.start, dur: slot.duration, skew: sch.skew })
         })();
         let _ = proxy.send_event(res.unwrap_or_else(Msg::Error));
     });
@@ -235,8 +261,33 @@ impl State {
             flat.quads.push(Quad::flat(cx - 1.2, 723.0, 2.4, 70.0, [0.07, 0.055, 0.045, 1.0]).rotated(piv, rot));
             flat.quads.push(Quad::flat(cx - 5.0, 788.0, 10.0, 10.0, [0.1, 0.08, 0.06, 1.0]).rounded(5.0));
         }
-        let glass = Batch { tex: Some(self.glass), quads: vec![Quad::full()], add: false };
-        vec![base, down, flat, glass]
+        let mut cv = Canvas { batches: vec![base, down], texts: vec![] };
+        let mut over = Canvas::new();
+        let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
+        let pos = if self.slot.0 > 0 { ((net::now_ms() + self.slot.2 - self.slot.0) as f64 / 1000.0).max(0.0) } else { 0.0 };
+        let dur = self.slot.1 as f64 / 1000.0;
+        self.tv.draw(&mut cv);
+        let (title, artist) = track.as_ref().map(|t| (t.title.clone(), t.artist.clone())).unwrap_or(("KAWAII RADIO".into(), "ulanmoqda…".into()));
+        self.lyrics.draw(&mut cv, &mut over, &mut self.text, pos, &title, &artist);
+        let station = match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" };
+        let line1 = format!("♫ {title} · {artist}");
+        let foot = track.as_ref().map(|t| format!("{station} · {} · {} BPM · ENERGIYA {}%", t.category.to_uppercase(), t.bpm.round(), t.energy.round())).unwrap_or_default();
+        scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur);
+        self.drum += self.drum_kick * 0.02 * 57.3 * (dt * 60.0);
+        self.drum_kick *= 0.9f32.powf(dt * 60.0);
+        scene::draw_drum(&mut cv, &mut over, self.drum);
+        cv.batches.push(flat);
+        // the rendered cover glass over everything, except the lyrics tube (it has its own lens)
+        let mut glass = Batch { tex: Some(self.glass), quads: vec![], add: false };
+        let [gx0, gy0, gx1, gy1] = [618.0, 198.0, 1362.0, 626.0];
+        glass.quads.push(Quad::plate_cut(0.0, 0.0, 1920.0, gy0, 1.0));
+        glass.quads.push(Quad::plate_cut(0.0, gy1, 1920.0, 1080.0, 1.0));
+        glass.quads.push(Quad::plate_cut(0.0, gy0, gx0, gy1, 1.0));
+        glass.quads.push(Quad::plate_cut(gx1, gy0, 1920.0, gy1, 1.0));
+        over.batches.push(glass);
+        self.over = over.batches;
+        self.texts = cv.texts.into_iter().chain(over.texts).collect();
+        cv.batches
     }
 }
 
@@ -256,6 +307,7 @@ impl ApplicationHandler<Msg> for App {
         let up = load(&mut gfx, PLATE_UP);
         let down = load(&mut gfx, PLATE_DOWN);
         let glass = load(&mut gfx, GLASS);
+        let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
         let player = audio::Player::new().map_err(|e| eprintln!("audio: {e}")).ok();
         let volume = 0.8;
         if let Some(p) = &player {
@@ -288,6 +340,16 @@ impl ApplicationHandler<Msg> for App {
             last: Instant::now(),
             tuning: true,
             next_check: Instant::now() + Duration::from_secs(5),
+            text: tl,
+            lyrics: scene::Lyrics::new(),
+            tv: scene::Trivision::new(),
+            wave: scene::wave_of("kawaii"),
+            slot: (0, 0, 0),
+            drum: 0.0,
+            drum_kick: 0.0,
+            over: vec![],
+            texts: vec![],
+            covers: HashMap::new(),
         });
         window.request_redraw();
     }
@@ -296,7 +358,15 @@ impl ApplicationHandler<Msg> for App {
         let Some(st) = self.st.as_mut() else { return };
         match msg {
             Msg::Tracks(t) => st.tracks = t,
-            Msg::Tune { station, track, mp3, offset } => {
+            Msg::Cover { track, img } => {
+                let (w, h) = img.dimensions();
+                let tex = st.gfx.texture_rgba(w, h, &img);
+                st.covers.insert(track.clone(), tex);
+                if st.now.as_deref() == Some(track.as_str()) {
+                    st.tv.show(tex);
+                }
+            }
+            Msg::Tune { station, track, mp3, offset, start, dur, skew } => {
                 st.tuning = false;
                 if station != st.station {
                     return;
@@ -309,6 +379,22 @@ impl ApplicationHandler<Msg> for App {
                 }
                 if let Some(t) = st.tracks.get(&track) {
                     st.gfx.window.set_title(&format!("{} · {} — Kawaii Radio", t.title, t.artist));
+                }
+                st.slot = (start, dur, skew);
+                if let Some(t) = st.tracks.get(&track) {
+                    let ly = t.lyrics.clone().unwrap_or_default();
+                    let rom = net::parse_lrc(ly.romaji.as_deref());
+                    let uz = net::parse_lrc(ly.uzbek.as_deref());
+                    let jp = net::parse_lrc(ly.kanji.as_deref());
+                    let main = if !rom.is_empty() { rom } else if !uz.is_empty() { uz.clone() } else { jp };
+                    st.lyrics.set(main, uz);
+                }
+                if let Some(&tex) = st.covers.get(&track) {
+                    st.tv.show(tex);
+                }
+                st.wave = scene::wave_of(&track);
+                if st.now.is_some() {
+                    st.drum_kick += 40.0;
                 }
                 st.now = Some(track);
             }
@@ -369,7 +455,10 @@ impl ApplicationHandler<Msg> for App {
                     }
                 }
                 let batches = st.frame();
-                st.gfx.render(&batches);
+                let over = std::mem::take(&mut st.over);
+                let texts = std::mem::take(&mut st.texts);
+                st.gfx.render(&batches, Some((&mut st.text, &texts)), &over);
+                st.text.trim();
                 st.gfx.window.request_redraw();
             }
             _ => {}

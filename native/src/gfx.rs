@@ -48,6 +48,14 @@ impl Quad {
     pub fn glow(cx: f32, cy: f32, r: f32, color: [f32; 4]) -> Self {
         Quad { rect: [cx - r, cy - r, 2.0 * r, 2.0 * r], uv: [0.0; 4], color, pivot: [0.0, 0.0], rot: 0.0, kind: 2.0, radius: 0.0, _pad: 0.0 }
     }
+    /// A linear gradient from `a` to `b`, left -> right (`vertical` = top -> bottom).
+    pub fn grad(x: f32, y: f32, w: f32, h: f32, a: [f32; 4], b: [f32; 4], vertical: bool) -> Self {
+        Quad { rect: [x, y, w, h], uv: b, color: a, pivot: [0.0, 0.0], rot: 0.0, kind: 3.0, radius: 0.0, _pad: if vertical { 1.0 } else { 0.0 } }
+    }
+    /// Dark scanlines in the window's own pixel rows (every 3rd row), so they never beat against the screen.
+    pub fn scan(x: f32, y: f32, w: f32, h: f32, alpha: f32) -> Self {
+        Quad { rect: [x, y, w, h], uv: [0.0; 4], color: [0.0, 0.0, 0.0, alpha], pivot: [0.0, 0.0], rot: 0.0, kind: 4.0, radius: 0.0, _pad: 0.0 }
+    }
     pub fn rounded(mut self, r: f32) -> Self {
         self.radius = r;
         self
@@ -121,6 +129,8 @@ struct Out {
     @location(3) kind: f32,
     @location(4) size: vec2<f32>,
     @location(5) radius: f32,
+    @location(6) uvraw: vec4<f32>,
+    @location(7) dir: f32,
 };
 
 @vertex
@@ -141,6 +151,8 @@ fn vs(@builtin(vertex_index) vi: u32, i: Inst) -> Out {
     o.kind = i.kind;
     o.size = i.rect.zw;
     o.radius = i.radius.x;
+    o.uvraw = i.uv;
+    o.dir = i.radius.y;
     return o;
 }
 
@@ -159,6 +171,15 @@ fn fs(o: Out) -> @location(0) vec4<f32> {
         let d = length(o.local);
         let a = clamp(1.0 - d, 0.0, 1.0);
         return vec4(o.color.rgb, o.color.a * a * a);
+    }
+    if (o.kind > 3.5) {
+        let row = u32(o.pos.y) % 3u;
+        return vec4(0.0, 0.0, 0.0, select(0.0, o.color.a, row == 0u) * mask);
+    }
+    if (o.kind > 2.5) {
+        let f = select(o.local.x, o.local.y, o.dir > 0.5) * 0.5 + 0.5;
+        let c = mix(o.color, o.uvraw, f);
+        return vec4(c.rgb, c.a * mask);
     }
     if (o.kind > 0.5) { return vec4(o.color.rgb, o.color.a * mask); }
     let c = t * o.color;
@@ -336,7 +357,7 @@ impl Gfx {
         Some(self.texture_rgba(w, h, &img))
     }
 
-    pub fn render(&mut self, batches: &[Batch]) {
+    pub fn render(&mut self, batches: &[Batch], text: Option<(&mut crate::text::TextLayer, &[crate::text::Txt])>, over: &[Batch]) {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
@@ -346,7 +367,12 @@ impl Gfx {
         };
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let bufs: Vec<_> = batches
+        let mut text = text;
+        if let Some((tl, txts)) = text.as_mut() {
+            tl.prepare(&self.device, &self.queue, (self.config.width, self.config.height), self.fit, txts);
+        }
+        let all: Vec<&Batch> = batches.iter().chain(over.iter()).collect();
+        let bufs: Vec<_> = all
             .iter()
             .map(|b| (!b.quads.is_empty()).then(|| self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&b.quads), usage: wgpu::BufferUsages::VERTEX })))
             .collect();
@@ -365,13 +391,22 @@ impl Gfx {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.view_bind, &[]);
-            for (b, buf) in batches.iter().zip(&bufs) {
+            for (n, (b, buf)) in all.iter().zip(&bufs).enumerate() {
+                if n == batches.len() {
+                    if let Some((tl, _)) = text.as_ref() {
+                        tl.render(&mut pass);
+                    }
+                    pass.set_bind_group(0, &self.view_bind, &[]);
+                }
                 let Some(buf) = buf else { continue };
                 pass.set_pipeline(if b.add { &self.pipe_add } else { &self.pipe_alpha });
                 pass.set_bind_group(1, &self.textures[b.tex.unwrap_or(self.white)].bind, &[]);
                 pass.set_vertex_buffer(0, buf.slice(..));
                 pass.draw(0..6, 0..b.quads.len() as u32);
             }
+        }
+        if over.is_empty() {
+            // (no over batches: the text pass above never ran)
         }
         self.queue.submit([enc.finish()]);
         self.window.pre_present_notify();
