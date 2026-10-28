@@ -525,6 +525,26 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
 - Смена страниц (`State::go`): 130 мс старая гаснет, 600 мс новая «пишется» слева светящейся полосой
   (маркеры батчей + `restrict`/`fade` в main.rs).
 
+- **v0.8.0 — native заменил Tauri для всех.** Выпуск: `cd native && python release.py "заметки (узб.)"` (Windows:
+  сборка, NSIS `installer.nsi` через makensis из %LOCALAPPDATA%\tauri\NSIS, подпись `cargo tauri signer sign`
+  ключом вне репо, `dist/latest.json`), затем `wsl -d Ubuntu -- bash /mnt/d/kawaii_radio_exe/native/release_linux.sh`
+  (.deb + AppImage через linuxdeploy из ~/.cache/tauri; ALSA-заголовки через `apt-get download` без sudo; подписи;
+  ключи `linux-x86_64` = AppImage, `linux-x86_64-deb` = .deb). Потом commit + push dist/ — обновление уходит всем.
+  Установщик ставит в `%LOCALAPPDATA%\Kawaii Radio\kawaii-radio.exe` с той же записью удаления, что у Tauri, поэтому
+  старый Tauri-апдейтер (`/P /UPDATE /R`) ставит native как обновление. Native-апдейтер (`updater.rs`) читает тот же
+  latest.json, проверяет minisign-подпись (тот же pubkey; тест `cargo test dist_signature`), Windows: `/S /UPDATE`,
+  Linux: AppImage заменяет себя, .deb — `pkexec apt-get install`. Лампа на шестерёнке = есть обновление.
+  В WSL Linux-копия передаёт ссылку Windows-копии через localhost:47823 и выходит — тестировать при закрытой Windows.
+- **SAQLASH** (`vault.rs`): только с Kawaii Pass; файл шифруется ключом установки (`store["vault"]`, xoshiro-поток),
+  лежит в `%APPDATA%/KawaiiRadio/saved/*.krs` — вне приложения не играет. KUTUBXONA → YUKLANGANLAR (× удаляет).
+- **Ijrochilar** (`artists.rs`, как в мобилке): `files/data/artists.json` + `disco-<deezer>.json` (кеш на диске),
+  страницы артиста/релиза (`panel::Page`), полоса в QIDIRUV, «SEVIMLI IJROCHILAR» в KUTUBXONA, «BARCHASI ›» = все.
+- Эфир без пауз: следующий слот открывается за 15 с (`radio_clock`) и стартует ровно в начале слота.
+- Система: souvlaki (SMTC / MPRIS) — медиаклавиши и панель громкости Windows; иконка окна и exe (build.rs + winresource).
+- Ещё не сделано (идеи пользователя): трей + мини-режим, Discord, таймер сна, будильник, эквалайзер, эффект
+  настройки станции (шум + барабан), включение кинескопа, свет от обложки, кроссфейд в O'Z TANLOVIM, пользовательские
+  пейлисты (создание/правка) как в мобилке, Wrapped.
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —
