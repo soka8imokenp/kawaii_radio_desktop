@@ -228,9 +228,7 @@ impl Tape {
         over.flat(Quad::grad(x0, y0, w, 34.0, rgba(0, 0.5), rgba(0, 0.0), true));
         over.flat(Quad::flat(x0, y0, w, 1.5, rgba(0, 0.6)));
         over.flat(Quad::grad(x0, y0 + 10.0, w, 10.0, rgba(0xffffff, 0.0), rgba(0xffffff, 0.08), true));
-        over.flat(Quad::grad(x0, y1 - 34.0, w, 20.0, rgba(0, 0.0), rgba(0, 0.22), true));
-        over.flat(Quad::flat(x0, y1 - 15.0, w, 1.2, rgba(0xffffff, 0.35)));
-        over.flat(Quad::grad(x0, y1 - 14.0, w, 14.0, rgba(0, 0.3), rgba(0, 0.65), true));
+        over.flat(Quad::grad(x0, y1 - 30.0, w, 30.0, rgba(0x2a2218, 0.0), rgba(0x2a2218, 0.4), true));
         let lines = (total / 21.0).max(1.0) as usize;
         ((self.scroll / 21.0) as usize + 1, lines)
     }

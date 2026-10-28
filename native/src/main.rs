@@ -34,6 +34,7 @@ const PLATE_UP: &[u8] = include_bytes!("../../app/ui/assets/dark-up.webp");
 const PLATE_DOWN: &[u8] = include_bytes!("../../app/ui/assets/dark-down.webp");
 const GLASS: &[u8] = include_bytes!("../../app/ui/assets/glass-dark.webp");
 /// the logo: the bunny alone (white on the dark device), and the chassis that was under the green plate
+const ICON: &[u8] = include_bytes!("../../app/icons/icon.png");
 const LOGO: &[u8] = include_bytes!("../assets/logo-bunny.png");
 const LOGO_BG: &[u8] = include_bytes!("../assets/logo-patch.png");
 const LOGO_BG_LIGHT: &[u8] = include_bytes!("../assets/logo-patch-light.png");
@@ -87,7 +88,9 @@ fn gen_textures(g: &mut Gfx) -> (usize, usize, usize) {
 enum Msg {
     Tracks(HashMap<String, net::Track>),
     /// the song on air, streaming from its place now, for this station / track
-    Tune { station: String, track: String, src: audio::Prepared, start: i64, dur: i64, skew: i64 },
+    Tune { station: String, track: String, src: audio::Prepared, start: i64, dur: i64, skew: i64, slots: Vec<net::Slot> },
+    /// the station's next song, opened ahead of time: it starts the moment its slot begins
+    Preloaded { station: String, track: String, src: audio::Prepared, start: i64, dur: i64 },
     Cover { track: String, img: image::RgbaImage },
     Chat(serde_json::Value),
     Image { url: String, img: Option<image::RgbaImage> },
@@ -99,6 +102,8 @@ enum Msg {
     Toast(String),
     /// an mp3 of the listener's own choice (O'Z TANLOVIM), played from the start
     Pick { track: String, src: audio::Prepared },
+    /// the system's media controls (keyboard media keys, the Windows volume flyout, Linux MPRIS)
+    Media(souvlaki::MediaControlEvent),
     /// a theme's plates, decoded (up, down, glass, logo patch)
     Plates { light: bool, imgs: Vec<image::RgbaImage> },
     /// the account's progress after a sync: likes (id -> time), unliked, playlists
@@ -157,6 +162,13 @@ struct State {
     tex: (usize, usize, usize),
     /// the bunny and the chassis patch under it
     logo: (usize, usize),
+    media: Option<souvlaki::MediaControls>,
+    /// the station's schedule from the last tune, the next song being opened (id, start) and the one ready
+    slots: Vec<net::Slot>,
+    preload: Option<(String, i64)>,
+    preloaded: Option<(String, i64, i64, audio::Prepared)>,
+    /// the window edge under the cursor (resizing)
+    edge: Option<winit::window::ResizeDirection>,
     /// the band switch's sliding light: x and speed
     sw: (f32, f32),
     /// a page change running: since when, from which page
@@ -309,7 +321,8 @@ fn tune(proxy: EventLoopProxy<Msg>, station: String, known: Arc<HashMap<String, 
             });
             // streaming from where the station is now (counted when the stream is open, plus a little for the start)
             let src = audio::prepare(&net::url(&t.audio_src), || Duration::from_millis(into.max(0) as u64) + t_sch.elapsed() + Duration::from_millis(250))?;
-            Ok(Msg::Tune { station, track: slot.id.clone(), src, start: slot.start, dur: slot.duration, skew: sch.skew })
+            let slots = sch.slots.clone();
+            Ok(Msg::Tune { station, track: slot.id.clone(), src, start: slot.start, dur: slot.duration, skew: sch.skew, slots })
         })();
         let _ = proxy.send_event(res.unwrap_or_else(Msg::Error));
     });
@@ -603,6 +616,132 @@ impl State {
         }
     }
 
+    /// Near an edge of the window (window px; corners are wider): which way it would resize.
+    fn edge_at(&self, x: f64, y: f64) -> Option<winit::window::ResizeDirection> {
+        use winit::window::ResizeDirection as R;
+        let w = &self.gfx.window;
+        if w.is_maximized() || w.fullscreen().is_some() {
+            return None;
+        }
+        let s = w.inner_size();
+        let (ww, hh) = (s.width as f64, s.height as f64);
+        let b = 7.0 * w.scale_factor();
+        let c = 22.0 * w.scale_factor();
+        let (l, r, t, btm) = (x < b, x > ww - b, y < b, y > hh - b);
+        let (lc, rc, tc, bc) = (x < c, x > ww - c, y < c, y > hh - c);
+        Some(match () {
+            _ if (t && lc) || (l && tc) => R::NorthWest,
+            _ if (t && rc) || (r && tc) => R::NorthEast,
+            _ if (btm && lc) || (l && bc) => R::SouthWest,
+            _ if (btm && rc) || (r && bc) => R::SouthEast,
+            _ if l => R::West,
+            _ if r => R::East,
+            _ if t => R::North,
+            _ if btm => R::South,
+            _ => return None,
+        })
+    }
+
+    /// Tell the system what plays (title, artist, cover, playing / paused).
+    fn media_update(&mut self) {
+        let Some(m) = self.media.as_mut() else { return };
+        let t = self.now.as_ref().and_then(|n| self.tracks.get(n));
+        let cover = t.map(|t| net::url(&t.cover_art));
+        let _ = m.set_metadata(souvlaki::MediaMetadata {
+            title: t.map(|t| t.title.as_str()),
+            artist: t.map(|t| t.artist.as_str()),
+            album: Some(if self.pick { "O'Z TANLOVIM" } else { "Kawaii Radio" }),
+            cover_url: cover.as_deref(),
+            duration: t.map(|t| Duration::from_secs_f64(t.duration.max(0.0))),
+        });
+        let _ = m.set_playback(if self.playing { souvlaki::MediaPlayback::Playing { progress: None } } else { souvlaki::MediaPlayback::Paused { progress: None } });
+    }
+
+    /// A song goes on air: it plays, the display, lyrics, cover and receipt follow it.
+    fn on_air(&mut self, track: String, src: audio::Prepared, start: i64, dur: i64, skew: i64) {
+        if let Some(p) = &self.player {
+            if let Err(e) = p.play(src) {
+                eprintln!("play: {e}");
+            }
+            p.set_paused(!self.playing);
+        }
+        if let Some(t) = self.tracks.get(&track) {
+            self.gfx.window.set_title(&format!("{} · {} — Kawaii Radio", t.title, t.artist));
+        }
+        self.slot = (start, dur, skew);
+        if let Some(t) = self.tracks.get(&track) {
+            let ly = t.lyrics.clone().unwrap_or_default();
+            let rom = net::parse_lrc(ly.romaji.as_deref());
+            let uz = net::parse_lrc(ly.uzbek.as_deref());
+            let jp = net::parse_lrc(ly.kanji.as_deref());
+            let main = if !rom.is_empty() { rom } else if !uz.is_empty() { uz.clone() } else { jp };
+            self.lyrics.set(main, uz);
+        }
+        if let Some(&tex) = self.covers.get(&track) {
+            self.tv.show(tex);
+        }
+        self.wave = scene::wave_of(&track);
+        if let Some(t) = self.tracks.get(&track).cloned() {
+            let first = self.now.is_none();
+            self.tape.print(&t, &mut self.text, !first);
+        }
+        if self.now.is_some() {
+            self.drum_kick += 40.0;
+        }
+        self.now = Some(track);
+        self.media_update();
+    }
+
+    /// Live radio without gaps: 15 s before the next slot its song is opened (and its cover fetched); the moment the
+    /// slot begins it replaces the one playing.
+    fn radio_clock(&mut self) {
+        if self.pick || !self.playing || self.slot.0 == 0 {
+            return;
+        }
+        let live = net::now_ms() + self.slot.2;
+        let end = self.slot.0 + self.slot.1;
+        if let Some((_, start, _, _)) = &self.preloaded {
+            if live >= *start {
+                let (track, start, dur, src) = self.preloaded.take().unwrap();
+                self.preload = None;
+                let skew = self.slot.2;
+                self.on_air(track, src, start, dur, skew);
+            }
+            return;
+        }
+        if self.preload.is_some() {
+            return;
+        }
+        let Some(nx) = self.slots.iter().find(|s| s.start >= end - 2000 && s.start > self.slot.0).cloned() else { return };
+        if live < nx.start - 15_000 {
+            return;
+        }
+        let Some(t) = self.tracks.get(&nx.id).cloned() else { return };
+        self.preload = Some((nx.id.clone(), nx.start));
+        let (p, station, skew) = (self.proxy.clone(), self.station.clone(), self.slot.2);
+        std::thread::spawn(move || {
+            let (cover, id2, p2) = (t.cover_art.clone(), nx.id.clone(), p.clone());
+            std::thread::spawn(move || {
+                if let Ok(b) = net::bytes(&cover) {
+                    if let Ok(img) = image::load_from_memory(&b) {
+                        let img = image::imageops::resize(&img.to_rgba8(), 436, 432, image::imageops::FilterType::Triangle);
+                        let _ = p2.send_event(Msg::Cover { track: id2, img });
+                    }
+                }
+            });
+            // if it opens late (a slow network), it starts that far in
+            let start = nx.start;
+            match audio::prepare(&net::url(&t.audio_src), move || Duration::from_millis((net::now_ms() + skew - start).max(0) as u64)) {
+                Ok(src) => {
+                    let _ = p.send_event(Msg::Preloaded { station, track: nx.id, src, start: nx.start, dur: nx.duration });
+                }
+                Err(e) => {
+                    let _ = p.send_event(Msg::Error(e));
+                }
+            }
+        });
+    }
+
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
         self.keys.iter().position(|k| x >= k.rect[0] && x <= k.rect[2] && y >= k.rect[1] && y <= k.rect[3])
     }
@@ -617,6 +756,7 @@ impl State {
             }
             "play" => {
                 self.playing = !self.playing;
+                self.media_update();
                 if let Some(p) = &self.player {
                     if self.playing && p.idle() {
                         self.tuning = true;
@@ -852,17 +992,21 @@ impl State {
         let mut switch: Vec<Quad> = vec![];
         let mut lens_glints: Vec<Quad> = vec![];
         let mut cv_texts: Vec<text::Txt> = vec![];
-        // LEDs: the lit lens from the down plate, with its brightness
+        // LEDs: the real glass lens of the plate stays (its reflections too); the light is added inside it — the dome
+        // filled with colour, a hot filament a little below the middle, a faint bloom around, the glint brighter
+        fn led(halos: &mut Vec<Quad>, glints: &mut Vec<Quad>, x: f32, y: f32, r: f32, c: [f32; 3], b: f32) {
+            halos.push(Quad::glow(x, y, r * 2.1, [c[0], c[1], c[2], 0.09 * b]));
+            halos.push(Quad::radial(x - r, y - r, r * 2.0, r * 2.0, [c[0], c[1], c[2], 0.9 * b], [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6, 0.35 * b]).rounded(r));
+            let k = r * 0.55;
+            halos.push(Quad::radial(x - k, y + r * 0.12 - k, k * 2.0, k * 2.0, [1.0, 0.98, 0.92, 0.75 * b], [c[0], c[1], c[2], 0.0]).rounded(k));
+            glints.push(Quad::glow(x - r * 0.38, y - r * 0.42, r * 0.32, [1.0, 1.0, 1.0, 0.25 + 0.35 * b]));
+        }
         for j in 0..18 {
             let b = self.leds[j];
             if b > 0.02 {
                 let y = 548.0 + j as f32 * 22.0;
-                down.quads.push(Quad::plate_cut(54.0, y - 10.0, 74.0, y + 10.0, 0.25 + 0.75 * b).rounded(10.0));
-                let col = if j < 2 { [1.0, 0.27, 0.16, 0.30 * b] } else if j < 5 { [1.0, 0.67, 0.25, 0.26 * b] } else { [0.27, 0.9, 0.47, 0.24 * b] };
-                let c = [col[0], col[1], col[2], col[3] * 0.55];
-                halos.push(Quad::glow(64.0, y, 15.0, c));
-                halos.push(Quad::radial(64.0 - 6.5, y - 6.5, 13.0, 13.0, [1.0, 0.95, 0.85, 0.42 * b], [col[0], col[1], col[2], 0.0]));
-                lens_glints.push(Quad::glow(61.5, y - 3.0, 2.6, [1.0, 1.0, 1.0, 0.5 + 0.3 * b]));
+                let c = if j < 2 { [1.0, 0.22, 0.12] } else if j < 5 { [1.0, 0.62, 0.18] } else { [0.25, 1.0, 0.5] };
+                led(&mut halos, &mut lens_glints, 64.0, y, 8.5, c, b);
             }
         }
         // the band switch: a recessed panel over the two plate keys, RADIO printed on the left, O'Z TANLOVIM on
@@ -899,7 +1043,7 @@ impl State {
         switch.push(Quad::rim(tc - tw2, ty - 11.0, tw2 * 2.0, 22.0, 11.0, 1.0, [0.0, 0.0, 0.0, 0.6], [1.0, 1.0, 1.0, 0.09]));
         // a phosphor glow inside the slot on the chosen side
         let gx = tc - tw2 + 24.0 + f * (tw2 * 2.0 - 48.0);
-        halos.push(Quad::glow(gx, ty, 30.0, [0.3, 1.0, 0.6, 0.16]));
+        let _ = gx;
         // the knob: brushed metal, lit from above, three grip ridges, its shadow on the panel
         let kx = tc - tw2 + 4.0 + f * (tw2 * 2.0 - 8.0 - 76.0);
         let (kw, kh, ky) = (76.0f32, 36.0f32, ty - 18.0);
@@ -921,10 +1065,8 @@ impl State {
                 let m = |sh: u32| (((a >> sh) & 255) as f32 + ((((b >> sh) & 255) as f32) - ((a >> sh) & 255) as f32) * on) as u8;
                 [m(16), m(8), m(0), 255]
             };
-            let mut t = text::Txt::new(t, text::BAR, 16.0, x, 59.0, c(0x6b727b, 0xc9f5d8)).weight(600).align(text::Align::Center);
-            if on > 0.5 {
-                t = t.glow([110, 255, 170, (120.0 * on) as u8], 3.0);
-            }
+            let mut t = text::Txt::new(t, text::BAR, 16.0, x, 59.0, c(0x6b727b, 0xe9eef0)).weight(600).align(text::Align::Center);
+
             // engraved into the panel: a dark edge above the letters, a light one below
             let mut hi = t.clone();
             hi.glow = None;
@@ -941,6 +1083,24 @@ impl State {
         };
         cv_texts.extend(lab("R A D I O", 952.0, (1.0 - f).clamp(0.0, 1.0)));
         cv_texts.extend(lab("O ' Z   T A N L O V I M", 1258.0, f.clamp(0.0, 1.0)));
+        // the window's edges: a soft light along the one under the cursor (it can be dragged), and a grip in the
+        // bottom-right corner (three engraved ribs)
+        if let Some(e) = self.edge {
+            use winit::window::ResizeDirection as R;
+            let c = [0.75, 0.9, 1.0, 0.16];
+            let n = [0.75, 0.9, 1.0, 0.0];
+            let (l, r, t, b) = (matches!(e, R::West | R::NorthWest | R::SouthWest), matches!(e, R::East | R::NorthEast | R::SouthEast), matches!(e, R::North | R::NorthWest | R::NorthEast), matches!(e, R::South | R::SouthWest | R::SouthEast));
+            if l { halos.push(Quad::grad(0.0, 0.0, 14.0, 1080.0, c, n, false)); }
+            if r { halos.push(Quad::grad(1906.0, 0.0, 14.0, 1080.0, n, c, false)); }
+            if t { halos.push(Quad::grad(0.0, 0.0, 1920.0, 14.0, c, n, true)); }
+            if b { halos.push(Quad::grad(0.0, 1066.0, 1920.0, 14.0, n, c, true)); }
+        }
+        for k in 0..3 {
+            let d = 9.0 + k as f32 * 7.0;
+            let (cx, cy) = (1914.0 - d / 2.0, 1074.0 - d / 2.0);
+            switch.push(Quad::flat(cx - d * 0.7, cy - 0.5, d * 1.4, 1.6, [0.0, 0.0, 0.0, 0.55]).rotated([cx, cy], -0.785));
+            switch.push(Quad::flat(cx - d * 0.7 + 0.8, cy + 1.1, d * 1.4, 1.0, [1.0, 1.0, 1.0, 0.1]).rotated([cx + 0.8, cy + 1.6], -0.785));
+        }
         // the printer's lamp while the head burns a receipt
         if self.tape.busy() {
             down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
@@ -952,11 +1112,8 @@ impl State {
             if i < lit {
                 let a = (225.0 - i as f32 * 13.5f32).to_radians();
                 let (x, y) = (1250.0 + a.cos() * 86.0, 958.0 - a.sin() * 86.0);
-                down.quads.push(Quad::plate_cut(x - 9.0, y - 9.0, x + 9.0, y + 9.0, 1.0).rounded(9.0));
-                let col = if i >= 18 { [1.0, 0.27, 0.16] } else { [1.0, 0.69, 0.27] };
-                halos.push(Quad::glow(x, y, 13.0, [col[0], col[1], col[2], 0.11]));
-                halos.push(Quad::radial(x - 6.0, y - 6.0, 12.0, 12.0, [1.0, 0.95, 0.85, 0.4], [col[0], col[1], col[2], 0.0]));
-                lens_glints.push(Quad::glow(x - 2.5, y - 3.0, 2.4, [1.0, 1.0, 1.0, 0.7]));
+                let c = if i >= 18 { [1.0, 0.22, 0.12] } else { [1.0, 0.62, 0.18] };
+                led(&mut halos, &mut lens_glints, x, y, 7.5, c, 1.0);
             }
         }
         // VU needles: a thin dark blade over each dial, a soft shadow a little off it
@@ -1213,6 +1370,16 @@ impl ApplicationHandler<Msg> for App {
         let window = Arc::new(el.create_window(attrs).expect("window"));
         #[cfg(windows)]
         win::setup(&window);
+        // the window's icon (title, taskbar, Alt+Tab)
+        if let Ok(i) = image::load_from_memory(ICON) {
+            let i = i.to_rgba8();
+            let (w, h) = i.dimensions();
+            if let Ok(ic) = winit::window::Icon::from_rgba(i.into_raw(), w, h) {
+                #[cfg(windows)]
+                winit::platform::windows::WindowExtWindows::set_taskbar_icon(&*window, Some(ic.clone()));
+                window.set_window_icon(Some(ic));
+            }
+        }
         let mut gfx = pollster::block_on(Gfx::new(window.clone()));
         let load = |g: &mut Gfx, b: &[u8]| g.texture_image(b).expect("plate");
         let up = load(&mut gfx, PLATE_UP);
@@ -1221,7 +1388,7 @@ impl ApplicationHandler<Msg> for App {
         let logo = (load(&mut gfx, LOGO), load(&mut gfx, LOGO_BG));
         let tex = gen_textures(&mut gfx);
         // the convex tube glasses: the lyrics tube and the chat monitor
-        gfx.lenses = [(scene::LY, [0.045, 0.0035]), (chat::TUBE, [0.035, 0.003])];
+        gfx.lenses = [(scene::LY, [0.045, 0.002, 37.0]), (chat::TUBE, [0.035, 0.0018, 32.0])];
         let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
         // the chat: one socket, a hello with this computer's identity
         let mut store = store::Store::open();
@@ -1271,6 +1438,11 @@ impl ApplicationHandler<Msg> for App {
             released: vec![None; keys().len()],
             screen_anim: None,
             sw: (0.0, 0.0),
+            edge: None,
+            slots: vec![],
+            media: None,
+            preload: None,
+            preloaded: None,
             player,
             keys: keys(),
             pressed: None,
@@ -1329,6 +1501,23 @@ impl ApplicationHandler<Msg> for App {
             st.playlists = st.store.get("playlists").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
             if st.token.is_some() {
                 st.refresh_account();
+            }
+            {
+                #[cfg(windows)]
+                let hwnd = win::hwnd(&st.gfx.window);
+                #[cfg(not(windows))]
+                let hwnd = None;
+                let cfg = souvlaki::PlatformConfig { display_name: "Kawaii Radio", dbus_name: "uz.kawaii.radio", hwnd };
+                if let Ok(mut mc) = souvlaki::MediaControls::new(cfg) {
+                    let p = self.proxy.clone();
+                    if mc.attach(move |e| {
+                        let _ = p.send_event(Msg::Media(e));
+                    })
+                    .is_ok()
+                    {
+                        st.media = Some(mc);
+                    }
+                }
             }
             if st.store.get("theme").and_then(|v| v.as_str()) == Some("light") {
                 st.set_theme(true);
@@ -1414,6 +1603,7 @@ impl ApplicationHandler<Msg> for App {
                 st.wave = scene::wave_of(&track);
                 st.drum_kick += 40.0;
                 st.now = Some(track);
+                st.media_update();
             }
             Msg::Link(l) => {
                 st.gfx.window.focus_window();
@@ -1449,6 +1639,23 @@ impl ApplicationHandler<Msg> for App {
                 }
             }
             Msg::Stickers(m) => st.chat.stickers = m,
+            Msg::Media(e) => {
+                use souvlaki::MediaControlEvent as E;
+                match e {
+                    E::Play if !st.playing => st.on_click("play", &self.proxy.clone(), _el),
+                    E::Pause | E::Stop if st.playing => st.on_click("play", &self.proxy.clone(), _el),
+                    E::Toggle => st.on_click("play", &self.proxy.clone(), _el),
+                    E::Next => st.on_click("next", &self.proxy.clone(), _el),
+                    E::Previous => st.on_click("prev", &self.proxy.clone(), _el),
+                    E::Raise => {
+                        st.gfx.window.set_minimized(false);
+                        st.gfx.window.focus_window();
+                    }
+                    E::Quit => _el.exit(),
+                    _ => {}
+                }
+                st.media_update();
+            }
             Msg::Plates { light, imgs } => {
                 let t: Vec<usize> = imgs.iter().map(|i| st.gfx.texture_rgba(i.width(), i.height(), i)).collect();
                 st.plates[light as usize] = Some((t[0], t[1], t[2], t[3]));
@@ -1469,44 +1676,25 @@ impl ApplicationHandler<Msg> for App {
                     st.tv.show(tex);
                 }
             }
-            Msg::Tune { station, track, src, start, dur, skew } => {
+            Msg::Tune { station, track, src, start, dur, skew, slots } => {
                 st.tuning = false;
                 if station != st.station || st.pick {
                     return;
                 }
-                if let Some(p) = &st.player {
-                    if let Err(e) = p.play(src) {
-                        eprintln!("play: {e}");
-                    }
-                    p.set_paused(!st.playing);
+                st.slots = slots;
+                st.preload = None;
+                st.on_air(track, src, start, dur, skew);
+            }
+            Msg::Preloaded { station, track, src, start, dur } => {
+                if station == st.station && !st.pick && st.preload.as_ref().is_some_and(|p| p.0 == track && p.1 == start) {
+                    st.preloaded = Some((track, start, dur, src));
+                } else {
+                    st.preload = None;
                 }
-                if let Some(t) = st.tracks.get(&track) {
-                    st.gfx.window.set_title(&format!("{} · {} — Kawaii Radio", t.title, t.artist));
-                }
-                st.slot = (start, dur, skew);
-                if let Some(t) = st.tracks.get(&track) {
-                    let ly = t.lyrics.clone().unwrap_or_default();
-                    let rom = net::parse_lrc(ly.romaji.as_deref());
-                    let uz = net::parse_lrc(ly.uzbek.as_deref());
-                    let jp = net::parse_lrc(ly.kanji.as_deref());
-                    let main = if !rom.is_empty() { rom } else if !uz.is_empty() { uz.clone() } else { jp };
-                    st.lyrics.set(main, uz);
-                }
-                if let Some(&tex) = st.covers.get(&track) {
-                    st.tv.show(tex);
-                }
-                st.wave = scene::wave_of(&track);
-                if let Some(t) = st.tracks.get(&track).cloned() {
-                    let first = st.now.is_none();
-                    st.tape.print(&t, &mut st.text, !first);
-                }
-                if st.now.is_some() {
-                    st.drum_kick += 40.0;
-                }
-                st.now = Some(track);
             }
             Msg::Error(e) => {
                 st.tuning = false;
+                st.preload = None;
                 eprintln!("tune: {e}");
                 st.next_check = Instant::now() + Duration::from_secs(5);
             }
@@ -1547,9 +1735,29 @@ impl App {
             WindowEvent::Resized(s) => st.gfx.resize(s.width, s.height),
             WindowEvent::CursorMoved { position, .. } => {
                 st.cursor = st.gfx.to_stage(position.x, position.y);
+                let edge = st.edge_at(position.x, position.y);
+                if edge != st.edge {
+                    st.edge = edge;
+                    use winit::window::{CursorIcon as C, ResizeDirection as R};
+                    st.gfx.window.set_cursor(match edge {
+                        Some(R::East | R::West) => C::EwResize,
+                        Some(R::North | R::South) => C::NsResize,
+                        Some(R::NorthWest | R::SouthEast) => C::NwseResize,
+                        Some(R::NorthEast | R::SouthWest) => C::NeswResize,
+                        None => C::Default,
+                    });
+                }
                 if st.scrub.is_some() {
                     st.scrub = Some(st.cursor.0);
                 }
+            }
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } if st.edge.is_some() => {
+                if let Some(d) = st.edge {
+                    let _ = st.gfx.window.drag_resize_window(d);
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                st.edge = None;
             }
             // the chat tube: its own messages, sheets and keys (right button = a message's actions at once)
             WindowEvent::MouseInput { state: ElementState::Pressed, button: b @ (MouseButton::Left | MouseButton::Right), .. }
@@ -1715,7 +1923,8 @@ impl App {
             }
             WindowEvent::RedrawRequested => {
                 // the next track: when the current one ran out (or nothing plays yet), ask the schedule again
-                if st.playing && !st.tuning && Instant::now() >= st.next_check {
+                st.radio_clock();
+                if st.playing && !st.tuning && Instant::now() >= st.next_check && st.preloaded.is_none() && st.preload.is_none() {
                     st.next_check = Instant::now() + Duration::from_secs(2);
                     if st.player.as_ref().is_some_and(|p| p.idle()) {
                         if st.pick {

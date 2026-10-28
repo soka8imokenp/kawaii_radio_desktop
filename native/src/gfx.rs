@@ -193,8 +193,13 @@ fn post(v: V) -> @location(0) vec4<f32> {
         if (a.x < 1.0 && a.y < 1.0) {
             // a squircle norm: 0 in the middle, 1 at the rim (so the rim never moves)
             let n = pow(pow(a.x, 4.0) + pow(a.y, 4.0), 0.25);
-            let k = L.p[i].x * (1.0 - n * n);
-            let ca = L.p[i].y * n * n;
+            // only inside the glass's rounded outline, fading to nothing over its last 16 px (the bezel never moves)
+            let rad = L.p[i].z;
+            let dd = abs(px - c) - h + vec2(rad);
+            let sd = length(max(dd, vec2(0.0))) + min(max(dd.x, dd.y), 0.0) - rad;
+            let wgt = smoothstep(0.0, 16.0, -sd);
+            let k = L.p[i].x * (1.0 - n * n) * wgt;
+            let ca = L.p[i].y * n * n * wgt;
             let d = px - c;
             ug = (c + d * (1.0 - k)) / L.size.xy;
             ur = (c + d * (1.0 - k - ca)) / L.size.xy;
@@ -236,7 +241,7 @@ pub struct Gfx {
     lens_buf: wgpu::Buffer,
     lens_bind: wgpu::BindGroup,
     /// the tube glasses (stage px rect) and their bulge / colour split
-    pub lenses: [([f32; 4], [f32; 2]); 2],
+    pub lenses: [([f32; 4], [f32; 3]); 2],
 }
 
 const SHADER: &str = r#"
@@ -561,7 +566,7 @@ impl Gfx {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, sampler_tiled, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 2]); 2] };
+        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, sampler_tiled, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 3]); 2] };
         g.white = g.texture_rgba(1, 1, &[255, 255, 255, 255]);
         g.update_view();
         g
@@ -714,6 +719,7 @@ impl Gfx {
             lu[i * 4..i * 4 + 4].copy_from_slice(&[ox + r[0] * sc, oy + r[1] * sc, ox + r[2] * sc, oy + r[3] * sc]);
             lu[8 + i * 4] = k[0];
             lu[8 + i * 4 + 1] = k[1];
+            lu[8 + i * 4 + 2] = k[2] * sc;
         }
         lu[16] = size.0 as f32;
         lu[17] = size.1 as f32;

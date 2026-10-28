@@ -49,3 +49,12 @@ pub fn setup(w: &winit::window::Window) {
         DwmSetWindowAttribute(hwnd, 34, &none as *const u32 as *const core::ffi::c_void, 4);
     }
 }
+
+/// The window's HWND (for the system media controls).
+pub fn hwnd(w: &winit::window::Window) -> Option<*mut core::ffi::c_void> {
+    let h = w.window_handle().ok()?;
+    match h.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as *mut core::ffi::c_void),
+        _ => None,
+    }
+}
