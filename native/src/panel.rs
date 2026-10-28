@@ -34,6 +34,10 @@ pub struct Panel {
     pub screen: Screen,
     pub query: String,
     pub scroll: f32,
+    /// where the wheel wants the list, and how far it can go (from the last frame's layout)
+    pub goal: f32,
+    max: f32,
+    last: std::time::Instant,
     /// the open list in KUTUBXONA: "liked" or a playlist id
     pub open: Option<String>,
     pub hits: Vec<([f32; 4], Act)>,
@@ -63,7 +67,7 @@ pub struct Ctx<'a> {
 
 impl Panel {
     pub fn new() -> Self {
-        Panel { screen: Screen::Home, query: String::new(), scroll: 0.0, open: None, hits: vec![] }
+        Panel { screen: Screen::Home, query: String::new(), scroll: 0.0, goal: 0.0, max: 0.0, last: std::time::Instant::now(), open: None, hits: vec![] }
     }
 
     pub fn hit(&self, x: f32, y: f32) -> Option<Act> {
@@ -96,8 +100,16 @@ impl Panel {
         }
         let [x0, y0, x1, y1] = LY;
         let (w, h) = (x1 - x0, y1 - y0);
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x0b0e09)).rounded(37.0));
-        cv.light(Quad::glow(x0 + w * 0.46, y0 + h * 0.48, w * 0.62, rgba(0x2b3524, 0.5)));
+        // the backplate and the glass are the tube's own (main.rs), the same for every page
+        let _ = (w, h);
+        let dt = self.last.elapsed().as_secs_f32().min(0.1);
+        self.last = std::time::Instant::now();
+        self.goal = self.goal.clamp(0.0, self.max);
+        self.scroll += (self.goal - self.scroll) * (1.0 - (-dt / 0.07).exp());
+        if (self.goal - self.scroll).abs() < 0.3 {
+            self.scroll = self.goal;
+        }
+        self.scroll = self.scroll.clamp(0.0, self.max);
         let px = x0 + 34.0;
         let (title, sub) = match self.screen {
             Screen::Search => ("QIDIRUV", format!("{} ta qo'shiq efirda", cx.tracks.len())),
@@ -253,11 +265,9 @@ impl Panel {
         }
         self.hits = hits;
         let total = y + self.scroll - body[1];
-        self.scroll = self.scroll.clamp(0.0, (total - (body[3] - body[1]) + 20.0).max(0.0));
+        self.max = (total - (body[3] - body[1]) + 20.0).max(0.0);
         cv.clip = None;
-        over.flat(Quad::scan(x0, y0, w, h, 0.22).rounded(37.0));
-        over.flat(Quad::grad(x0, y0, w, h * 0.16, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true).rounded(37.0));
-        over.flat(Quad::grad(x0, y1 - 50.0, w, 50.0, rgba(0, 0.0), rgba(0, 0.4), true).rounded(37.0));
+        let _ = over;
     }
 }
 

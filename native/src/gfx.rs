@@ -161,6 +161,53 @@ fn comp(v: V) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// The last pass: the frame, copied to the window, seen through the convex tube glasses: inside each tube the picture
+/// bulges (the middle a little magnified, nothing moves at the rim) and the colours part a hair towards the edges.
+const POST: &str = r#"
+struct Lens { r: array<vec4<f32>, 2>, p: array<vec4<f32>, 2>, size: vec4<f32> };
+@group(0) @binding(0) var<uniform> L: Lens;
+@group(1) @binding(0) var tex: texture_2d<f32>;
+@group(1) @binding(1) var samp: sampler;
+struct V { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex
+fn vs(@builtin(vertex_index) i: u32) -> V {
+    let p = vec2(f32((i << 1u) & 2u), f32(i & 2u));
+    var o: V;
+    o.pos = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+    o.uv = vec2(p.x, 1.0 - p.y);
+    return o;
+}
+@fragment
+fn post(v: V) -> @location(0) vec4<f32> {
+    let px = v.uv * L.size.xy;
+    var ur = v.uv;
+    var ug = v.uv;
+    var ub = v.uv;
+    for (var i = 0; i < 2; i++) {
+        let r = L.r[i];
+        if (r.z <= r.x) { continue; }
+        let c = (r.xy + r.zw) * 0.5;
+        let h = (r.zw - r.xy) * 0.5;
+        let q = (px - c) / h;
+        let a = abs(q);
+        if (a.x < 1.0 && a.y < 1.0) {
+            // a squircle norm: 0 in the middle, 1 at the rim (so the rim never moves)
+            let n = pow(pow(a.x, 4.0) + pow(a.y, 4.0), 0.25);
+            let k = L.p[i].x * (1.0 - n * n);
+            let ca = L.p[i].y * n * n;
+            let d = px - c;
+            ug = (c + d * (1.0 - k)) / L.size.xy;
+            ur = (c + d * (1.0 - k - ca)) / L.size.xy;
+            ub = (c + d * (1.0 - k + ca)) / L.size.xy;
+        }
+    }
+    let cr = textureSample(tex, samp, ur);
+    let cg = textureSample(tex, samp, ug);
+    let cb = textureSample(tex, samp, ub);
+    return vec4(cr.r, cg.g, cb.b, 1.0);
+}
+"#;
+
 pub struct Gfx {
     pub window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -182,6 +229,13 @@ pub struct Gfx {
     comp_pipe: wgpu::RenderPipeline,
     /// uniforms: blur H, V (1 texel), H, V (2.5 texels), the composite's strength
     dirs: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// the frame is drawn here first, then copied to the window through the lenses
+    scene: Option<((u32, u32), wgpu::TextureView, wgpu::BindGroup)>,
+    post_pipe: wgpu::RenderPipeline,
+    lens_buf: wgpu::Buffer,
+    lens_bind: wgpu::BindGroup,
+    /// the tube glasses (stage px rect) and their bulge / colour split
+    pub lenses: [([f32; 4], [f32; 2]); 2],
 }
 
 const SHADER: &str = r#"
@@ -465,6 +519,25 @@ impl Gfx {
             })
         };
         let blur_pipe = bmake("blur", None);
+        let pshader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: None, source: wgpu::ShaderSource::Wgsl(POST.into()) });
+        let post_pipe = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&blayout),
+            vertex: wgpu::VertexState { module: &pshader, entry_point: Some("vs"), compilation_options: Default::default(), buffers: &[] },
+            fragment: Some(wgpu::FragmentState {
+                module: &pshader,
+                entry_point: Some("post"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let lens_buf = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 80, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let lens_bind = device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &dir_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: lens_buf.as_entire_binding() }] });
         let comp_pipe = bmake(
             "comp",
             Some(wgpu::BlendState {
@@ -479,7 +552,7 @@ impl Gfx {
                 (b, bg)
             })
             .collect();
-        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs };
+        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 2]); 2] };
         g.white = g.texture_rgba(1, 1, &[255, 255, 255, 255]);
         g.update_view();
         g
@@ -595,7 +668,39 @@ impl Gfx {
                 return;
             }
         };
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let out = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let size = (self.config.width, self.config.height);
+        if self.scene.as_ref().is_none_or(|s| s.0 != size) {
+            let t = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            let v = t.create_view(&wgpu::TextureViewDescriptor::default());
+            let b = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.tex_layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&v) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) }],
+            });
+            self.scene = Some((size, v, b));
+        }
+        // the lenses in window px
+        let (ox, oy, sc) = self.fit;
+        let mut lu = [0f32; 20];
+        for (i, (r, k)) in self.lenses.iter().enumerate() {
+            lu[i * 4..i * 4 + 4].copy_from_slice(&[ox + r[0] * sc, oy + r[1] * sc, ox + r[2] * sc, oy + r[3] * sc]);
+            lu[8 + i * 4] = k[0];
+            lu[8 + i * 4 + 1] = k[1];
+        }
+        lu[16] = size.0 as f32;
+        lu[17] = size.1 as f32;
+        self.queue.write_buffer(&self.lens_buf, 0, bytemuck::cast_slice(&lu));
+        let view = self.scene.as_ref().unwrap().1.clone();
         let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let mut text = text;
         let mut glow = false;
@@ -691,8 +796,24 @@ impl Gfx {
                 pass.draw(0..6, 0..b.quads.len() as u32);
             }
         }
-        if over.is_empty() {
-            // (no over batches: the text pass above never ran)
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &out,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.post_pipe);
+            pass.set_bind_group(0, &self.lens_bind, &[]);
+            pass.set_bind_group(1, &self.scene.as_ref().unwrap().2, &[]);
+            pass.draw(0..3, 0..1);
         }
         self.queue.submit([enc.finish()]);
         self.window.pre_present_notify();

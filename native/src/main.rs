@@ -84,7 +84,9 @@ fn keys() -> Vec<Key> {
     k.push(Key { id: "saqlash", rect: [508.0, 982.0, 878.0, 1058.0], radius: 24.0 });
     k.push(Key { id: "prev", rect: [1036.0, 862.0, 1096.0, 956.0], radius: 18.0 });
     k.push(Key { id: "next", rect: [1036.0, 962.0, 1096.0, 1056.0], radius: 18.0 });
-    k.push(Key { id: "slider", rect: [843.0, 41.0, 1361.0, 95.0], radius: 15.0 });
+    // the band switch: two halves, one of them always in
+    k.push(Key { id: "sl_radio", rect: [843.0, 41.0, 1101.0, 95.0], radius: 15.0 });
+    k.push(Key { id: "sl_pick", rect: [1103.0, 41.0, 1361.0, 95.0], radius: 15.0 });
     // the chat monitor's input row: the round ID key, the LCD strip, the round smile key
     k.push(Key { id: "cid", rect: [1440.0, 1007.0, 1480.0, 1047.0], radius: 20.0 });
     k.push(Key { id: "compose", rect: [1494.0, 1010.0, 1822.0, 1046.0], radius: 6.0 });
@@ -102,6 +104,8 @@ struct State {
     glass: usize,
     /// the bunny and the chassis patch under it
     logo: (usize, usize),
+    /// the band switch's sliding light: x and speed
+    sw: (f32, f32),
     /// a page change running: since when, from which page
     screen_anim: Option<(Instant, panel::Screen)>,
     /// when each key was let go (for its spring back)
@@ -439,10 +443,12 @@ impl State {
             Act::Back => {
                 self.panel.open = None;
                 self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
             }
             Act::OpenList(id) => {
                 self.panel.open = Some(id);
                 self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
             }
             Act::FocusSearch => self.search_focus = true,
             Act::Login => self.login(),
@@ -552,6 +558,7 @@ impl State {
                 };
                 self.go(if self.panel.screen == s { panel::Screen::Home } else { s });
                 self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
                 self.search_focus = self.panel.screen == panel::Screen::Search;
             }
             "heart" => self.toggle_like(),
@@ -576,12 +583,18 @@ impl State {
                     self.toast(if id == "next" { "JONLI EFIR · OLDINGA YO'Q" } else { "JONLI EFIR · ORQAGA YO'Q" });
                 }
             }
-            "slider" => {
+            "sl_radio" => {
                 if self.pick {
                     self.pick = false;
                     self.tuning = true;
                     tune(proxy.clone(), self.station.clone(), self.tracks.clone());
                     self.toast("RADIO");
+                }
+            }
+            "sl_pick" => {
+                if self.pick {
+                    self.go(panel::Screen::Search);
+                    self.search_focus = true;
                 } else if self.has_kp() {
                     self.go(panel::Screen::Search);
                     self.search_focus = true;
@@ -648,7 +661,8 @@ impl State {
             "nav3" => self.panel.screen == panel::Screen::Profile,
             "gear" => self.panel.screen == panel::Screen::Settings,
             "heart" => self.now.as_ref().is_some_and(|n| self.liked.contains(n)),
-            "slider" => self.pick,
+            "sl_radio" => !self.pick,
+            "sl_pick" => self.pick,
             "st0" | "st1" | "st2" => !self.pick && STATIONS[id[2..].parse::<usize>().unwrap()] == self.station,
             _ => false,
         }
@@ -696,7 +710,21 @@ impl State {
             }
         }
 
-        let mut base = Batch { tex: Some(self.up), quads: vec![Quad::full()], add: false, clip: None };
+        let edge = |r: [f32; 4], uv: [f32; 4]| Quad { rect: r, uv, ..Quad::full() };
+        let px = 1.0 / 3840.0;
+        let py = 1.0 / 2160.0;
+        let mut base = Batch {
+            tex: Some(self.up),
+            quads: vec![
+                edge([-1500.0, 0.0, 1500.0, 1080.0], [px, 0.0, 0.0, 1.0]),
+                edge([1920.0, 0.0, 1500.0, 1080.0], [1.0 - px * 2.0, 0.0, 0.0, 1.0]),
+                edge([-1500.0, -1500.0, 4920.0, 1500.0], [0.5, py, 0.0, 0.0]),
+                edge([-1500.0, 1080.0, 4920.0, 1500.0], [0.5, 1.0 - py * 2.0, 0.0, 0.0]),
+                Quad::full(),
+            ],
+            add: false,
+            clip: None,
+        };
         // the TAVSIF key has no lamp: its corner is covered with the key's own surface from beside it
         const LAMP: ([f32; 4], [f32; 4]) = ([452.0, 992.0, 467.0, 1008.0], [465.0, 992.0, 480.0, 1008.0]);
         let lamp_patch = |src: [f32; 4], dst: [f32; 4]| Quad { rect: [dst[0], dst[1], dst[2] - dst[0], dst[3] - dst[1]], ..Quad::plate_cut(src[0], src[1], src[2], src[3], 1.0) }.rounded(7.0);
@@ -740,6 +768,7 @@ impl State {
             Batch { tex: Some(self.logo.0), quads: vec![Quad { rect: [152.0, 40.0, 43.5, 44.0], uv: [0.0, 0.0, 1.0, 1.0], color: [0.96, 0.97, 0.96, 1.0], ..Quad::full() }], add: false, clip: None },
         ];
         let mut halos: Vec<Quad> = vec![];
+        let mut switch: Vec<Quad> = vec![];
         // LEDs: the lit lens from the down plate, with its brightness
         for j in 0..18 {
             let b = self.leds[j];
@@ -750,6 +779,28 @@ impl State {
                 halos.push(Quad::glow(64.0, y, 17.0, col));
             }
         }
+        // the band switch: a lamp beside each label (green = in), and a phosphor light under the active one that
+        // slides across with a little spring when the band changes
+        let want = if self.pick { 1248.0 } else { 972.0 };
+        let (sx, sv) = &mut self.sw;
+        for _ in 0..(dt * 60.0).round().max(1.0) as i32 {
+            *sv += (want - *sx) * 0.09;
+            *sv *= 0.72;
+            *sx += *sv;
+        }
+        let sxv = *sx;
+        for (lx, on) in [(905.0f32, !self.pick), (1168.0, self.pick)] {
+            if on {
+                halos.push(Quad::glow(lx, 69.0, 16.0, [0.3, 1.0, 0.6, 0.35]));
+                switch.push(Quad::radial(lx - 4.5, 64.5, 9.0, 9.0, [0.85, 1.0, 0.9, 1.0], [0.2, 0.85, 0.45, 1.0]).rounded(4.5));
+            } else {
+                switch.push(Quad::radial(lx - 4.5, 64.5, 9.0, 9.0, [0.16, 0.2, 0.17, 1.0], [0.06, 0.07, 0.06, 1.0]).rounded(4.5));
+                switch.push(Quad::rim(lx - 4.5, 64.5, 9.0, 9.0, 4.5, 1.0, [0.0, 0.0, 0.0, 0.6], [1.0, 1.0, 1.0, 0.08]));
+            }
+        }
+        switch.push(Quad::flat(sxv - 62.0, 85.0, 124.0, 2.5, [0.49, 1.0, 0.72, 0.9]).rounded(1.25));
+        halos.push(Quad::grad(sxv - 80.0, 80.0, 80.0, 12.0, [0.3, 1.0, 0.6, 0.0], [0.3, 1.0, 0.6, 0.22], false));
+        halos.push(Quad::grad(sxv, 80.0, 80.0, 12.0, [0.3, 1.0, 0.6, 0.22], [0.3, 1.0, 0.6, 0.0], false));
         // the printer's lamp while the head burns a receipt
         if self.tape.busy() {
             down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
@@ -788,7 +839,7 @@ impl State {
         }
         let mut batches = vec![base];
         batches.extend(logo);
-        batches.extend([upk, down, Batch { tex: None, quads: halos, add: true, clip: None }]);
+        batches.extend([upk, down, Batch { tex: None, quads: switch, add: false, clip: None }, Batch { tex: None, quads: halos, add: true, clip: None }]);
         let mut cv = Canvas { batches, texts: vec![], clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
@@ -815,10 +866,7 @@ impl State {
                 self.screen_anim = None;
             }
         }
-        if phase.is_some() {
-            let [x0, y0, x1, y1] = scene::LY;
-            cv.flat(Quad::flat(x0, y0, x1 - x0, y1 - y0, scene::rgb(0x0b0e09)).rounded(37.0));
-        }
+        scene::tube_back(&mut cv);
         let m_ly = (marker(&mut cv), marker(&mut over));
         if shown == panel::Screen::Home {
             if self.lyrics.lines.is_empty() {
@@ -906,8 +954,6 @@ impl State {
                     if reveal {
                         // the glowing head of the sweep, the written part still bright, the rest of the tube empty glass
                         let hx = x0 + w * k;
-                        over.flat(Quad::flat(hx, y0, x1 - hx, h, scene::rgba(0x0b0e09, 1.0)));
-                        over.flat(Quad::scan(hx, y0, x1 - hx, h, 0.3));
                         over.light(Quad::flat(x0, y0, hx - x0, h, scene::rgba(0xe6ff9a, 0.1 * (1.0 - k))));
                         over.light(Quad::grad(hx - 46.0, y0, 46.0, h, scene::rgba(0xc4e078, 0.0), scene::rgba(0xc4e078, 0.35 * (1.0 - k * 0.6)), false));
                         over.light(Quad::flat(hx - 2.0, y0, 3.0, h, scene::rgba(0xeaffb0, 0.55 * (1.0 - k * 0.6))));
@@ -916,8 +962,8 @@ impl State {
                         over.light(Quad::flat(x0, y0, w, h, scene::rgba(0xe6ff9a, 0.08 * k)));
                     }
                     over.mask = None;
-                    scene::lens(&mut over, scene::LY, 37.0);
                 }
+                scene::lens(&mut over, scene::LY, 37.0);
             }
             self.panel = panel;
         }
@@ -1022,6 +1068,8 @@ impl ApplicationHandler<Msg> for App {
         let down = load(&mut gfx, PLATE_DOWN);
         let glass = load(&mut gfx, GLASS);
         let logo = (load(&mut gfx, LOGO), load(&mut gfx, LOGO_BG));
+        // the convex tube glasses: the lyrics tube and the chat monitor
+        gfx.lenses = [(scene::LY, [0.045, 0.0035]), (chat::TUBE, [0.035, 0.003])];
         let tl = text::TextLayer::new(&gfx.device, &gfx.queue, gfx.config.format);
         // the chat: one socket, a hello with this computer's identity
         let mut store = store::Store::open();
@@ -1067,6 +1115,7 @@ impl ApplicationHandler<Msg> for App {
             logo,
             released: vec![None; keys().len()],
             screen_anim: None,
+            sw: (972.0, 0.0),
             player,
             keys: keys(),
             pressed: None,
@@ -1315,7 +1364,20 @@ impl ApplicationHandler<Msg> for App {
         el.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, ev: WindowEvent) {
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, ev: WindowEvent) {
+        // while an edge is dragged Windows sends sizes one after another: draw each at once (no stretched or
+        // black frame between the new size and the next paint)
+        let resized = matches!(ev, WindowEvent::Resized(_));
+        self.window_event_inner(el, ev);
+        if resized {
+            self.window_event_inner(el, WindowEvent::RedrawRequested);
+        }
+        let _ = id;
+    }
+}
+
+impl App {
+    fn window_event_inner(&mut self, el: &ActiveEventLoop, ev: WindowEvent) {
         let Some(st) = self.st.as_mut() else { return };
         match ev {
             WindowEvent::CloseRequested => el.exit(),
@@ -1416,6 +1478,7 @@ impl ApplicationHandler<Msg> for App {
                         if let Some(t) = &event.text {
                             st.panel.query.extend(t.chars().filter(|c| !c.is_control()));
                             st.panel.scroll = 0.0;
+                st.panel.goal = 0.0;
                         }
                     }
                 }
@@ -1467,7 +1530,7 @@ impl ApplicationHandler<Msg> for App {
                 let [lx0, ly0, lx1, ly1] = scene::LY;
                 let [px0, py0, px1, py1] = receipt::WIN;
                 if st.panel.screen != panel::Screen::Home && x >= lx0 && x <= lx1 && y >= ly0 && y <= ly1 {
-                    st.panel.scroll -= wd;
+                    st.panel.goal -= wd;
                 } else if x >= px0 && x <= px1 && y >= py0 && y <= py1 {
                     st.tape.goal -= wd * 0.6;
                 } else if x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1 {

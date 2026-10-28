@@ -104,26 +104,16 @@ impl Lyrics {
         self.last = Instant::now();
         let [x0, y0, x1, y1] = LY;
         let (w, h) = (x1 - x0, y1 - y0);
-        // the phosphor backplate: radial(135% 125% at 50% 44%, #20271b, #171d14 42%, #0d110b 72%, #050705) and a
-        // faint olive bloom (70% 60% at 42% 46%); the big gradients are cut to the tube by its rounded mask
-        cv.mask = Some((LY, 37.0));
-        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050705)));
-        let (rx, ry) = (w * 1.35, h * 1.25);
-        cv.flat(Quad::radial(x0 + w * 0.5 - rx, y0 + h * 0.44 - ry, rx * 2.0, ry * 2.0, rgb(0x20271b), rgb(0x050705)));
-        let (rx, ry) = (w * 0.7 * 0.72, h * 0.6 * 0.72);
-        cv.flat(Quad::radial(x0 + w * 0.42 - rx, y0 + h * 0.46 - ry, rx * 2.0, ry * 2.0, rgba(0x96aa5a, 0.075), rgba(0x96aa5a, 0.0)));
-        cv.flat(Quad::dots(x0, y0, w, h, 5.0, 1.1, rgba(0x96af5f, 0.06)));
-        cv.mask = None;
         // header: a green dot, the title, the artist, a hairline
         let hx = 610.0 + 34.0;
-        cv.light(Quad::glow(hx + 3.0, 190.0 + 34.0, 8.0, rgba(0x4be38f, 0.9)));
-        cv.flat(Quad::flat(hx, 190.0 + 31.0, 6.0, 6.0, rgb(0x7dffb8)).rounded(3.0));
-        let tt = Txt::new(title, text::MONO, 16.0, hx + 16.0, 190.0 + 23.0, c8(0xeef0e6, 1.0)).weight(600).glow([230, 240, 210, 70], 2.2);
+        cv.light(Quad::glow(hx + 3.0, 190.0 + 41.0, 8.0, rgba(0x4be38f, 0.9)));
+        cv.flat(Quad::flat(hx + 4.0, 190.0 + 38.0, 6.0, 6.0, rgb(0x7dffb8)).rounded(3.0));
+        let tt = Txt::new(title, text::MONO, 16.0, hx + 20.0, 190.0 + 30.0, c8(0xeef0e6, 1.0)).weight(600).glow([230, 240, 210, 70], 2.2);
         let tw = tl.measure(&tt).min(430.0);
-        cv.text(tt.clip([hx, y0, hx + 16.0 + 430.0, y1]));
-        cv.text(Txt::new(artist, text::MONO, 15.0, hx + 28.0 + tw, 190.0 + 24.0, c8(0x7b8263, 1.0)).clip([hx, y0, x1 - 40.0, y1]));
-        cv.flat(Quad::grad(640.0, 250.0, (x1 - 30.0 - 640.0) / 2.0, 1.0, rgba(0xa0b46e, 0.03), rgba(0xa0b46e, 0.2), false));
-        cv.flat(Quad::grad(640.0 + (x1 - 30.0 - 640.0) / 2.0, 250.0, (x1 - 30.0 - 640.0) / 2.0, 1.0, rgba(0xa0b46e, 0.2), rgba(0xa0b46e, 0.03), false));
+        cv.text(tt.clip([hx, y0, hx + 20.0 + 430.0, y1]));
+        cv.text(Txt::new(artist, text::MONO, 15.0, hx + 32.0 + tw, 190.0 + 31.0, c8(0x7b8263, 1.0)).clip([hx, y0, x1 - 40.0, y1]));
+        cv.flat(Quad::grad(640.0, 256.0, (x1 - 30.0 - 640.0) / 2.0, 1.0, rgba(0xa0b46e, 0.03), rgba(0xa0b46e, 0.2), false));
+        cv.flat(Quad::grad(640.0 + (x1 - 30.0 - 640.0) / 2.0, 256.0, (x1 - 30.0 - 640.0) / 2.0, 1.0, rgba(0xa0b46e, 0.2), rgba(0xa0b46e, 0.03), false));
 
         let (bx, by, bw) = (650.0, 266.0, 656.0);
         let clip = [x0 + 8.0, 256.0, x1 - 40.0, y1 - 10.0];
@@ -242,8 +232,23 @@ impl Lyrics {
             }
         }
         // the lens: scanlines, a deep shadow at the walls, a vignette, one faint reflection, the rim
-        lens(over, LY, 37.0);
     }
+}
+
+/// The lyrics tube's phosphor backplate (the same under every page shown on it, so a page change never changes it).
+pub fn tube_back(cv: &mut Canvas) {
+    let [x0, y0, x1, y1] = LY;
+    let (w, h) = (x1 - x0, y1 - y0);
+        // the phosphor backplate: radial(135% 125% at 50% 44%, #20271b, #171d14 42%, #0d110b 72%, #050705) and a
+        // faint olive bloom (70% 60% at 42% 46%); the big gradients are cut to the tube by its rounded mask
+        cv.mask = Some((LY, 37.0));
+        cv.flat(Quad::flat(x0, y0, w, h, rgb(0x050705)));
+        let (rx, ry) = (w * 1.35, h * 1.25);
+        cv.flat(Quad::radial(x0 + w * 0.5 - rx, y0 + h * 0.44 - ry, rx * 2.0, ry * 2.0, rgb(0x20271b), rgb(0x050705)));
+        let (rx, ry) = (w * 0.7 * 0.72, h * 0.6 * 0.72);
+        cv.flat(Quad::radial(x0 + w * 0.42 - rx, y0 + h * 0.46 - ry, rx * 2.0, ry * 2.0, rgba(0x96aa5a, 0.075), rgba(0x96aa5a, 0.0)));
+        cv.flat(Quad::dots(x0, y0, w, h, 5.0, 1.1, rgba(0x96af5f, 0.06)));
+        cv.mask = None;
 }
 
 /// The chat tube's glass: the same, a little lighter (its picture is darker than the lyrics')
@@ -275,9 +280,15 @@ pub fn lens(over: &mut Canvas, r: [f32; 4], rad: f32) {
     over.flat(Quad::grad(x0, y0, w, h * 0.12, rgba(0xe1f0ff, 0.07), rgba(0xe1f0ff, 0.0), true));
     over.flat(Quad::grad(x0, y0, w, 40.0, rgba(0xd2e1eb, 0.06), rgba(0xd2e1eb, 0.0), true));
     // the Fresnel band at the walls: inset 0 0 26px 8px rgba(160,182,172,.11); the gasket's shadow: inset 5px .6
-    over.flat(Quad::inset(x0, y0, w, h, rad, 34.0, rgba(0xa0b6ac, 0.11)));
+    over.flat(Quad::inset(x0, y0, w, h, rad, 34.0, rgba(0xa0b6ac, 0.15)));
+    // the bulge: the corners fall away into shadow, a soft reflection of a window high on the left
+    over.flat(Quad::radial(x0 + w / 2.0 - w * 0.72, y0 + h / 2.0 - h * 0.74, w * 1.44, h * 1.48, rgba(0, 0.0), rgba(0, 0.3)));
+    over.light(Quad::radial(x0 - w * 0.02, y0 - h * 0.12, w * 0.62, h * 0.55, rgba(0xdfeaf2, 0.075), rgba(0xdfeaf2, 0.0)));
+    over.light(Quad::radial(x0 + w * 0.06, y0 + h * 0.02, w * 0.22, h * 0.16, rgba(0xffffff, 0.06), rgba(0xffffff, 0.0)));
     over.flat(Quad::rim(x0, y0, w, h, rad, 5.0, rgba(0, 0.6), rgba(0, 0.6)));
     over.mask = None;
+    // the glass stands out of the bezel: its shadow falls on the bezel below it
+    over.flat(Quad::rim(x0 - 5.0, y0 - 2.0, w + 10.0, h + 9.0, rad + 5.0, 6.0, rgba(0, 0.0), rgba(0, 0.5)));
     // the rim (SVG): a 3 px dark gasket, a black hairline, then the glass edge, bright on top, dim below
     over.flat(Quad::rim(x0, y0, w, h, rad, 3.0, rgb(0x050605), rgb(0x050605)));
     over.flat(Quad::rim(x0 + 3.0, y0 + 3.0, w - 6.0, h - 6.0, rad - 3.0, 1.0, rgba(0, 0.7), rgba(0, 0.7)));
