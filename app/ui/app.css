@@ -674,3 +674,13 @@ body.full #rz { display: none; }
 .kav { width: 104px !important; height: 104px !important; border-radius: 16px !important; filter: none !important;
   box-shadow: 0 0 0 2px rgba(196,224,120,.45), 0 4px 14px rgba(0,0,0,.5) !important; }
 #pList .krank img { width: 96px !important; height: 96px !important; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)) !important; }
+
+/* ── v0.7.0: KUTUBXONA — the liked songs and the playlists from the phone */
+.lib { display: grid; grid-template-columns: 52px 1fr auto; gap: 14px; align-items: center; padding: 8px 6px; cursor: pointer;
+  border-bottom: 1px dotted rgba(196,224,120,.18); flex: none; }
+.lib:hover { background: rgba(196,224,120,.06); }
+.lib img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: #1d2a20; }
+.lib b { display: block; font: 700 17px RMono; color: #e6ff9a; }
+.lib span { font: 13px RMono; color: #8f9a6a; }
+.lib em { font: 26px VT; color: #9fb070; font-style: normal; }
+.lib.back { display: block; font: 18px VT; letter-spacing: .1em; color: #c4e078; padding: 4px 6px 10px; }

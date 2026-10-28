@@ -455,6 +455,21 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
   AppImage ~90 MB — близко к лимиту GitHub 100 MB на файл; если вырастет — перейти на GitHub Releases.
   Вживую на настоящем Linux не проверялось (только сборка в WSL).
 
+### v0.7.0 (2026-10-28) — KUTUBXONA, синхронизация с телефоном, Linux
+- **БАГ (исправлен):** `syncProgress` раз в 5 мин делал POST `/auth/sync` с одним `devices.desk`, а Worker POST-ом
+  ЗАМЕНЯЕТ весь прогресс аккаунта (сливает только `devices`) — лайки и плейлисты с телефона стирались. Теперь как
+  `Sync.kt` в мобилке: GET → слияние (likes/unliked по времени, `likesAt`/`unlikedAt` в store, плейлисты
+  аккаунта как есть, свой слот `desk-<uid>`) → POST полного объекта. Синк: через 6 с после старта, после входа,
+  через 3 с после лайка, раз в 5 мин.
+- **KUTUBXONA:** «♥ SEVIMLILAR» + плейлисты аккаунта (`S.playlists` из sync), клик открывает треки, «‹ ORQAGA».
+  Играет по выбранному списку (`currentList` → `libTracks`). Создавать/править плейлисты на десктопе пока нельзя.
+- **Linux:** deb с зависимостями (WebKitGTK, GStreamer good/bad/libav/pulseaudio) — ставить ТОЛЬКО через apt
+  (`dist/install-linux.sh`, одна команда curl|bash); `dpkg -i` зависимости не ставит. Окно на Linux непрозрачное
+  (`tauri.linux.conf.json`), `WEBKIT_DISABLE_DMABUF_RENDERER=1` (иначе чёрное/замёрзшее окно на многих GPU).
+  AppImage БЕЗ встроенного GStreamer (с ним 152 MB > лимита GitHub 100 MB) — берёт кодеки системы.
+  Проверено в WSL: apt ставит пакет со всеми зависимостями, приложение запускается, звук идёт.
+  Сборке AppImage нужен `patchelf` в WSL (поставлен).
+
 ### B. Функции
 1. **Вход Kawaii ID на десктопе** — нужен device/poll-флоу в облаке (`D:\kawaii_radio_app\cloud`): десктоп открывает
    браузер `id.kawaii.uz/...?code=XXXX`, опрашивает Worker до подтверждения, получает токен. Деплой Worker —

@@ -2,7 +2,7 @@
  * Coordinates are the 1920 x 1080 design ones (design/blend/main.py); #stage is scaled to the window. */
 'use strict';
 const API = 'https://radio.kawaii.uz';
-const VERSION = '0.6.9';
+const VERSION = '0.7.0';
 const $ = (s) => document.querySelector(s);
 const stage = $('#stage');
 const audio = $('#audio');
@@ -20,6 +20,7 @@ const S = {
   volume: store.get('volume', 0.72),
   lang: 'rom',
   liked: new Set(store.get('liked', [])),
+  playlists: store.get('playlists', []),
   playing: false,
   mode: 'live', // 'live' or 'pick'
 };
@@ -225,7 +226,7 @@ function stationUi() {
 
 function currentList() {
   if (screen === 1 && searchResults.length) return searchResults;
-  if (screen === 3 && S.liked.size) return [...S.liked].map((id) => tracks.get(id)).filter(Boolean);
+  if (screen === 3 && libOpen && libTracks().length) return libTracks();
   return [...tracks.values()];
 }
 function playNextTrack() {
@@ -348,8 +349,12 @@ if ('mediaSession' in navigator) {
 function toggleLike() {
   if (!cur) return;
   const id = cur.track.id;
-  if (S.liked.has(id)) S.liked.delete(id); else S.liked.add(id);
+  const la = store.get('likesAt', {}), ua = store.get('unlikedAt', {});
+  if (S.liked.has(id)) { S.liked.delete(id); delete la[id]; ua[id] = Date.now(); }
+  else { S.liked.add(id); la[id] = Date.now(); delete ua[id]; }
+  store.set('likesAt', la); store.set('unlikedAt', ua);
   store.set('liked', [...S.liked]);
+  clearTimeout(toggleLike.t); toggleLike.t = setTimeout(syncProgress, 3000);
   on(heartKey, S.liked.has(id));
   toast(S.liked.has(id) ? 'SEVIMLILARGA QO\'SHILDI' : 'SEVIMLILARDAN OLINDI');
 }
@@ -1000,28 +1005,42 @@ function syncListening() {
   }));
 }
 
+const DESK_SLOT = 'desk-' + chatId().uid.slice(5, 13);
+let syncing = false;
 async function syncProgress() {
-  if (!kid.token) return;
+  if (!kid.token || syncing) return;
+  syncing = true;
   const id = chatId();
-  const stats = store.get('listeningStats', {});
-  const body = JSON.stringify({
-    devices: {
-      desk: {
-        seen: Date.now(),
-        stats: stats
-      }
-    }
-  });
+  const call = (body) => invoke('kid_api', { path: '/auth/sync', token: kid.token, uid: id.uid, key: id.key, body });
   try {
-    await invoke('kid_api', {
-      path: '/auth/sync',
-      token: kid.token,
-      uid: id.uid,
-      key: id.key,
-      body: body
-    });
+    const [st, txt] = await call(null);
+    if (st !== 200) return;
+    const remote = (JSON.parse(txt).data) || {};
+    const now = Date.now(), cutoff = now - 180 * 864e5;
+    // likes from before this sync existed have no time: count them as liked "now" once
+    let la = store.get('likesAt', null);
+    if (!la) { la = {}; for (const t of S.liked) la[t] = now; }
+    const ua = store.get('unlikedAt', {});
+    const max = (x, y) => { const o = { ...x }; for (const [k, v] of Object.entries(y || {})) o[k] = Math.max(o[k] || 0, v); return o; };
+    const likedAt = max(la, remote.likes), unAt = Object.fromEntries(Object.entries(max(ua, remote.unliked)).filter(([, t]) => t > cutoff));
+    const likes = Object.fromEntries(Object.entries(likedAt).filter(([t, at]) => at > (unAt[t] || 0)).sort((x, y) => x[1] - y[1]));
+    const unliked = Object.fromEntries(Object.entries(unAt).filter(([t]) => !(t in likes)));
+    // this computer's listening counters, in the phone's PlayStat shape
+    const stats = {};
+    for (const [t, v] of Object.entries(store.get('listeningStats', {}))) stats[t] = { plays: v.plays || 0, seconds: v.seconds || 0, last: v.last || 0, radio: v.radio || 0 };
+    const devices = { ...(remote.devices || {}) };
+    devices[DESK_SLOT] = { ...(devices[DESK_SLOT] || {}), stats, seen: now };
+    delete devices.desk;   // the old shared "desk" slot
+    const merged = { ...remote, likes, unliked, playlists: remote.playlists || [], deletedPlaylists: remote.deletedPlaylists || {}, devices };
+    const [st2] = await call(JSON.stringify(merged));
+    if (st2 !== 200) return;
+    store.set('likesAt', likes); store.set('unlikedAt', unliked);
+    S.liked = new Set(Object.keys(likes)); store.set('liked', [...S.liked]);
+    S.playlists = merged.playlists; store.set('playlists', S.playlists);
+    if (cur) on(heartKey, S.liked.has(cur.track.id));
+    if (screen === 3) fillScreen(3);
     await kidMe();
-  } catch {}
+  } catch {} finally { syncing = false; }
 }
 function presence(m) {
   if (m.online == null) return;
@@ -1091,7 +1110,7 @@ async function kidLogin() {
       kid.token = t; store.set('kidToken', t);
       // links this chat identity to the account (a later welcome does it again)
       await kidMe();
-      if (kid.acc) { toast(`SALOM, ${String(kid.acc.name || kid.acc.username).toUpperCase()}`); sfx('up'); }
+      if (kid.acc) { toast(`SALOM, ${String(kid.acc.name || kid.acc.username).toUpperCase()}`); sfx('up'); syncProgress(); }
       else toast('KAWAII ID · XATO, QAYTA URINING');
       return;
     }
@@ -1186,7 +1205,7 @@ function fillScreen(i) {
   const list = $('#pList');
   $('#pSearch').hidden = i !== 1;
   if (i === 1) { $('#pTitle').textContent = 'QIDIRUV'; $('#pSub').textContent = `${tracks.size} ta qo'shiq efirda`; search($('#pInput').value || ''); setTimeout(() => $('#pInput').focus(), 500); }
-  if (i === 3) { $('#pTitle').textContent = 'KUTUBXONA'; $('#pSub').textContent = `${S.liked.size} ta sevimli qo'shiq`; rows([...S.liked].map((id) => tracks.get(id)).filter(Boolean), "Hali sevimli qo'shiq yo'q — yurakchani bosing."); }
+  if (i === 3) fillLibrary();
   if (i === 4) {
     $('#pTitle').textContent = 'PROFIL'; $('#pSub').textContent = 'KR-01 DESK';
     const mins = Math.round(store.get('listened', 0) / 60);
@@ -1211,6 +1230,31 @@ function fillScreen(i) {
   }
 }
 $('#pClose').addEventListener('click', () => { click(); openScreen(0); });
+let libOpen = null;      // null = the library, else a playlist id ('liked' = the liked songs)
+function libTracks() {
+  if (libOpen === 'liked') return [...S.liked].reverse().map((id) => tracks.get(id)).filter(Boolean);
+  const pl = (S.playlists || []).find((x) => x.id === libOpen);
+  return pl ? (pl.tracks || []).map((id) => tracks.get(id)).filter(Boolean) : [];
+}
+function fillLibrary() {
+  const list = $('#pList');
+  $('#pTitle').textContent = 'KUTUBXONA';
+  if (libOpen) {
+    const pl = libOpen === 'liked' ? { name: 'SEVIMLILAR' } : (S.playlists || []).find((x) => x.id === libOpen) || { name: '' };
+    const t = libTracks();
+    $('#pSub').textContent = `${String(pl.name).toUpperCase()} · ${t.length} ta qo'shiq`;
+    rows(t, "Bu ro'yxat bo'sh.");
+    list.insertAdjacentHTML('afterbegin', '<div class="lib back" data-back="1">‹ ORQAGA</div>');
+    return;
+  }
+  const pls = (S.playlists || []);
+  $('#pSub').textContent = `${S.liked.size} ta sevimli · ${pls.length} ta pleylist`;
+  const cover = (ids) => { const t = ids.map((id) => tracks.get(id)).find(Boolean); return t ? url(t.coverArt) : ''; };
+  const item = (pid, name, ids) => `<div class="lib" data-pl="${esc(pid)}"><img src="${cover(ids)}" alt=""><div><b>${esc(name)}</b><span>${ids.length} ta qo'shiq</span></div><em>›</em></div>`;
+  list.innerHTML = item('liked', '♥ SEVIMLILAR', [...S.liked].reverse())
+    + pls.map((p) => item(p.id, p.name, p.tracks || [])).join('')
+    + (kid.acc ? '' : `<div class="note">Telefondagi pleylistlar va sevimlilar Kawaii ID bilan kirgandan keyin shu yerda chiqadi.</div>`);
+}
 function rows(list, empty) {
   const box = $('#pList');
   if (!list.length) { box.innerHTML = `<div class="note">${empty}</div>`; return; }
@@ -1218,6 +1262,8 @@ function rows(list, empty) {
 }
 $('#pList').addEventListener('click', (e) => {
   if (e.target.closest('#kidIn')) { click(); kidLogin(); return; }
+  const lb = e.target.closest('.lib');
+  if (lb) { click(); libOpen = lb.dataset.back ? null : lb.dataset.pl; fillLibrary(); return; }
   if (e.target.closest('#upGo')) { click(); updateInstall(); return; }
   if (e.target.closest('#upCheck')) { click(); updateCheck(true); return; }
   if (e.target.closest('#kidOut')) { click(); kidLogout(); return; }
@@ -1250,7 +1296,9 @@ setInterval(() => {
     store.set('listened', store.get('listened', 0) + 5);
     const stats = store.get('listeningStats', {});
     const tid = cur.track.id;
-    stats[tid] = stats[tid] || { seconds: 0, radio: 0 };
+    stats[tid] = stats[tid] || { plays: 0, seconds: 0, radio: 0, last: 0 };
+    stats[tid].last = Date.now();
+    if (audio.dataset.statId !== tid) { audio.dataset.statId = tid; stats[tid].plays = (stats[tid].plays || 0) + 1; }
     if (S.mode === 'pick') stats[tid].seconds = (stats[tid].seconds || 0) + 5;
     else stats[tid].radio = (stats[tid].radio || 0) + 5;
     store.set('listeningStats', stats);
@@ -1258,6 +1306,7 @@ setInterval(() => {
 }, 5000);
 // sync progress to Kawaii ID every 5 minutes
 setInterval(syncProgress, 300000);
+setTimeout(syncProgress, 6000);
 audio.addEventListener('playing', () => {
   if (audio.dataset.counted !== audio.dataset.id) {
     audio.dataset.counted = audio.dataset.id;

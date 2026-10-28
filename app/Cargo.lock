@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "kawaii-radio-desk"
-version = "0.6.9"
+version = "0.7.0"
 dependencies = [
  "native-tls",
  "serde",
@@ -1989,6 +1989,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tauri-runtime",
  "ureq",
  "windows-sys 0.59.0",
 ]

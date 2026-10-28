@@ -456,6 +456,14 @@ mod native {
 }
 
 fn main() {
+    // Linux: WebKitGTK's DMA-BUF renderer leaves the window black or frozen on many GPUs / VMs (NVIDIA, Wayland,
+    // older Mesa); the plain GL path draws everywhere
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
     #[cfg(windows)]
     register_scheme();
     tauri::Builder::default()
