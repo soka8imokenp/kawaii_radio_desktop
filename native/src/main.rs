@@ -7,6 +7,7 @@ mod audio;
 mod chat;
 mod store;
 mod gfx;
+mod kid;
 mod net;
 mod scene;
 mod text;
@@ -19,6 +20,7 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::keyboard::{Key as WKey, NamedKey};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
@@ -35,6 +37,11 @@ enum Msg {
     Chat(serde_json::Value),
     Image { url: String, img: Option<image::RgbaImage> },
     Stickers(HashMap<String, String>),
+    /// a kawaii:// link handed over by another copy (or "focus")
+    Link(String),
+    /// the signed-in account (None = the token is no good any more)
+    Account(Option<serde_json::Value>),
+    Toast(String),
     Error(String),
 }
 
@@ -65,6 +72,10 @@ fn keys() -> Vec<Key> {
     k.push(Key { id: "prev", rect: [1036.0, 862.0, 1096.0, 956.0], radius: 18.0 });
     k.push(Key { id: "next", rect: [1036.0, 962.0, 1096.0, 1056.0], radius: 18.0 });
     k.push(Key { id: "slider", rect: [843.0, 41.0, 1361.0, 95.0], radius: 15.0 });
+    // the chat monitor's input row: the round ID key, the LCD strip, the round smile key
+    k.push(Key { id: "cid", rect: [1440.0, 1007.0, 1480.0, 1047.0], radius: 20.0 });
+    k.push(Key { id: "compose", rect: [1494.0, 1010.0, 1822.0, 1046.0], radius: 6.0 });
+    k.push(Key { id: "csm", rect: [1834.0, 1007.0, 1874.0, 1047.0], radius: 20.0 });
     for (id, cx) in [("min", 1592.0), ("max", 1628.0), ("close", 1664.0)] {
         k.push(Key { id, rect: [cx - 13.0, 45.0, cx + 13.0, 71.0], radius: 13.0 });
     }
@@ -110,6 +121,14 @@ struct State {
     images: HashMap<String, Option<usize>>,
     started: Instant,
     proxy: EventLoopProxy<Msg>,
+    token: Option<String>,
+    acc: Option<serde_json::Value>,
+    login_state: Option<String>,
+    /// the message being typed (Some = the field has the keyboard)
+    compose: Option<String>,
+    tray: bool,
+    toast: Option<(String, Instant)>,
+    uid: (String, String),
 }
 
 struct App {
@@ -146,6 +165,53 @@ fn tune(proxy: EventLoopProxy<Msg>, station: String) {
 }
 
 impl State {
+    fn toast(&mut self, t: &str) {
+        self.toast = Some((t.to_string(), Instant::now()));
+    }
+    fn login(&mut self) {
+        let s = kid::new_state();
+        self.login_state = Some(s.clone());
+        kid::open_url(&format!("{}/auth/start?s={s}&d=1", kid::CLOUD));
+        self.toast("KAWAII ID · BRAUZERDA KIRING");
+    }
+    /// /auth/me with this computer's chat identity (that also links the chat to the account)
+    fn refresh_account(&self) {
+        let (Some(t), p) = (self.token.clone(), self.proxy.clone()) else { return };
+        let (u, k) = self.uid.clone();
+        std::thread::spawn(move || {
+            let r = kid::api("/auth/me", &t, &u, &k, None);
+            let acc = match r {
+                Ok((200, b)) => serde_json::from_str::<serde_json::Value>(&b).ok().and_then(|j| j.get("account").cloned()),
+                Ok((401, _)) => None,
+                _ => return,
+            };
+            let _ = p.send_event(Msg::Account(acc));
+        });
+    }
+    /// tell the chat who we are now
+    fn chat_profile(&self) {
+        let Some(out) = &self.chat.out else { return };
+        let (name, avatar) = match &self.acc {
+            Some(a) => (
+                a.get("name").and_then(|v| v.as_str()).or(a.get("username").and_then(|v| v.as_str())).unwrap_or("Mehmon").to_string(),
+                a.get("avatar").and_then(|v| v.as_str()).map(|u| format!("k:{u}")).unwrap_or("p:0".into()),
+            ),
+            None => ("Mehmon".into(), "p:0".into()),
+        };
+        let _ = out.send(serde_json::json!({ "type": "profile", "name": name, "avatar": avatar, "card": { "now": self.now, "likes": 0, "plays": 0, "minutes": 0 } }).to_string());
+    }
+    fn send_chat(&mut self, kind: &str, body: &str) {
+        if !self.chat.up {
+            self.toast("CHAT · ULANMOQDA");
+            return;
+        }
+        if let Some(out) = &self.chat.out {
+            let nonce = format!("{:x}", net::now_ms());
+            let _ = out.send(serde_json::json!({ "type": "send", "kind": kind, "body": body, "nonce": nonce }).to_string());
+        }
+        self.chat.scroll = 0.0;
+    }
+
     fn key_at(&self, x: f32, y: f32) -> Option<usize> {
         self.keys.iter().position(|k| x >= k.rect[0] && x <= k.rect[2] && y >= k.rect[1] && y <= k.rect[3])
     }
@@ -168,6 +234,20 @@ impl State {
                     p.set_paused(!self.playing);
                 }
             }
+            "cid" | "compose" => {
+                if self.acc.is_some() {
+                    self.compose.get_or_insert_with(String::new);
+                } else {
+                    self.login();
+                }
+            }
+            "csm" => {
+                if self.acc.is_some() {
+                    self.tray = !self.tray;
+                } else {
+                    self.login();
+                }
+            }
             "st0" | "st1" | "st2" => {
                 let st = STATIONS[id[2..].parse::<usize>().unwrap()].to_string();
                 if st != self.station {
@@ -179,6 +259,22 @@ impl State {
             }
             _ => {}
         }
+    }
+
+    fn tray_stickers(&self) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = self.chat.stickers.iter().filter(|(_, f)| !(f.ends_with(".webm") || f.ends_with(".mp4"))).map(|(a, b)| (a.clone(), b.clone())).collect();
+        v.sort();
+        v.truncate(30);
+        v
+    }
+    /// The sticker under (x, y) in the tray (6 per row over the bottom of the tube).
+    fn tray_pick(&self, x: f32, y: f32) -> Option<String> {
+        let (tx, ty) = (1452.0, 994.0 - 8.0 - 5.0 * 66.0);
+        if x < tx || y < ty || x > tx + 6.0 * 68.0 || y > 994.0 - 8.0 {
+            return None;
+        }
+        let (c, r) = (((x - tx) / 68.0) as usize, ((y - ty) / 66.0) as usize);
+        self.tray_stickers().get(r * 6 + c).map(|s| s.0.clone())
     }
 
     /// Is this key shown pressed / lit right now (latched keys stay down)?
@@ -312,6 +408,61 @@ impl State {
             };
             self.chat.draw(&mut cv, &mut over, &mut self.text, &self.tracks, &mut img);
         }
+        // the compose strip under the tube (an LCD): what is typed, a blinking block cursor
+        let blink = (self.started.elapsed().as_secs_f32() / 0.55) as i32 % 2 == 0;
+        let ink = [35u8, 43, 27, 255];
+        let (line, faint) = match (&self.acc, &self.compose) {
+            (None, _) => ("KAWAII ID BILAN KIRING".to_string(), true),
+            (Some(_), Some(c)) if !c.is_empty() => (c.clone(), false),
+            (Some(_), Some(_)) => (String::new(), true),
+            (Some(_), None) => ("XABAR YOZING".to_string(), true),
+        };
+        let t = text::Txt::new(line.clone(), text::VT, 19.0, 1508.0, 1016.0, if faint { [35, 43, 27, 140] } else { ink }).clip([1500.0, 1008.0, 1816.0, 1046.0]);
+        let tw = if line.is_empty() { 0.0 } else { self.text.measure(&t) };
+        // a long message scrolls left so the cursor stays in view
+        let shift = (tw - 290.0).max(0.0);
+        let mut t = t;
+        t.x -= shift;
+        cv.text(t);
+        if (self.compose.is_some() || self.acc.is_none()) && blink {
+            let cx = if self.compose.as_deref().map(|c| c.is_empty()).unwrap_or(true) && self.acc.is_some() { 1508.0 } else { 1508.0 + tw - shift + 3.0 };
+            cv.flat(Quad::flat(cx.min(1812.0), 1019.0, 9.0, 16.0, [0.137, 0.169, 0.106, if self.compose.is_some() { 0.85 } else { 0.6 }]));
+        }
+        // the sticker tray slides up over the bottom of the tube
+        if self.tray {
+            let list = self.tray_stickers();
+            let (tx, ty) = (1452.0, 994.0 - 8.0 - 5.0 * 66.0);
+            over.flat(Quad::flat(tx - 8.0, ty - 8.0, 6.0 * 68.0 + 12.0, 5.0 * 66.0 + 12.0, [0.02, 0.05, 0.035, 0.94]).rounded(14.0));
+            let mut want = vec![];
+            for (i, (_, f)) in list.iter().enumerate() {
+                want.push((i, net::url(f)));
+            }
+            for (i, u) in want {
+                let tex = match self.images.get(&u) {
+                    Some(t) => *t,
+                    None => {
+                        self.images.insert(u.clone(), None);
+                        let p = self.proxy.clone();
+                        let u2 = u.clone();
+                        std::thread::spawn(move || {
+                            let im = net::bytes(&u2).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| image::imageops::resize(&i.to_rgba8(), 128, 128, image::imageops::FilterType::Triangle));
+                            let _ = p.send_event(Msg::Image { url: u2, img: im });
+                        });
+                        None
+                    }
+                };
+                if let Some(t) = tex {
+                    let q = Quad::full();
+                    over.quad(Some(t), Quad { rect: [tx + (i % 6) as f32 * 68.0 + 2.0, ty + (i / 6) as f32 * 66.0 + 1.0, 62.0, 62.0], uv: [0.0, 0.0, 1.0, 1.0], ..q });
+                }
+            }
+        }
+        // a toast on the LCD strip of the printer head for a moment
+        if let Some((t, at)) = &self.toast {
+            if at.elapsed().as_secs_f32() < 2.6 {
+                over.text(text::Txt::new(t.clone(), text::VT, 22.0, 1773.0, 44.0, [35, 43, 27, 255]).align(text::Align::Center).clip([1703.0, 43.0, 1843.0, 73.0]));
+            }
+        }
         cv.batches.push(flat);
         // the rendered cover glass over everything, except the lyrics tube (it has its own lens)
         let mut glass = Batch { tex: Some(self.glass), quads: vec![], add: false, clip: None };
@@ -347,6 +498,7 @@ impl ApplicationHandler<Msg> for App {
         // the chat: one socket, a hello with this computer's identity
         let mut store = store::Store::open();
         let (uid, key) = store.chat_id();
+        window.set_ime_allowed(true);
         let mut chat = chat::Chat::new();
         let (tx, rx) = std::sync::mpsc::channel();
         chat.out = Some(tx);
@@ -413,7 +565,30 @@ impl ApplicationHandler<Msg> for App {
             images: HashMap::new(),
             started: Instant::now(),
             proxy: self.proxy.clone(),
+            token: None,
+            acc: None,
+            login_state: None,
+            compose: None,
+            tray: false,
+            toast: None,
+            uid: (uid.clone(), key.clone()),
         });
+        // sign-in state from last time; links from later copies; the kawaii:// scheme
+        if let Some(st) = self.st.as_mut() {
+            st.token = st.store.get("kidToken").and_then(|v| v.as_str()).map(String::from);
+            st.acc = st.store.get("kidAcc").cloned().filter(|v| !v.is_null());
+            if st.token.is_some() {
+                st.refresh_account();
+            }
+        }
+        let p5 = self.proxy.clone();
+        kid::listen(move |s| {
+            let _ = p5.send_event(Msg::Link(s));
+        });
+        std::thread::spawn(kid::register_scheme);
+        if let Some(l) = std::env::args().find(|a| a.starts_with("kawaii://")) {
+            let _ = self.proxy.send_event(Msg::Link(l));
+        }
         window.request_redraw();
     }
 
@@ -421,7 +596,49 @@ impl ApplicationHandler<Msg> for App {
         let Some(st) = self.st.as_mut() else { return };
         match msg {
             Msg::Tracks(t) => st.tracks = t,
-            Msg::Chat(v) => st.chat.on_server(&v),
+            Msg::Chat(v) => {
+                if v.get("type").and_then(|t| t.as_str()) == Some("welcome") && st.acc.is_some() {
+                    st.chat_profile();
+                }
+                if v.get("type").and_then(|t| t.as_str()) == Some("error") {
+                    let t = v.get("text").and_then(|t| t.as_str()).unwrap_or("XATO").to_uppercase();
+                    st.toast(&t);
+                }
+                st.chat.on_server(&v)
+            }
+            Msg::Toast(t) => st.toast(&t),
+            Msg::Link(l) => {
+                st.gfx.window.focus_window();
+                if let Some((t, s)) = kid::parse_link(&l) {
+                    if st.login_state.as_deref() == Some(s.as_str()) && t.starts_with("krs_") {
+                        st.login_state = None;
+                        st.token = Some(t.clone());
+                        st.store.set("kidToken", serde_json::Value::String(t));
+                        st.refresh_account();
+                    }
+                }
+            }
+            Msg::Account(acc) => {
+                match acc {
+                    Some(a) => {
+                        let first = st.acc.is_none();
+                        st.store.set("kidAcc", a.clone());
+                        st.acc = Some(a.clone());
+                        if first {
+                            let n = a.get("name").and_then(|v| v.as_str()).unwrap_or("").to_uppercase();
+                            st.toast(&format!("SALOM, {n}"));
+                        }
+                        st.chat_profile();
+                    }
+                    None => {
+                        st.token = None;
+                        st.acc = None;
+                        st.store.set("kidToken", serde_json::Value::Null);
+                        st.store.set("kidAcc", serde_json::Value::Null);
+                        st.toast("KAWAII ID · QAYTA KIRING");
+                    }
+                }
+            }
             Msg::Stickers(m) => st.chat.stickers = m,
             Msg::Image { url, img } => {
                 let tex = img.map(|i| {
@@ -487,10 +704,23 @@ impl ApplicationHandler<Msg> for App {
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
                 let (x, y) = st.cursor;
                 match state {
+                    ElementState::Pressed if st.tray && st.tray_pick(x, y).is_some() => {
+                        if let Some(id) = st.tray_pick(x, y) {
+                            st.send_chat("sticker", &id);
+                            st.tray = false;
+                        }
+                    }
                     ElementState::Pressed => match st.key_at(x, y) {
-                        Some(i) => st.pressed = Some(i),
+                        Some(i) => {
+                            if st.keys[i].id != "compose" && st.keys[i].id != "cid" {
+                                st.compose = None;
+                            }
+                            st.pressed = Some(i)
+                        }
                         // any surface that is not a control moves the window (the OS's own move loop: Snap works)
                         None => {
+                            st.compose = None;
+                            st.tray = false;
                             let _ = st.gfx.window.drag_window();
                         }
                     },
@@ -502,6 +732,37 @@ impl ApplicationHandler<Msg> for App {
                             }
                         }
                     }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed && st.compose.is_some() => {
+                match &event.logical_key {
+                    WKey::Named(NamedKey::Enter) => {
+                        let msg = st.compose.as_ref().map(|s| s.trim().to_string()).unwrap_or_default();
+                        if !msg.is_empty() {
+                            st.send_chat("text", &msg);
+                            st.compose = Some(String::new());
+                        }
+                    }
+                    WKey::Named(NamedKey::Escape) => st.compose = None,
+                    WKey::Named(NamedKey::Backspace) => {
+                        if let Some(c) = st.compose.as_mut() {
+                            c.pop();
+                        }
+                    }
+                    _ => {
+                        if let Some(t) = &event.text {
+                            if let Some(c) = st.compose.as_mut() {
+                                if c.chars().count() < 300 {
+                                    c.extend(t.chars().filter(|ch| !ch.is_control()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            WindowEvent::Ime(winit::event::Ime::Commit(t)) => {
+                if let Some(c) = st.compose.as_mut() {
+                    c.push_str(&t);
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -546,6 +807,10 @@ impl ApplicationHandler<Msg> for App {
 }
 
 fn main() {
+    let link = std::env::args().find(|a| a.starts_with("kawaii://"));
+    if kid::hand_over(link.as_deref()) {
+        return;
+    }
     let event_loop = EventLoop::<Msg>::with_user_event().build().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App { proxy: event_loop.create_proxy(), st: None };

@@ -209,7 +209,11 @@ impl TextLayer {
             });
         }
         self.viewport.update(queue, Resolution { width: size.0, height: size.1 });
-        let _ = self.renderer.prepare(device, queue, &mut self.fs, &mut self.atlas, &self.viewport, areas, &mut self.swash);
+        if let Err(e) = self.renderer.prepare(device, queue, &mut self.fs, &mut self.atlas, &self.viewport, areas, &mut self.swash) {
+            if std::env::var_os("KR_DEBUG").is_some() {
+                eprintln!("text prepare: {e:?}");
+            }
+        }
         let frame = self.frame;
         self.cache.retain(|_, v| frame - v.1 < 120);
     }
