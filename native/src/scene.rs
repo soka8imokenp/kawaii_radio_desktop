@@ -385,19 +385,28 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
         cv.text(t);
     };
     let clip = [ox, oy, ox + lw, oy + 152.0];
+    // depth: the glass sits in a well — a pixel grid in the liquid crystal, the backlight brighter in the middle
+    // and falling off to the edges, the bezel's shadow inside the rim
+    cv.mask = Some((clip, 14.0));
+    cv.flat(Quad::dots(ox, oy, lw, 152.0, 3.0, 0.75, rgba(ink, 0.05)));
+    let (rx, ry) = (lw * 0.75, 152.0 * 0.95);
+    cv.flat(Quad::radial(ox + lw / 2.0 - rx, oy + 70.0 - ry, rx * 2.0, ry * 2.0, rgba(0xf4ffd8, 0.1), rgba(0x1c2614, 0.2)));
+    cv.flat(Quad::inset(ox, oy, lw, 152.0, 14.0, 16.0, rgba(0x101a0a, 0.4)));
+    cv.flat(Quad::grad(ox, oy, lw, 14.0, rgba(0x0b1207, 0.35), rgba(0x0b1207, 0.0), true));
+    cv.mask = None;
     // the top row: the song (title bold, artist lighter) on the left, the clock on the right, both on one line
     let (title, artist) = line1.trim_start_matches(['♫', ' ']).split_once(" · ").unwrap_or((line1, ""));
-    let mut t1 = Txt::new(format!("♫ {title}"), text::MR, 20.0, ox + 28.0, oy + 14.0, c8(ink, 1.0)).weight(700);
-    t1.spans.push(text::Span { text: format!("   {artist}"), color: c8(ink, 0.62), weight: 500 });
+    let mut t1 = Txt::new(format!("♫ {title}"), text::MR, 18.0, ox + 28.0, oy + 16.0, c8(ink, 0.8)).weight(600);
+    t1.spans.push(text::Span { text: format!("   {artist}"), color: c8(ink, 0.48), weight: 500 });
     lcd_text(cv, t1.clip([ox, oy, ox + lw - 250.0, oy + 152.0]));
     // the clock: seven-segment digits (the unlit segments faintly visible, like a real LCD), the length after it
     let total = fmt(dur);
     let tw = seg_width(&total, 9.0, 16.0);
-    seg_text(cv, &total, ox + lw - 28.0 - tw, oy + 22.0, 9.0, 16.0, 2.2, ink, 0.5);
+    seg_text(cv, &total, ox + lw - 28.0 - tw, oy + 22.0, 9.0, 16.0, 2.2, ink, 0.4);
     cv.flat(Quad::flat(ox + lw - 28.0 - tw - 14.0, oy + 21.0, 2.0, 18.0, rgba(ink, 0.35)).rotated([ox + lw - 28.0 - tw - 13.0, oy + 30.0], 0.35));
     let cur = fmt(pos);
     let cw = seg_width(&cur, 18.0, 30.0);
-    seg_text(cv, &cur, ox + lw - 28.0 - tw - 28.0 - cw, oy + 10.0, 18.0, 30.0, 4.0, ink, 1.0);
+    seg_text(cv, &cur, ox + lw - 28.0 - tw - 28.0 - cw, oy + 10.0, 18.0, 30.0, 4.0, ink, 0.82);
     let frac = if dur > 0.0 { (pos / dur).clamp(0.0, 1.0) as f32 } else { 0.0 };
     let n = wave.len().max(1) as f32;
     let wc = oy + 82.0;
@@ -406,7 +415,7 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
         let x = ox + 27.0 + i as f32 * (wv / n);
         let on = (i as f32 / n) < frac;
         cv.flat(Quad::flat(x + 1.6, wc - h / 2.0 + 1.6, wv / n * 0.62, h, rgba(ink, if on { 0.2 } else { 0.0 })));
-        cv.flat(Quad::flat(x, wc - h / 2.0, wv / n * 0.62, h, rgba(ink, if on { 1.0 } else { 0.18 })));
+        cv.flat(Quad::flat(x, wc - h / 2.0, wv / n * 0.62, h, rgba(ink, if on { 0.82 } else { 0.13 })));
     }
     cv.flat(Quad::flat(ox + 27.0 + frac * wv, wc - 25.0, 3.0, 50.0, rgb(ink)));
     if let (Some(g), true) = (ghost, dur > 0.0) {
@@ -416,7 +425,7 @@ pub fn draw_lcd(cv: &mut Canvas, wave: &[f32], line1: &str, foot: &str, pos: f64
         cv.text(if gx > ox + lw - 120.0 { Txt { x: gx - 6.0, ..tx }.align(Align::Right) } else { tx });
     }
     cv.flat(Quad::flat(ox + 27.0, oy + 117.0, wv, 1.0, rgba(ink, 0.18)));
-    lcd_text(cv, Txt::new(foot, text::BAR, 16.0, ox + 29.0, oy + 124.0, c8(ink, 0.9)).weight(600).clip(clip));
+    lcd_text(cv, Txt::new(foot, text::BAR, 15.0, ox + 29.0, oy + 125.0, c8(ink, 0.6)).weight(500).clip(clip));
 }
 
 /* ───────── the tuner drum (#drum: 258,866 500x92 — a brushed graphite cylinder with a printed scale) */

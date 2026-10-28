@@ -596,6 +596,8 @@ impl State {
                     self.go(panel::Screen::Search);
                     self.search_focus = true;
                 } else if self.has_kp() {
+                    // the band is O'Z TANLOVIM from now on (the radio plays on until a song is chosen)
+                    self.pick = true;
                     self.go(panel::Screen::Search);
                     self.search_focus = true;
                     self.toast("O'Z TANLOVIM · QO'SHIQ TANLANG");
@@ -661,8 +663,7 @@ impl State {
             "nav3" => self.panel.screen == panel::Screen::Profile,
             "gear" => self.panel.screen == panel::Screen::Settings,
             "heart" => self.now.as_ref().is_some_and(|n| self.liked.contains(n)),
-            "sl_radio" => !self.pick,
-            "sl_pick" => self.pick,
+            "sl_radio" | "sl_pick" => false,
             "st0" | "st1" | "st2" => !self.pick && STATIONS[id[2..].parse::<usize>().unwrap()] == self.station,
             _ => false,
         }
@@ -735,6 +736,9 @@ impl State {
         let mut down = Batch { tex: Some(self.down), quads: vec![], add: false, clip: None };
         for i in 0..self.keys.len() {
             let k = &self.keys[i];
+            if k.id.starts_with("sl_") {
+                continue;
+            }
             let (off, sc) = if self.pressed == Some(i) && k.id != "play" {
                 (1.4, 0.992)
             } else if let Some(t) = self.released.get(i).copied().flatten().map(|t| t.elapsed().as_secs_f32() / 0.28).filter(|t| *t < 1.0) {
@@ -769,6 +773,7 @@ impl State {
         ];
         let mut halos: Vec<Quad> = vec![];
         let mut switch: Vec<Quad> = vec![];
+        let mut cv_texts: Vec<text::Txt> = vec![];
         // LEDs: the lit lens from the down plate, with its brightness
         for j in 0..18 {
             let b = self.leds[j];
@@ -779,28 +784,57 @@ impl State {
                 halos.push(Quad::glow(64.0, y, 17.0, col));
             }
         }
-        // the band switch: a lamp beside each label (green = in), and a phosphor light under the active one that
-        // slides across with a little spring when the band changes
-        let want = if self.pick { 1248.0 } else { 972.0 };
+        // the band switch: a recessed panel over the two plate keys, RADIO printed on the left, O'Z TANLOVIM on
+        // the right, between them a slot with a metal slider knob that snaps across (a little spring)
+        let want = if self.pick { 1.0 } else { 0.0 };
         let (sx, sv) = &mut self.sw;
         for _ in 0..(dt * 60.0).round().max(1.0) as i32 {
-            *sv += (want - *sx) * 0.09;
-            *sv *= 0.72;
+            *sv += (want - *sx) * 0.11;
+            *sv *= 0.68;
             *sx += *sv;
         }
-        let sxv = *sx;
-        for (lx, on) in [(905.0f32, !self.pick), (1168.0, self.pick)] {
-            if on {
-                halos.push(Quad::glow(lx, 69.0, 16.0, [0.3, 1.0, 0.6, 0.35]));
-                switch.push(Quad::radial(lx - 4.5, 64.5, 9.0, 9.0, [0.85, 1.0, 0.9, 1.0], [0.2, 0.85, 0.45, 1.0]).rounded(4.5));
-            } else {
-                switch.push(Quad::radial(lx - 4.5, 64.5, 9.0, 9.0, [0.16, 0.2, 0.17, 1.0], [0.06, 0.07, 0.06, 1.0]).rounded(4.5));
-                switch.push(Quad::rim(lx - 4.5, 64.5, 9.0, 9.0, 4.5, 1.0, [0.0, 0.0, 0.0, 0.6], [1.0, 1.0, 1.0, 0.08]));
-            }
+        // the knob stops hard at the slot's ends (the spring only shows as a little bounce back)
+        let f = sx.clamp(0.0, 1.0);
+        let [px0, py0, px1, py1] = [843.0f32, 41.0, 1361.0, 95.0];
+        let (pw, ph) = (px1 - px0, py1 - py0);
+        switch.push(Quad::flat(px0 - 2.0, py0 - 2.0, pw + 4.0, ph + 4.0, [0.05, 0.055, 0.06, 1.0]).rounded(18.0));
+        switch.push(Quad::grad(px0, py0, pw, ph, scene::rgb(0x15171a), scene::rgb(0x1d1f23), true).rounded(16.0));
+        switch.push(Quad::inset(px0, py0, pw, ph, 16.0, 12.0, [0.0, 0.0, 0.0, 0.55]));
+        switch.push(Quad::rim(px0 - 2.0, py0 - 2.0, pw + 4.0, ph + 4.0, 18.0, 1.0, [0.0, 0.0, 0.0, 0.5], [1.0, 1.0, 1.0, 0.07]));
+        // the slot
+        let (tc, tw2, ty) = (1102.0f32, 84.0f32, 68.0f32);
+        switch.push(Quad::flat(tc - tw2, ty - 11.0, tw2 * 2.0, 22.0, scene::rgb(0x070809)).rounded(11.0));
+        switch.push(Quad::inset(tc - tw2, ty - 11.0, tw2 * 2.0, 22.0, 11.0, 7.0, [0.0, 0.0, 0.0, 0.8]));
+        switch.push(Quad::rim(tc - tw2, ty - 11.0, tw2 * 2.0, 22.0, 11.0, 1.0, [0.0, 0.0, 0.0, 0.6], [1.0, 1.0, 1.0, 0.09]));
+        // a phosphor glow inside the slot on the chosen side
+        let gx = tc - tw2 + 24.0 + f * (tw2 * 2.0 - 48.0);
+        halos.push(Quad::glow(gx, ty, 30.0, [0.3, 1.0, 0.6, 0.16]));
+        // the knob: brushed metal, lit from above, three grip ridges, its shadow on the panel
+        let kx = tc - tw2 + 4.0 + f * (tw2 * 2.0 - 8.0 - 76.0);
+        let (kw, kh, ky) = (76.0f32, 36.0f32, ty - 18.0);
+        switch.push(Quad::flat(kx + 2.0, ky + 4.0, kw, kh, [0.0, 0.0, 0.0, 0.5]).rounded(11.0));
+        switch.push(Quad::grad(kx, ky, kw, kh, scene::rgb(0x8c929b), scene::rgb(0x3a3e45), true).rounded(10.0));
+        switch.push(Quad::grad(kx + 2.0, ky + 2.0, kw - 4.0, kh * 0.45, [1.0, 1.0, 1.0, 0.22], [1.0, 1.0, 1.0, 0.0], true).rounded(8.0));
+        switch.push(Quad::rim(kx, ky, kw, kh, 10.0, 1.2, [1.0, 1.0, 1.0, 0.35], [0.0, 0.0, 0.0, 0.5]));
+        for g in [-10.0f32, 0.0, 10.0] {
+            let cx = kx + kw / 2.0 + g;
+            switch.push(Quad::flat(cx - 1.5, ky + 9.0, 2.0, kh - 18.0, [0.1, 0.11, 0.12, 0.85]).rounded(1.0));
+            switch.push(Quad::flat(cx + 0.5, ky + 9.0, 1.0, kh - 18.0, [1.0, 1.0, 1.0, 0.25]));
         }
-        switch.push(Quad::flat(sxv - 62.0, 85.0, 124.0, 2.5, [0.49, 1.0, 0.72, 0.9]).rounded(1.25));
-        halos.push(Quad::grad(sxv - 80.0, 80.0, 80.0, 12.0, [0.3, 1.0, 0.6, 0.0], [0.3, 1.0, 0.6, 0.22], false));
-        halos.push(Quad::grad(sxv, 80.0, 80.0, 12.0, [0.3, 1.0, 0.6, 0.22], [0.3, 1.0, 0.6, 0.0], false));
+        // the printed labels: the chosen one lit
+        let lab = |t: &str, x: f32, on: f32| {
+            let c = |a: u32, b: u32| {
+                let m = |sh: u32| (((a >> sh) & 255) as f32 + ((((b >> sh) & 255) as f32) - ((a >> sh) & 255) as f32) * on) as u8;
+                [m(16), m(8), m(0), 255]
+            };
+            let mut t = text::Txt::new(t, text::BAR, 16.0, x, 59.0, c(0x7a818a, 0xc9f5d8)).weight(600).align(text::Align::Center);
+            if on > 0.5 {
+                t = t.glow([110, 255, 170, (120.0 * on) as u8], 3.0);
+            }
+            t
+        };
+        cv_texts.push(lab("R A D I O", 952.0, (1.0 - f).clamp(0.0, 1.0)));
+        cv_texts.push(lab("O ' Z   T A N L O V I M", 1258.0, f.clamp(0.0, 1.0)));
         // the printer's lamp while the head burns a receipt
         if self.tape.busy() {
             down.quads.push(Quad::plate_cut(1857.0, 41.0, 1875.0, 59.0, 1.0).rounded(9.0));
@@ -840,7 +874,7 @@ impl State {
         let mut batches = vec![base];
         batches.extend(logo);
         batches.extend([upk, down, Batch { tex: None, quads: switch, add: false, clip: None }, Batch { tex: None, quads: halos, add: true, clip: None }]);
-        let mut cv = Canvas { batches, texts: vec![], clip: None, mask: None };
+        let mut cv = Canvas { batches, texts: cv_texts, clip: None, mask: None };
         let mut over = Canvas::new();
         let track = self.now.as_ref().and_then(|id| self.tracks.get(id)).cloned();
         let (pos, dur) = if self.pick {
@@ -1115,7 +1149,7 @@ impl ApplicationHandler<Msg> for App {
             logo,
             released: vec![None; keys().len()],
             screen_anim: None,
-            sw: (972.0, 0.0),
+            sw: (0.0, 0.0),
             player,
             keys: keys(),
             pressed: None,

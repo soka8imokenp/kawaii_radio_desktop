@@ -4,7 +4,7 @@
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND};
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-use windows_sys::Win32::UI::WindowsAndMessaging::{WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_SIZING};
+use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOSIZE, WINDOWPOS, WM_WINDOWPOSCHANGING, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_SIZING};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 unsafe extern "system" fn keep_aspect(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, _id: usize, _data: usize) -> LRESULT {
@@ -19,6 +19,19 @@ unsafe extern "system" fn keep_aspect(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
             _ => {}
         }
         return 1;
+    }
+    if msg == WM_WINDOWPOSCHANGING && lp != 0 {
+        let p = unsafe { &mut *(lp as *mut WINDOWPOS) };
+        if p.flags & SWP_NOSIZE == 0 && p.cx > 0 && p.cy > 0 {
+            let (cx, cy) = (p.cx, p.cy);
+            if cx * 9 > cy * 16 {
+                p.cx = cy * 16 / 9;
+                p.x += (cx - p.cx) / 2;
+            } else if cx * 9 < cy * 16 {
+                p.cy = cx * 9 / 16;
+                p.y += (cy - p.cy) / 2;
+            }
+        }
     }
     unsafe { DefSubclassProc(hwnd, msg, wp, lp) }
 }
