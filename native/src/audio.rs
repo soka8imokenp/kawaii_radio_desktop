@@ -121,12 +121,27 @@ impl Source for Prepared {
 
 /// Open an mp3 URL for streaming, `offset()` into it (asked once the stream is open, so a slow start is counted),
 /// and decode the first second. Runs on a worker thread.
+/// What the file really is, by its first bytes (some songs named .mp3 are MP4/AAC inside): the decoder's hint.
+fn sniff<R: std::io::Read + std::io::Seek>(r: &mut R) -> &'static str {
+    let mut h = [0u8; 12];
+    let n = r.read(&mut h).unwrap_or(0);
+    let _ = r.seek(std::io::SeekFrom::Start(0));
+    match (&h[..n.min(12)], n) {
+        (h, 12) if &h[4..8] == b"ftyp" => "m4a",
+        (h, n) if n >= 4 && &h[..4] == b"fLaC" => "flac",
+        (h, n) if n >= 4 && &h[..4] == b"OggS" => "ogg",
+        (h, n) if n >= 4 && &h[..4] == b"RIFF" => "wav",
+        _ => "mp3",
+    }
+}
+
 pub fn prepare(url: &str, offset: impl FnOnce() -> Duration) -> Result<Prepared, String> {
     let t0 = std::time::Instant::now();
-    let st = crate::stream::open(url)?;
+    let mut st = crate::stream::open(url)?;
+    let hint = sniff(&mut st);
     crate::dlog(&format!("stream open {:?}", t0.elapsed()));
     let len = st.len();
-    let mut dec = Decoder::builder().with_data(st).with_byte_len(len).with_seekable(true).with_coarse_seek(true).with_hint("mp3").build().map_err(|e| e.to_string())?;
+    let mut dec = Decoder::builder().with_data(st).with_byte_len(len).with_seekable(true).with_coarse_seek(true).with_gapless(false).with_hint(hint).build().map_err(|e| e.to_string())?;
     let off = offset();
     if off > Duration::from_millis(500) {
         let _ = dec.try_seek(off);
@@ -337,5 +352,25 @@ impl Player {
     }
     pub fn idle(&self) -> bool {
         self.sink.empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Songs a listener reported as "chosen but silent": they open, decode and give sound.
+    #[test]
+    #[ignore]
+    fn reported_songs_play() {
+        for f in ["mika-kobayashi-before-my-body-is-dry-mvjbffw6.mp3", "sawanohiroyuki-nzk-mizuki-aliez-mvjcim11.mp3"] {
+            let t = std::time::Instant::now();
+            let p = super::prepare(&crate::net::url(&format!("/files/audio/{f}")), || std::time::Duration::ZERO);
+            match p {
+                Ok(p) => {
+                    let peak = p.pre.iter().fold(0f32, |a, s| a.max(s.abs()));
+                    println!("{f}: ok {} samples, peak {peak:.3}, {:?}", p.pre.len(), t.elapsed());
+                }
+                Err(e) => println!("{f}: ERROR {e} after {:?}", t.elapsed()),
+            }
+        }
     }
 }

@@ -13,3 +13,6 @@ Kawaii Radio/
 # scanned CC0 textures, fetched by design/blend/fetch_pbr.sh
 design/blend/pbr/
 design/blend/*.bak
+
+# the builds are published to radio.kawaii.uz (native/publish.ps1), not kept in git
+dist/KawaiiRadio-*

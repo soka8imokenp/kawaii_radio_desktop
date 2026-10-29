@@ -9,12 +9,13 @@
 4. writes dist/latest.json (the Linux entries made by release_linux.sh are kept). Every installed copy, the old
    Tauri version included, reads it from GitHub — the update goes live when the commit with dist/ is pushed.
 """
-import datetime, json, os, re, subprocess, sys
+import datetime, hashlib, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..')
 DIST = os.path.join(ROOT, 'dist')
-RAW = 'https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/'
+# the builds are served from our own domain (publish.ps1 puts them into the bucket's desk/)
+RAW = 'https://radio.kawaii.uz/files/desk/'
 KEY = os.environ.get('KR_UPDATER_KEY', r'C:\Users\soka\kawaii-keys\desk-updater.key')
 TOOLS = os.path.join(ROOT, '.tools')
 MAKENSIS = os.environ.get('MAKENSIS', os.path.join(os.environ.get('LOCALAPPDATA', ''), 'tauri', 'NSIS', 'makensis.exe'))
@@ -43,7 +44,8 @@ latest = json.load(open(path, encoding='utf-8')) if os.path.exists(path) else {'
 latest['version'] = ver
 latest['notes'] = notes
 latest['pub_date'] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-latest['platforms']['windows-x86_64'] = {'signature': sig, 'url': RAW + name}
+data = open(exe, 'rb').read()
+latest['platforms']['windows-x86_64'] = {'signature': sig, 'url': RAW + name, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
 # a platform still pointing at an older version would make its copies install that one as "the new version": dropped
 latest['platforms'] = {k: v for k, v in latest['platforms'].items() if k == 'windows-x86_64' or f'-{ver}' in v['url'] or f'_{ver}' in v['url']}
 json.dump(latest, open(path, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)

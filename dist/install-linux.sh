@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Kawaii Radio — Linux (Ubuntu / Debian / Mint / Pop!_OS) o'rnatuvchisi.
-# Bitta buyruq bilan: kerakli tizim kutubxonalari (ovoz, shifrlash) avtomatik o'rnatiladi.
-#   curl -fsSL https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/install-linux.sh | bash
+# Kawaii Radio — Linux o'rnatuvchisi (Ubuntu / Debian / Mint / Pop!_OS — .deb; Fedora / openSUSE — .rpm).
+# Bitta buyruq bilan, kerakli tizim kutubxonalari (ovoz, shifrlash) bilan birga:
+#   curl -fsSL https://radio.kawaii.uz/download/install.sh | bash
 set -euo pipefail
-RAW=https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist
-V=$(curl -fsSL "$RAW/latest.json" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)
-DEB="KawaiiRadio-${V}_amd64.deb"
+BASE=https://radio.kawaii.uz/download
 TMP=$(mktemp -d)
-echo "Kawaii Radio v$V yuklab olinmoqda…"
-curl -fL --progress-bar -o "$TMP/$DEB" "$RAW/$DEB"
+trap 'rm -rf "$TMP"' EXIT
+if command -v apt-get >/dev/null 2>&1; then
+  KIND=deb; FILE="$TMP/kawaii-radio.deb"
+elif command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then
+  KIND=rpm; FILE="$TMP/kawaii-radio.rpm"
+else
+  echo "Bu tizim uchun AppImage'ni oling: $BASE/appimage (chmod +x qilib ishga tushiring)"; exit 1
+fi
+echo "Kawaii Radio yuklab olinmoqda…"
+curl -fL --proto '=https' --tlsv1.2 --progress-bar -o "$FILE" "$BASE/$KIND"
 echo "O'rnatilmoqda (parol so'ralishi mumkin)…"
-sudo apt-get update -qq
-# apt installs the .deb together with every library it depends on (dpkg -i would not)
-sudo apt-get install -y "$TMP/$DEB"
-rm -rf "$TMP"
+case "$KIND" in
+  deb) sudo apt-get update -qq; sudo apt-get install -y "$FILE" ;;
+  rpm) if command -v dnf >/dev/null 2>&1; then sudo dnf install -y "$FILE"; else sudo zypper --non-interactive install "$FILE"; fi ;;
+esac
 echo "Tayyor! Menyudan \"Kawaii Radio\" ni oching."

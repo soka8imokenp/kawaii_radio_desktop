@@ -1,0 +1,8 @@
+# The build machine's paths stay out of the shipped program (panic messages and debug strings would carry them).
+# When several prefixes match, rustc takes the last one: the general one first.
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+  '--remap-path-prefix=D:\kawaii_radio_exe=.',
+  '--remap-path-prefix=D:\kawaii_radio_exe\native=kr',
+  '--remap-path-prefix=D:\kawaii_radio_exe\.tools\cargo\registry\src=crates',
+]

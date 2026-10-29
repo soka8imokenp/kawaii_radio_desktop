@@ -42,28 +42,37 @@ pub fn register_scheme() {
     }
     #[cfg(not(windows))]
     {
-        let Some(home) = std::env::var_os("HOME") else { return };
-        let dir = std::path::PathBuf::from(home).join(".local/share/applications");
-        let _ = std::fs::create_dir_all(&dir);
-        let desk = format!(
-            "[Desktop Entry]\nType=Application\nName=Kawaii Radio (link)\nExec=\"{}\" %u\nNoDisplay=true\nMimeType=x-scheme-handler/kawaii;\n",
-            exe.display()
-        );
-        let _ = std::fs::write(dir.join("kawaii-radio-link.desktop"), desk);
-        let _ = std::process::Command::new("xdg-mime").args(["default", "kawaii-radio-link.desktop", "x-scheme-handler/kawaii"]).status();
-        let _ = std::process::Command::new("update-desktop-database").arg(&dir).status();
+        let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else { return };
+        let apps = home.join(".local/share/applications");
+        let _ = std::fs::remove_file(apps.join("kawaii-radio-link.desktop"));
+        // a .deb / .rpm install has its own entry (with the icon) in /usr/share; anything else (the AppImage, a bare
+        // binary) gets one in the user's menu: the same name, so the dock matches the window (app_id kawaii-radio)
+        if !exe.starts_with("/usr/") {
+            let _ = std::fs::create_dir_all(&apps);
+            let icons = home.join(".local/share/icons/hicolor/128x128/apps");
+            let _ = std::fs::create_dir_all(&icons);
+            let _ = std::fs::write(icons.join("kawaii-radio.png"), include_bytes!("../../app/icons/128x128.png"));
+            let desk = format!(
+                "[Desktop Entry]\nType=Application\nName=Kawaii Radio\nComment=Jonli J-Pop / OST / Riot radio\nExec=\"{}\" %u\nIcon=kawaii-radio\nTerminal=false\nCategories=AudioVideo;Audio;Player;\nMimeType=x-scheme-handler/kawaii;\nStartupWMClass=kawaii-radio\n",
+                exe.display()
+            );
+            let _ = std::fs::write(apps.join("kawaii-radio.desktop"), desk);
+            let _ = std::process::Command::new("update-desktop-database").arg(&apps).status();
+        }
+        let _ = std::process::Command::new("xdg-mime").args(["default", "kawaii-radio.desktop", "x-scheme-handler/kawaii"]).status();
     }
 }
 
 /// If a copy is already running, hand it our kawaii:// link (or just wake it) and return true: this copy quits.
+/// The running copy answers "ok"; one that does not (a process stuck on its way out) does not count, and this copy
+/// opens its own window.
 pub fn hand_over(link: Option<&str>) -> bool {
-    match TcpStream::connect_timeout(&([127, 0, 0, 1], PORT).into(), Duration::from_millis(300)) {
-        Ok(mut s) => {
-            let _ = s.write_all(link.unwrap_or("focus").as_bytes());
-            true
-        }
-        Err(_) => false,
-    }
+    let Ok(mut s) = TcpStream::connect_timeout(&([127, 0, 0, 1], PORT).into(), Duration::from_millis(300)) else { return false };
+    let _ = s.write_all(link.unwrap_or("focus").as_bytes());
+    let _ = s.shutdown(std::net::Shutdown::Write);
+    let _ = s.set_read_timeout(Some(Duration::from_millis(1500)));
+    let mut ack = [0u8; 2];
+    s.read_exact(&mut ack).is_ok() && &ack == b"ok"
 }
 
 /// Is a copy running (its socket open)? Only looks, hands nothing over.
@@ -104,7 +113,10 @@ pub fn listen(on_link: impl Fn(String) + Send + 'static) {
                         on_link(format!("kawaii://{path}"));
                     }
                 }
-                None => on_link(text),
+                None => {
+                    let _ = s.write_all(b"ok");
+                    on_link(text);
+                }
             }
         }
     });

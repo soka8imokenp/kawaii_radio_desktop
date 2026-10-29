@@ -1,12 +1,12 @@
-//! Updates: the same signed manifest the first (Tauri) version reads (dist/latest.json on GitHub, minisign
-//! signatures by the key kept outside the repo), so both versions update from one place — the old one installs this
-//! app as its update. A new version is downloaded, its signature checked, then installed:
+//! Updates: a signed manifest on our own domain (radio.kawaii.uz/files/desk/latest.json, the builds next to it;
+//! minisign signatures by the key kept outside the repo). Older copies still read the copy in the repo, which points
+//! at the same files. A new version is downloaded, its signature checked, then installed:
 //! Windows — the NSIS installer runs silently and starts the app again; Linux — the AppImage replaces itself.
 
 use serde::Deserialize;
 use std::collections::HashMap;
 
-const MANIFEST: &str = "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/latest.json";
+const MANIFEST: &str = "https://radio.kawaii.uz/files/desk/latest.json";
 /// The updater's public key (minisign, base64 of the key file), the same as in app/tauri.conf.json.
 const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFGQUIzMjQ0NzkzOUYwRDMKUldUVDhEbDVSREtycjZUNDNxdC9IUENtOHFxTTc1aFpuYWVkRTZ4NHRvNDdxSm9lMHp0eS9mUzkK";
 

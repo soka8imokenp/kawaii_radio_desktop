@@ -155,8 +155,11 @@ impl Read for Stream {
             if let Some(e) = &g.failed {
                 return Err(std::io::Error::other(e.clone()));
             }
-            // the downloader is elsewhere: send it here
-            if !(g.cursor <= self.pos && self.pos < g.cursor + NEAR) && g.want != b as u64 * BLK {
+            // the downloader is elsewhere: send it here. It is near when it is inside this block (the block is
+            // being written) or a little before it; past the block's end, or far before it, it is not coming.
+            let bs = b as u64 * BLK;
+            let near = g.cursor <= bs + BLK && g.cursor + NEAR > bs;
+            if !near && g.want != bs {
                 g.want = b as u64 * BLK;
                 g.epoch += 1;
             }

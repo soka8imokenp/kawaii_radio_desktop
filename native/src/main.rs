@@ -121,6 +121,8 @@ enum Msg {
     /// how often every song was played on Kawaii Radio (all listeners); an artist's monthly listeners
     Plays(HashMap<String, u64>),
     Listeners(String, Option<u64>),
+    /// more of a station's schedule
+    Slots(String, Vec<net::Slot>),
     /// TEKSHIRISH found nothing newer (or could not ask)
     Checked(bool),
     /// the update downloading (0..1), or why it failed
@@ -204,6 +206,8 @@ struct State {
     listeners: HashMap<String, Option<u64>>,
     /// the sleep timer: when the music fades out
     sleep_at: Option<Instant>,
+    /// when the schedule was last asked for more
+    slots_at: Option<Instant>,
     /// the account came from the server in this run (not only from the copy on disk)
     acc_live: bool,
     /// static while a station is being found: the sound's stop flag, how much of it shows (0..1), since when
@@ -1113,7 +1117,19 @@ impl State {
         if self.preload.is_some() {
             return;
         }
-        let Some(nx) = self.slots.iter().find(|s| s.start >= end - 2000 && s.start > self.slot.0).cloned() else { return };
+        let Some(nx) = self.slots.iter().find(|s| s.start >= end - 2000 && s.start > self.slot.0).cloned() else {
+            // the schedule we have is used up (it covers a few hours): ask for the next part before this song ends
+            if live > end - 40_000 && self.slots_at.is_none_or(|t| t.elapsed() > Duration::from_secs(15)) {
+                self.slots_at = Some(Instant::now());
+                let (p, station) = (self.proxy.clone(), self.station.clone());
+                std::thread::spawn(move || {
+                    if let Ok(sch) = net::schedule(&station) {
+                        let _ = p.send_event(Msg::Slots(station, sch.slots));
+                    }
+                });
+            }
+            return;
+        };
         if live < nx.start - 15_000 {
             return;
         }
@@ -1310,8 +1326,10 @@ impl State {
         let (l, r) = self.player.as_ref().map(|p| p.levels.get()).unwrap_or((0.0, 0.0));
         let (l, r) = if self.playing { (l, r) } else { (0.0, 0.0) };
 
-        // LEVEL: 18 LEDs, the top one glows partly, each fades with a short afterglow
-        let v = ((l + r) * 0.5 * 3.2).min(1.0);
+        // LEVEL: 18 LEDs on a dB scale (-30 dBFS empty .. -4 dBFS full: loud mastering reaches the top only on its
+        // peaks, a quiet song stays low), the top one glows partly, each fades with a short afterglow
+        let rms = (l + r) * 0.5;
+        let v = if rms > 1e-5 { ((20.0 * rms.log10() + 30.0) / 26.0).clamp(0.0, 1.0) } else { 0.0 };
         self.level = if v > self.level { v } else { self.level * 0.9 + v * 0.1 };
         let x = self.level * 18.0;
         for j in 0..18 {
@@ -1324,7 +1342,8 @@ impl State {
             if rms <= 1e-5 {
                 return -54.0;
             }
-            let db = 20.0 * rms.log10() + 14.0;
+            // 0 VU = -8 dBFS RMS: today's loud songs swing around the red line instead of pinning past it
+            let db = 20.0 * rms.log10() + 8.0;
             if db <= -20.0 {
                 return (-48.0 - (-20.0 - db) * 0.4).max(-54.0);
             }
@@ -1825,6 +1844,12 @@ impl ApplicationHandler<Msg> for App {
         // Windows: the DWM shadow on, so Windows 11 also rounds the corners of the borderless window
         #[cfg(windows)]
         let attrs = winit::platform::windows::WindowAttributesExtWindows::with_undecorated_shadow(attrs, true);
+        // Linux: the window says which app it is (Wayland app_id / X11 WM_CLASS = kawaii-radio.desktop), so the dock
+        // shows its icon and groups it with the menu entry
+        #[cfg(target_os = "linux")]
+        let attrs = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, "kawaii-radio", "kawaii-radio");
+        #[cfg(target_os = "linux")]
+        let attrs = winit::platform::x11::WindowAttributesExtX11::with_name(attrs, "kawaii-radio", "kawaii-radio");
         let window = Arc::new(el.create_window(attrs).expect("window"));
         #[cfg(windows)]
         win::setup(&window);
@@ -1917,6 +1942,7 @@ impl ApplicationHandler<Msg> for App {
             plays_at: None,
             listeners: HashMap::new(),
             sleep_at: None,
+            slots_at: None,
             acc_live: false,
             static_stop: None,
             static_amt: 0.0,
@@ -2179,6 +2205,11 @@ impl ApplicationHandler<Msg> for App {
             Msg::Stickers(m) => st.chat.stickers = m,
             Msg::Artists(a) => st.artists = a,
             Msg::Plays(m) => st.plays = m,
+            Msg::Slots(station, slots) => {
+                if station == st.station {
+                    st.slots = slots;
+                }
+            }
             Msg::Listeners(a, n) => {
                 st.listeners.insert(a, n);
             }
@@ -2313,7 +2344,13 @@ impl App {
     fn window_event_inner(&mut self, el: &ActiveEventLoop, ev: WindowEvent) {
         let Some(st) = self.st.as_mut() else { return };
         match ev {
-            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::CloseRequested => {
+                // out at once: dropping the sound device can hang on some Linux systems, and a copy stuck on its way
+                // out would keep the next start from opening a window
+                st.store.set("listen", st.listen.clone());
+                let _ = el;
+                std::process::exit(0);
+            }
             WindowEvent::Resized(s) => {
                 st.gfx.resize(s.width, s.height);
                 if cfg!(not(windows)) && s.width > 0 && s.height > 0 {

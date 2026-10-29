@@ -26,6 +26,9 @@ if ! pkg-config --exists alsa 2>/dev/null; then
   export PKG_CONFIG_PATH="$B/sysroot/usr/lib/x86_64-linux-gnu/pkgconfig"
   export RUSTFLAGS="-L $B/sysroot/usr/lib/x86_64-linux-gnu"
 fi
+# the build machine's paths stay out of the program (panic messages would carry them)
+# (the last matching prefix wins: the general one first)
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME=~ --remap-path-prefix=$B/native=kr --remap-path-prefix=$HOME/.cargo/registry/src=crates"
 
 cd "$B/native"
 cargo build --release
@@ -120,17 +123,18 @@ for f in "KawaiiRadio-${V}_amd64.AppImage" "KawaiiRadio-${V}_amd64.deb" "KawaiiR
   cargo tauri signer sign "$DIST/$f" >/dev/null
 done
 python3 - "$V" <<'PY'
-import json, os, sys
+import hashlib, json, os, sys
 v = sys.argv[1]
 d = '/mnt/d/kawaii_radio_exe/dist'
-raw = 'https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/'
+raw = 'https://radio.kawaii.uz/files/desk/'
 p = os.path.join(d, 'latest.json')
 j = json.load(open(p, encoding='utf-8'))
 assert j['version'] == v, 'run release.py for this version first'
 for key, f in [('linux-x86_64', f'KawaiiRadio-{v}_amd64.AppImage'), ('linux-x86_64-deb', f'KawaiiRadio-{v}_amd64.deb'), ('linux-x86_64-rpm', f'KawaiiRadio-{v}.x86_64.rpm')]:
     sig = open(os.path.join(d, f + '.sig')).read().strip()
     os.remove(os.path.join(d, f + '.sig'))
-    j['platforms'][key] = {'signature': sig, 'url': raw + f}
+    data = open(os.path.join(d, f), 'rb').read()
+    j['platforms'][key] = {'signature': sig, 'url': raw + f, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
 json.dump(j, open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 print('LINUX', v)
 PY
