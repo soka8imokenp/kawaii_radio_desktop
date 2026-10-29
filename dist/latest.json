@@ -1,23 +1,31 @@
 {
-  "version": "0.8.3",
-  "notes": "Stansiya almashganda radio haqiqiy priyomnikdek sozlanadi: efir shovqini va hushtak, ekranda shovqin va 'SIGNAL QIDIRILMOQDA', baraban signalni qidiradi — musiqa kelishi bilan shovqin so'nadi; Fedora uchun .rpm paketi (dnf orqali o'rnatiladi va yangilanadi); himoya: Kawaii Pass faqat server tasdiqlagandan keyin ishlaydi, saqlangan qo'shiqlar shu kompyuterga bog'langan",
-  "pub_date": "2026-10-29T17:34:19Z",
+  "version": "0.8.4",
+  "notes": "Ba'zi qo'shiqlar (ichida MP4/AAC) endi ijro etiladi; radioda qo'shiqlar orasida to'xtash yo'q; LEVEL va VU strelkalar musiqaga qarab harakat qiladi; Linux: dock'da belgi, menyudan ochilmaslik tuzatildi; yangilanishlar va yuklab olish endi radio.kawaii.uz orqali",
+  "pub_date": "2026-10-29T18:28:19Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjJ0aFNyWGlEWkxvUnBSZDQyVWhXNW9wUmNQSFU0QWUwdFdpYzQ1cUFyTm1XRHp6N0t6MEZ0NWs1ckg2WjBTY3Y4NFBRZHcyb1JLQmxudGs3a2hpSlFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk1MjU5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjMtc2V0dXAuZXhlCjZjS2s0WDBlVkJWR3VIbjBpTW16RVpaVnV4aTRuMkZBMjBKTXpDQ05nWnpSWEd2cE5XQmZ5UzllK1V1UnVVaG1NbzdvMzZnaGtuRGV4SFlSV1N6aUJnPT0K",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.3-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtyci9nQWZ3Tkh1OVJXOXFvd2xsYzNxNmw5SE1Nb3BhYjkwUk56V1pNOHdTdEVoZzE1NWJWdUpoSE1PU2VIaWRiZ1BsUVh3SnY2Vmg3cHkyWTVITWlIYlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk4NDk5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjQtc2V0dXAuZXhlCnVwSy96YUNTWWd2bEVtemh6d0xMa01sSkNSUGdKQmZjc2VBYlFOaHp1UTNscnZOVDBIWkFJalh2RUZpd1RvcmVoaWhEZXRuRUhZLy83WnpJK3JSbENBPT0K",
+      "url": "https://radio.kawaii.uz/files/desk/KawaiiRadio-0.8.4-setup.exe",
+      "sha256": "7228f2f73d02ed58634a26bf8e66428d8e673968f4d61633424290d6707fec5b",
+      "size": 16367287
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjRSUkZwQkNLemoxejJZZjJWQUo4RHN3YTVNZnFjNEIwdmF0YUx0VDJ4elVzZFBGaGZqaFFERlNpdjlYYnVkWlV3dmN6eGcyMWZCZFFUV0wxV1JYV2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk1MzQ4CWZpbGU6S2F3YWlpUmFkaW8tMC44LjNfYW1kNjQuQXBwSW1hZ2UKR0RxNk5ld0x0cHdJL29ueTlMZkk4L2VpeVNHVnI5NWtsVkh5VnNVallNRjdPTE5ZMVJuMnY3c1RQSm5mTGFVa3hjakFBcFlJZWVlcEZqb3NVSjdZQ0E9PQo=",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.3_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycnhrS0VKTEVMRmIveU9hcDJJaVFvaks0eTd4Y1JxUFZNdVd2VlRjTnZ4dXM1L1V5dWs3aC9qQ3UybGZSd1FhN2VWUHNuZUdKYzVqWk5lVGd3K3BSbEFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk4NTg4CWZpbGU6S2F3YWlpUmFkaW8tMC44LjRfYW1kNjQuQXBwSW1hZ2UKV3ZCZnZNMW1rdit2UjJSQUF5Yk5TcnBJMU1DV2pTa1cxZ2pzZW1XbkRFa0dJVEpwYTU1eHNUWERHSHlNZHNqMFRyNnFmM0J5dWJCdHh3S1RjbE85Q3c9PQo=",
+      "url": "https://radio.kawaii.uz/files/desk/KawaiiRadio-0.8.4_amd64.AppImage",
+      "sha256": "0d4afa9c54483e1e3b33fc28bb28e810996e0237f7fa4c1ee3c2246e5d46fb55",
+      "size": 21830136
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjlEMWdjVDJEQ3BaeFJOeDVReGltVk0reHduaXphVVE4TUNHWXYrKys1a29rL2tUamgzNnhlSEVUcHFFd1p6QkpRcXc2WDY4SjMrM3h1R0pvY3hIRFE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk1MzQ5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjNfYW1kNjQuZGViClhiQnFoQUpPbVFxM09aV3B0cGZERE5sU0E5WVB5ZWp1bSttWTBSNnBBRVpNaVFheVVFSXRObzNINjc5c0pvK3lwV1JvRThsV3d0WTRpRUxrV0pLa0FBPT0K",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.3_amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjZ0SWNwQmFnVnplcXFLOUNJb3FMRlNhTTdLN3Nvbkx1Qi9heE5XMnBkd2lsUFIwZGpjeGkxUDV6dWpKVWRWdzJUWlA5VFh6bkdCbkxsc2RNSHdNb2cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk4NTg4CWZpbGU6S2F3YWlpUmFkaW8tMC44LjRfYW1kNjQuZGViCndtY29QaUxtRjdzQmdlc3RCKzloMjg1NnVHRll4a055bmhZT0JuOGY2d0IrZDhFTXVRNE1pMWxQR1VxZ01RRitXa1QzSkIwMERvNFFMZjR4NGt6eENnPT0K",
+      "url": "https://radio.kawaii.uz/files/desk/KawaiiRadio-0.8.4_amd64.deb",
+      "sha256": "ada8d376eab8c532c091f22dd40572def42e8bdac3cf0f6c6b0e0dc846f8fbe2",
+      "size": 15345378
     },
     "linux-x86_64-rpm": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycnpOaGJqNHdSTTQ2dGNrQ0ZUWjRIRWtWWjU4VGFESFBuK1ROc3BNN1F1UFAzMlRQQVorWGV6NWlJamR3VW1vWmZRU3B6Q3ZQcTNBZGo2YnZEVGZPYkFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk1MzQ5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjMueDg2XzY0LnJwbQpINDNBT3ErY1VCUFVBcjBUZVNKcHRuaUFqTGZERW83WVlxcFR6SVVVdWxCOHVJZ1RyYmxOQ29JdjF1Lyt5NE45Znd5QVZiN3VCUEN5QThHYkpoM3FBdz09Cg==",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.3.x86_64.rpm"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjZUT2VtV1VYTHpJS3RFdzZaTGVuMVNBbUg4cGhScWsxSVQyWGVMa0J1OVdESkc5Y0VEVEp4OUdRcjBQQ0dTZ3hvWjJDWWY3Vkt4MC82QXp3SHl2bGdNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjk4NTg5CWZpbGU6S2F3YWlpUmFkaW8tMC44LjQueDg2XzY0LnJwbQpSSTBvYlVaOUtQSXpFREpET2NsaExHVFVkMzZhM2JXQUhlQjVuaVdhQ3hJSEJrY2poOUdPRXhLQ0hlWVJrSStOMWI4WCtPajVibUxHVlRTVEprdEVEUT09Cg==",
+      "url": "https://radio.kawaii.uz/files/desk/KawaiiRadio-0.8.4.x86_64.rpm",
+      "sha256": "6021bf0c7f865160598d79750fc241bd3be7596a29797651499ba7fd23e051ac",
+      "size": 18497148
     }
   }
 }
