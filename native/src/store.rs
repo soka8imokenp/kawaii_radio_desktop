@@ -31,6 +31,11 @@ impl Store {
         let _ = std::fs::write(&self.path, serde_json::to_string_pretty(&self.data).unwrap_or_default());
     }
 
+    /// Set in memory only (counters ticking every second); the next `set` writes it to disk.
+    pub fn data_set(&mut self, k: &str, v: Value) {
+        self.data.insert(k.to_string(), v);
+    }
+
     /// The chat identity of this computer (made once, kept).
     pub fn chat_id(&mut self) -> (String, String) {
         if let (Some(u), Some(k)) = (self.get("chatUid").and_then(|v| v.as_str()), self.get("chatKey").and_then(|v| v.as_str())) {

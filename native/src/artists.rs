@@ -84,6 +84,13 @@ pub fn key(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
+/// The first artist of a song credit, as written ("A feat. B & C" → "A").
+pub fn main_artist(credit: &str) -> String {
+    let low = credit.to_lowercase();
+    let cut = [" feat. ", " feat ", " ft. ", " ft ", " & ", " x ", "/", ","].iter().filter_map(|s| low.find(s)).min().unwrap_or(credit.len());
+    credit.get(..cut).unwrap_or(credit).trim().to_string()
+}
+
 /// The artists named in a song credit ("A, B feat. C & D"), normalised.
 pub fn credit_keys(credit: &str) -> Vec<String> {
     let mut s = format!(" {} ", credit.to_lowercase());

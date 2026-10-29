@@ -1,6 +1,7 @@
 //! Kawaii ID: sign in in the system browser (radio.kawaii.uz/auth/start?s=<state>&d=1 → id.kawaii.uz → the last
 //! page opens kawaii://auth?t=<token>&s=<state>), the OS starts us with that link, and a running copy takes it over
-//! a local socket. Account calls go to radio.kawaii.uz with the token and this computer's chat identity.
+//! a local socket. With lb=1 the page instead comes straight to that socket (http://127.0.0.1:47823/auth?…): no
+//! scheme handler needed — sandboxed browsers (Flatpak, Snap) and AppImages can't always start one. Account calls go to radio.kawaii.uz with the token and this computer's chat identity.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -24,7 +25,8 @@ pub fn open_url(url: &str) {
 
 /// Make kawaii:// links start this program (per user, no admin rights).
 pub fn register_scheme() {
-    let Ok(exe) = std::env::current_exe() else { return };
+    // an AppImage runs from a temporary mount: the link must start the AppImage file itself
+    let Some(exe) = std::env::var_os("APPIMAGE").map(std::path::PathBuf::from).or_else(|| std::env::current_exe().ok()) else { return };
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -49,6 +51,7 @@ pub fn register_scheme() {
         );
         let _ = std::fs::write(dir.join("kawaii-radio-link.desktop"), desk);
         let _ = std::process::Command::new("xdg-mime").args(["default", "kawaii-radio-link.desktop", "x-scheme-handler/kawaii"]).status();
+        let _ = std::process::Command::new("update-desktop-database").arg(&dir).status();
     }
 }
 
@@ -69,13 +72,46 @@ pub fn listen(on_link: impl Fn(String) + Send + 'static) {
     std::thread::spawn(move || {
         for s in l.incoming().flatten() {
             let mut s = s;
-            let mut buf = String::new();
             let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
-            let _ = s.read_to_string(&mut buf);
-            on_link(buf);
+            // a later copy writes its link and closes; a browser sends an HTTP request and waits for the page
+            let mut buf = vec![];
+            let mut chunk = [0u8; 2048];
+            while let Ok(n) = s.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16384 {
+                    break;
+                }
+            }
+            let text = String::from_utf8_lossy(&buf).to_string();
+            match text.strip_prefix("GET /") {
+                Some(rest) => {
+                    let path = rest.split_whitespace().next().unwrap_or("");
+                    let ok = path.starts_with("auth?");
+                    let page = if ok { DONE_PAGE } else { "" };
+                    let status = if ok { "200 OK" } else { "404 Not Found" };
+                    let head = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n", page.len());
+                    let _ = s.write_all(head.as_bytes());
+                    let _ = s.write_all(page.as_bytes());
+                    if ok {
+                        on_link(format!("kawaii://{path}"));
+                    }
+                }
+                None => on_link(text),
+            }
         }
     });
 }
+
+/// What the browser shows once the sign-in reached the app.
+const DONE_PAGE: &str = r#"<!doctype html><html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kawaii Radio</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#1c1d21;color:#ecebf0;font:16px system-ui,sans-serif}
+.c{max-width:360px;background:#26272c;border-radius:28px;padding:24px 20px;text-align:center}.l{background:#c9d7a0;color:#2f3b1c;border-radius:12px;padding:10px 14px;font-size:14px;letter-spacing:.08em}
+h1{font-size:24px;margin:18px 0 6px}p{margin:0;color:#9a99a6}</style></head>
+<body><div class="c"><div class="l">KAWAII RADIO · KAWAII ID</div><h1>Tayyor!</h1><p>Kawaii Radio ilovasiga qayting — bu oynani yopsa bo'ladi.</p></div>
+<script>setTimeout(function(){window.close()},1500)</script></body></html>"#;
 
 /// t and s from kawaii://auth?t=…&s=…
 pub fn parse_link(link: &str) -> Option<(String, String)> {

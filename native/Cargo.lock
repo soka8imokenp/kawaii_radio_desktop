@@ -1290,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "kawaii-radio"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "arboard",
  "bytemuck",

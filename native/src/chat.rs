@@ -187,7 +187,7 @@ pub struct Chat {
     /// the profile card open (the server's "user" answer), or asked for
     user: Option<Value>,
     user_wait: bool,
-    room_open: bool,
+    pub room_open: bool,
     /// the message being answered
     pub reply: Option<ChatMsg>,
     typing: Option<(String, Instant)>,

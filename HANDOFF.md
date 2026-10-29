@@ -541,7 +541,16 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
   страницы артиста/релиза (`panel::Page`), полоса в QIDIRUV, «SEVIMLI IJROCHILAR» в KUTUBXONA, «BARCHASI ›» = все.
 - Эфир без пауз: следующий слот открывается за 15 с (`radio_clock`) и стартует ровно в начале слота.
 - Система: souvlaki (SMTC / MPRIS) — медиаклавиши и панель громкости Windows; иконка окна и exe (build.rs + winresource).
-- Ещё не сделано (идеи пользователя): трей + мини-режим, Discord, таймер сна, будильник, эквалайзер, эффект
+- **v0.8.1:** лаг поиска был в панели (каждый кадр: все ijrochi × все треки + копии 120 треков с текстами, 94 мс/кадр) —
+  теперь `Panel::memo` (кеш по запросу) и списки по ссылкам (0,3 мс). Картинки: 6 воркеров + кеш на диске
+  (`store::dir()/img`, `fetch_image`). Страница ijrochi и PROFIL как в мобилке (`panel.rs`: pill/chip/lcd_plate/
+  release_card/numbered; Page::Disco, Page::Songs). Plays: `/chat/stats`, слушатели: `/chat/listeners?ids=`.
+  Прослушивание теперь считается (`count_listening`, формат телефона: stats/months в слоте `desk-…` синка),
+  favArtist синкается (локальный выбор = `favPush`). Uyqu taymeri в SOZLAMALAR.
+  Linux-вход: `lb=1` → страница входа ведёт на `http://127.0.0.1:47823/auth?…` (kid::listen отвечает HTTP) —
+  нужен деплой cloud (kawaiiId.ts / index.ts, коммит в kawaii_radio_app). Схема kawaii:// для AppImage теперь на
+  `$APPIMAGE`. Linux-окно после растягивания возвращается к 16:9 (`snap` в main.rs).
+- Ещё не сделано (идеи пользователя): трей + мини-режим, Discord, будильник, эквалайзер, эффект
   настройки станции (шум + барабан), включение кинескопа, свет от обложки, кроссфейд в O'Z TANLOVIM, пользовательские
   пейлисты (создание/правка) как в мобилке, Wrapped.
 

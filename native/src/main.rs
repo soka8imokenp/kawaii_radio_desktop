@@ -118,6 +118,11 @@ enum Msg {
     Plates { light: bool, imgs: Vec<image::RgbaImage> },
     /// the account's progress after a sync: likes (id -> time), unliked, playlists
     Synced(serde_json::Value),
+    /// how often every song was played on Kawaii Radio (all listeners); an artist's monthly listeners
+    Plays(HashMap<String, u64>),
+    Listeners(String, Option<u64>),
+    /// TEKSHIRISH found nothing newer (or could not ask)
+    Checked(bool),
     Error(String),
 }
 
@@ -180,6 +185,22 @@ struct State {
     vault_key: Vec<u8>,
     saving: Option<String>,
     update: Option<updater::Update>,
+    /// what TEKSHIRISH says ("Tekshirilmoqda…", "Sizda eng so'nggi versiya")
+    checking: Option<String>,
+    /// listening on this computer, in the phone's format ({"stats": song → {plays, seconds, last, radio},
+    /// "months": "2026-10" → song → seconds}); it goes into this computer's slot of the account's sync
+    listen: serde_json::Value,
+    /// the song being listened to, and its seconds so far (a play counts after 30 s); the next save to disk
+    listen_cur: (String, f32),
+    listen_save: Instant,
+    /// the other devices of the account (song → seconds, plays), from the last sync; everything together, most first
+    others: HashMap<String, (u64, u64)>,
+    stats_view: Vec<(String, u64, u64)>,
+    plays: HashMap<String, u64>,
+    plays_at: Option<Instant>,
+    listeners: HashMap<String, Option<u64>>,
+    /// the sleep timer: when the music fades out
+    sleep_at: Option<Instant>,
     updating: bool,
     /// this frame's lights that bloom (LED filaments)
     bloom_q: Vec<Quad>,
@@ -189,6 +210,10 @@ struct State {
     preloaded: Option<(String, i64, i64, audio::Prepared)>,
     /// the window edge under the cursor (resizing)
     edge: Option<winit::window::ResizeDirection>,
+    /// Linux has no aspect lock while an edge is dragged: once the drag pauses the window snaps back to 16:9
+    /// (the side that moved more wins); (when, the size before the drag)
+    snap: Option<(Instant, (u32, u32))>,
+    size: (u32, u32),
     /// the band switch's sliding light: x and speed
     sw: (f32, f32),
     /// a page change running: since when, from which page
@@ -301,6 +326,20 @@ fn fade(c: &mut Canvas, a: (usize, usize), b: (usize, usize), k: f32) {
     }
 }
 
+/// "2026-10": the month of a time (ms, UTC), as the phone keys Wrapped
+fn month(ms: i64) -> String {
+    // days since 1970 → civil date (Howard Hinnant's algorithm)
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y}-{m:02}")
+}
+
 /// KR_DEBUG: a line in %TEMP%/kr_debug.log
 fn dlog(s: &str) {
     if std::env::var_os("KR_DEBUG").is_some() {
@@ -309,6 +348,51 @@ fn dlog(s: &str) {
             let _ = writeln!(f, "{s}");
         }
     }
+}
+
+/// Pictures (covers, artist photos, stickers) are fetched by a few workers, the latest asked first — what is on
+/// screen now — and kept on disk, so a page full of them neither floods the network nor stalls the window.
+fn fetch_image(proxy: &EventLoopProxy<Msg>, url: String) {
+    use std::sync::{Condvar, Mutex, OnceLock};
+    type Queue = (Mutex<Vec<(String, EventLoopProxy<Msg>)>>, Condvar);
+    static Q: OnceLock<Arc<Queue>> = OnceLock::new();
+    let q = Q.get_or_init(|| {
+        let q: Arc<Queue> = Arc::new((Mutex::new(vec![]), Condvar::new()));
+        for _ in 0..6 {
+            let q = q.clone();
+            std::thread::spawn(move || loop {
+                let (u, p) = {
+                    let mut l = q.0.lock().unwrap();
+                    while l.is_empty() {
+                        l = q.1.wait(l).unwrap();
+                    }
+                    l.pop().unwrap()
+                };
+                let _ = p.send_event(Msg::Image { img: load_image(&u), url: u });
+            });
+        }
+        q
+    });
+    q.0.lock().unwrap().push((url, proxy.clone()));
+    q.1.notify_one();
+}
+
+fn load_image(url: &str) -> Option<image::RgbaImage> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    let dir = store::dir().join("img");
+    let path = dir.join(format!("{:016x}.png", h.finish()));
+    if let Ok(i) = image::open(&path) {
+        return Some(i.to_rgba8());
+    }
+    let i = image::load_from_memory(&net::bytes(url).ok()?).ok()?.to_rgba8();
+    let (w, h) = i.dimensions();
+    let k = (220.0 / w.max(h) as f32).min(1.0);
+    let i = image::imageops::resize(&i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1), image::imageops::FilterType::Triangle);
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = i.save(&path);
+    Some(i)
 }
 
 fn tune(proxy: EventLoopProxy<Msg>, station: String, known: Arc<HashMap<String, net::Track>>) {
@@ -349,13 +433,119 @@ fn tune(proxy: EventLoopProxy<Msg>, station: String, known: Arc<HashMap<String, 
 }
 
 impl State {
+    /// Chat staff: Some(owner) for admins and the owner.
+    fn chat_staff(&self) -> Option<bool> {
+        let y = self.chat.you.as_ref()?;
+        let f = |k: &str| y.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+        (f("admin") || f("owner")).then(|| f("owner"))
+    }
+    /// how often every song was played on Kawaii Radio (at most every 10 minutes)
+    fn ask_plays(&mut self) {
+        if self.plays_at.is_some_and(|t| t.elapsed() < Duration::from_secs(600)) {
+            return;
+        }
+        self.plays_at = Some(Instant::now());
+        let p = self.proxy.clone();
+        std::thread::spawn(move || {
+            let m = (|| -> Option<HashMap<String, u64>> {
+                let j: serde_json::Value = net::agent().get(&net::url("/chat/stats")).call().ok()?.into_json().ok()?;
+                Some(j.get("plays")?.as_object()?.iter().map(|(k, v)| (k.clone(), v.as_u64().unwrap_or(0))).collect())
+            })();
+            if let Some(m) = m {
+                let _ = p.send_event(Msg::Plays(m));
+            }
+        });
+    }
+    /// an artist's different listeners in the last 30 days
+    fn ask_listeners(&mut self, id: &str) {
+        if self.listeners.contains_key(id) {
+            return;
+        }
+        self.listeners.insert(id.to_string(), None);
+        let Some(a) = self.artists.iter().find(|a| a.id == id) else { return };
+        let ids: Vec<String> = a.songs(&self.tracks).into_iter().take(400).map(|t| t.id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let (p, id) = (self.proxy.clone(), id.to_string());
+        std::thread::spawn(move || {
+            let n = net::agent().get(&net::url(&format!("/chat/listeners?ids={}", ids.join(",")))).call().ok().and_then(|r| r.into_json::<serde_json::Value>().ok()).and_then(|j| j.get("n")?.as_u64());
+            let _ = p.send_event(Msg::Listeners(id, n));
+        });
+    }
+    /// Count listening: a second of the song playing now (radio or own choice), a play after 30 s; saved to disk
+    /// every half minute. The sleep timer fades the music out and stops it.
+    fn count_listening(&mut self, dt: f32) {
+        if let Some(at) = self.sleep_at {
+            let left = at.saturating_duration_since(Instant::now()).as_secs_f32();
+            if let Some(p) = &self.player {
+                p.set_volume(self.volume * self.volume * (left / 10.0).clamp(0.0, 1.0));
+            }
+            if left <= 0.0 {
+                self.sleep_at = None;
+                self.playing = false;
+                if let Some(p) = &self.player {
+                    p.set_paused(true);
+                    p.set_volume(self.volume * self.volume);
+                }
+                self.media_update();
+                self.toast("UYQU TAYMERI · XAYRLI TUN");
+            }
+        }
+        let Some(id) = self.now.clone().filter(|_| self.playing && !self.tuning) else { return };
+        if self.listen_cur.0 != id {
+            self.listen_cur = (id.clone(), 0.0);
+        }
+        let before = self.listen_cur.1;
+        self.listen_cur.1 += dt;
+        let whole = self.listen_cur.1 as u64 - before as u64;
+        if whole > 0 {
+            if !self.listen.is_object() {
+                self.listen = serde_json::json!({});
+            }
+            let field = if self.pick { "seconds" } else { "radio" };
+            let now = net::now_ms();
+            let st = &mut self.listen["stats"][&id];
+            st[field] = (st[field].as_u64().unwrap_or(0) + whole).into();
+            st["last"] = now.into();
+            if before < 30.0 && self.listen_cur.1 >= 30.0 {
+                st["plays"] = (st["plays"].as_u64().unwrap_or(0) + 1).into();
+                let n = self.store.get("songs").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+                self.store.data_set("songs", n.into());
+            }
+            let m = month(now);
+            let mv = &mut self.listen["months"][&m][&id];
+            *mv = (mv.as_u64().unwrap_or(0) + whole).into();
+            let total = self.store.get("listened").and_then(|v| v.as_u64()).unwrap_or(0) + whole;
+            self.store.data_set("listened", total.into());
+        }
+        if self.listen_save.elapsed() > Duration::from_secs(30) {
+            self.listen_save = Instant::now();
+            self.store.set("listen", self.listen.clone());
+            self.rebuild_stats();
+        }
+    }
+    /// everything listened to on the account's devices and here, most first
+    fn rebuild_stats(&mut self) {
+        let mut all = self.others.clone();
+        if let Some(o) = self.listen.get("stats").and_then(|v| v.as_object()) {
+            for (id, v) in o {
+                let e = all.entry(id.clone()).or_default();
+                e.0 += v.get("seconds").and_then(|x| x.as_u64()).unwrap_or(0) + v.get("radio").and_then(|x| x.as_u64()).unwrap_or(0);
+                e.1 += v.get("plays").and_then(|x| x.as_u64()).unwrap_or(0);
+            }
+        }
+        let mut v: Vec<(String, u64, u64)> = all.into_iter().map(|(k, (a, b))| (k, a, b)).filter(|x| x.1 > 0).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1));
+        self.stats_view = v;
+    }
     fn toast(&mut self, t: &str) {
         self.toast = Some((t.to_string(), Instant::now()));
     }
     fn login(&mut self) {
         let s = kid::new_state();
         self.login_state = Some(s.clone());
-        kid::open_url(&format!("{}/auth/start?s={s}&d=1", kid::CLOUD));
+        kid::open_url(&format!("{}/auth/start?s={s}&d=1&lb=1", kid::CLOUD));
         self.toast("KAWAII ID · BRAUZERDA KIRING");
     }
     /// /auth/me with this computer's chat identity (that also links the chat to the account)
@@ -445,6 +635,9 @@ impl State {
         }
         let ua = self.store.get("unlikedAt").and_then(|v| v.as_object().cloned()).unwrap_or_default();
         let slot = format!("desk-{}", u.get(5..13).unwrap_or("native"));
+        let listen = self.listen.clone();
+        let fav = self.store.get("favArtist").cloned().unwrap_or(serde_json::Value::Null);
+        let fav_push = self.store.get("favPush").and_then(|v| v.as_bool()).unwrap_or(false);
         let p = self.proxy.clone();
         std::thread::spawn(move || {
             let r = (|| -> Option<serde_json::Value> {
@@ -474,9 +667,8 @@ impl State {
                 let mut devices = remote.get("devices").and_then(|d| d.as_object().cloned()).unwrap_or_default();
                 let mut mine = devices.get(&slot).cloned().unwrap_or(serde_json::json!({}));
                 mine["seen"] = now.into();
-                if mine.get("stats").is_none() {
-                    mine["stats"] = serde_json::json!({});
-                }
+                mine["stats"] = listen.get("stats").cloned().unwrap_or(serde_json::json!({}));
+                mine["months"] = listen.get("months").cloned().unwrap_or(serde_json::json!({}));
                 devices.insert(slot.clone(), mine);
                 let mut merged = remote.clone();
                 merged["likes"] = likes_m.into();
@@ -485,6 +677,10 @@ impl State {
                     merged["playlists"] = serde_json::json!([]);
                 }
                 merged["devices"] = devices.into();
+                // the favourite artist: a choice made here wins (like the phone: local first)
+                if fav_push {
+                    merged["favArtist"] = fav;
+                }
                 let (st2, _) = kid::api("/auth/sync", &token, &u, &k, Some(&merged.to_string())).ok()?;
                 (st2 == 200).then_some(merged)
             })();
@@ -533,6 +729,10 @@ impl State {
                 self.panel.goal = 0.0;
             }
             Act::OpenArtist(id) => {
+                self.panel.shelf = 0;
+                self.panel.more = false;
+                self.panel.bio = false;
+                self.ask_plays();
                 self.panel.page.push(panel::Page::Artist(id));
                 self.panel.scroll = 0.0;
                 self.panel.goal = 0.0;
@@ -598,6 +798,83 @@ impl State {
                 }
             }
             Act::Theme(l) => self.set_theme(l),
+            Act::Shelf(k) => self.panel.shelf = k,
+            Act::More => self.panel.more = !self.panel.more,
+            Act::Bio => self.panel.bio = !self.panel.bio,
+            Act::PlayAll(ids, shuffle) => {
+                if ids.is_empty() {
+                } else if self.has_kp() {
+                    let mut list = ids;
+                    if shuffle {
+                        let mut b = vec![0u8; list.len() * 4];
+                        let _ = store::random(&mut b);
+                        for i in (1..list.len()).rev() {
+                            let j = u32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]) as usize % (i + 1);
+                            list.swap(i, j);
+                        }
+                    }
+                    let first = list[0].clone();
+                    self.pick_list = list;
+                    self.play_pick(&first);
+                } else {
+                    self.toast("O'Z TANLOVIM · KAWAII PASS KERAK");
+                }
+            }
+            Act::Discography(a) => {
+                self.panel.shelf = 0;
+                self.panel.page.push(panel::Page::Disco(a));
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
+            Act::ArtistSongs(a) => {
+                self.panel.page.push(panel::Page::Songs(a));
+                self.panel.scroll = 0.0;
+                self.panel.goal = 0.0;
+            }
+            Act::Fav(name) => {
+                let on = self.store.get("favArtist").and_then(|v| v.as_str()).is_some_and(|f| f.eq_ignore_ascii_case(&name));
+                if on {
+                    self.store.set("favArtist", serde_json::Value::Null);
+                    self.toast("SEVIMLI IJROCHI OLIB TASHLANDI");
+                } else {
+                    self.toast(&format!("SEVIMLI IJROCHI · {}", name.to_uppercase()));
+                    self.store.set("favArtist", name.into());
+                }
+                // the phone takes it at its next sync
+                self.store.set("favPush", true.into());
+                self.sync();
+            }
+            Act::Settings => self.go(panel::Screen::Settings),
+            Act::Admin => {
+                self.chat.room_open = true;
+                self.toast("CHAT SOZLAMALARI · O'NG TOMONDA");
+            }
+            Act::OpenId => {
+                let u = self.acc.as_ref().and_then(|a| a.get("username")).and_then(|v| v.as_str()).map(|u| format!("https://id.kawaii.uz/u/{u}")).unwrap_or_else(|| "https://id.kawaii.uz".into());
+                kid::open_url(&u);
+            }
+            Act::Check => {
+                if self.checking.as_deref() != Some("Tekshirilmoqda…") {
+                    self.checking = Some("Tekshirilmoqda…".into());
+                    let p = self.proxy.clone();
+                    std::thread::spawn(move || {
+                        let _ = p.send_event(match updater::check() {
+                            Some(u) => Msg::Update(u),
+                            None => Msg::Checked(true),
+                        });
+                    });
+                }
+            }
+            Act::Sleep(m) => {
+                self.sleep_at = m.map(|m| Instant::now() + Duration::from_secs(m * 60));
+                if let Some(p) = &self.player {
+                    p.set_volume(self.volume * self.volume);
+                }
+                self.toast(&match m {
+                    Some(m) => format!("UYQU TAYMERI · {m} DAQIQA"),
+                    None => "UYQU TAYMERI O'CHIRILDI".into(),
+                });
+            }
             Act::Play(id) => {
                 if self.has_kp() {
                     let cx_list = self.panel_list_ids();
@@ -614,7 +891,7 @@ impl State {
     }
     fn panel_list_ids(&self) -> Vec<String> {
         let cx = self.panel_ctx();
-        self.panel.list(&cx).into_iter().map(|t| t.id).collect()
+        self.panel.list(&cx).into_iter().map(|t| t.id.clone()).collect()
     }
     fn panel_ctx(&self) -> panel::Ctx<'_> {
         panel::Ctx {
@@ -633,6 +910,14 @@ impl State {
             artists: &self.artists,
             discos: &self.discos,
             saved: &self.saved,
+            plays: &self.plays,
+            listeners: &self.listeners,
+            fav: self.store.get("favArtist").and_then(|v| v.as_str()),
+            pass: self.has_kp(),
+            admin: self.chat_staff(),
+            stats: &self.stats_view,
+            checking: self.checking.as_deref(),
+            sleep: self.sleep_at.map(|t| t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60)),
         }
     }
 
@@ -977,6 +1262,7 @@ impl State {
     fn frame(&mut self) -> Vec<Batch> {
         let dt = self.last.elapsed().as_secs_f32().min(0.1);
         self.last = Instant::now();
+        self.count_listening(dt);
         let (l, r) = self.player.as_ref().map(|p| p.levels.get()).unwrap_or((0.0, 0.0));
         let (l, r) = if self.playing { (l, r) } else { (0.0, 0.0) };
 
@@ -1292,6 +1578,7 @@ impl State {
         scene::draw_drum(&mut cv, &mut over, self.drum, self.light);
         chat::draw_listeners(&mut cv, self.chat.live, self.started.elapsed().as_secs_f32(), self.level);
         {
+            let (kp_pass, kp_admin) = (self.has_kp(), self.chat_staff());
             let proxy = self.proxy.clone();
             let images = &mut self.images;
             let mut img = |u: &str| -> Option<usize> {
@@ -1299,16 +1586,7 @@ impl State {
                     Some(t) => *t,
                     None => {
                         images.insert(u.to_string(), None);
-                        let (u2, p) = (u.to_string(), proxy.clone());
-                        std::thread::spawn(move || {
-                            let im = net::bytes(&u2).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| {
-                                let i = i.to_rgba8();
-                                let (w, h) = i.dimensions();
-                                let k = (220.0 / w.max(h) as f32).min(1.0);
-                                image::imageops::resize(&i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1), image::imageops::FilterType::Triangle)
-                            });
-                            let _ = p.send_event(Msg::Image { url: u2, img: im });
-                        });
+                        fetch_image(&proxy, u.to_string());
                         None
                     }
                 }
@@ -1333,6 +1611,14 @@ impl State {
                     artists: &self.artists,
                     discos: &self.discos,
                     saved: &self.saved,
+                    plays: &self.plays,
+                    listeners: &self.listeners,
+                    fav: self.store.get("favArtist").and_then(|v| v.as_str()),
+                    pass: kp_pass,
+                    admin: kp_admin,
+                    stats: &self.stats_view,
+                    checking: self.checking.as_deref(),
+                    sleep: self.sleep_at.map(|t| t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60)),
                 };
                 let real = panel.screen;
                 panel.screen = shown;
@@ -1340,6 +1626,9 @@ impl State {
                 panel.draw(&mut cv, &mut over, &mut self.text, &cx, &mut img);
                 let m1 = (marker(&mut cv), marker(&mut over));
                 panel.screen = real;
+                if let Some(a) = panel.want_listeners.take() {
+                    self.ask_listeners(&a);
+                }
                 if let Some(d) = panel.want_disco.take() {
                     if !self.discos.contains_key(&d) {
                         self.discos.insert(d, None);
@@ -1416,12 +1705,7 @@ impl State {
                     Some(t) => *t,
                     None => {
                         self.images.insert(u.clone(), None);
-                        let p = self.proxy.clone();
-                        let u2 = u.clone();
-                        std::thread::spawn(move || {
-                            let im = net::bytes(&u2).ok().and_then(|b| image::load_from_memory(&b).ok()).map(|i| image::imageops::resize(&i.to_rgba8(), 128, 128, image::imageops::FilterType::Triangle));
-                            let _ = p.send_event(Msg::Image { url: u2, img: im });
-                        });
+                        fetch_image(&self.proxy, u.clone());
                         None
                     }
                 };
@@ -1545,6 +1829,8 @@ impl ApplicationHandler<Msg> for App {
             screen_anim: None,
             sw: (0.0, 0.0),
             edge: None,
+            snap: None,
+            size: (0, 0),
             slots: vec![],
             media: None,
             artists: artists::cached(),
@@ -1553,6 +1839,16 @@ impl ApplicationHandler<Msg> for App {
             vault_key: vec![],
             saving: None,
             update: None,
+            checking: None,
+            listen: serde_json::json!({}),
+            listen_cur: (String::new(), 0.0),
+            listen_save: Instant::now(),
+            others: HashMap::new(),
+            stats_view: vec![],
+            plays: HashMap::new(),
+            plays_at: None,
+            listeners: HashMap::new(),
+            sleep_at: None,
             updating: false,
             bloom_q: vec![],
             preload: None,
@@ -1644,6 +1940,8 @@ impl ApplicationHandler<Msg> for App {
                     k.into_bytes()
                 }
             };
+            st.listen = st.store.get("listen").cloned().unwrap_or(serde_json::json!({}));
+            st.rebuild_stats();
             // updates: at start and every 6 hours
             let p7 = self.proxy.clone();
             std::thread::spawn(move || loop {
@@ -1690,6 +1988,26 @@ impl ApplicationHandler<Msg> for App {
             Msg::Toast(t) => st.toast(&t),
             Msg::Synced(m) => {
                 st.syncing = false;
+                if st.store.get("favPush").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    st.store.set("favPush", false.into());
+                } else {
+                    st.store.set("favArtist", m.get("favArtist").cloned().unwrap_or(serde_json::Value::Null));
+                }
+                // the other devices' listening (this computer's own slot is counted live)
+                let (u, _) = st.uid.clone();
+                let me = format!("desk-{}", u.get(5..13).unwrap_or("native"));
+                st.others.clear();
+                if let Some(d) = m.get("devices").and_then(|v| v.as_object()) {
+                    for (k, dev) in d.iter().filter(|(k, _)| **k != me) {
+                        let _ = k;
+                        for (id, v) in dev.get("stats").and_then(|v| v.as_object()).into_iter().flatten() {
+                            let e = st.others.entry(id.clone()).or_default();
+                            e.0 += v.get("seconds").and_then(|x| x.as_u64()).unwrap_or(0) + v.get("radio").and_then(|x| x.as_u64()).unwrap_or(0);
+                            e.1 += v.get("plays").and_then(|x| x.as_u64()).unwrap_or(0);
+                        }
+                    }
+                }
+                st.rebuild_stats();
                 let likes = m.get("likes").and_then(|v| v.as_object()).cloned().unwrap_or_default();
                 let mut l: Vec<(String, i64)> = likes.iter().map(|(k, v)| (k.clone(), v.as_i64().unwrap_or(0))).collect();
                 l.sort_by_key(|x| x.1);
@@ -1779,7 +2097,13 @@ impl ApplicationHandler<Msg> for App {
             }
             Msg::Stickers(m) => st.chat.stickers = m,
             Msg::Artists(a) => st.artists = a,
+            Msg::Plays(m) => st.plays = m,
+            Msg::Listeners(a, n) => {
+                st.listeners.insert(a, n);
+            }
+            Msg::Checked(_) => st.checking = Some("Sizda eng so'nggi versiya".into()),
             Msg::Update(u) => {
+                st.checking = None;
                 if st.update.is_none() {
                     st.toast(&format!("YANGI VERSIYA v{} · SOZLAMALAR", u.version));
                 }
@@ -1860,6 +2184,18 @@ impl ApplicationHandler<Msg> for App {
         // ask for the next frame every turn of the loop (~60 fps): a paint Windows skipped while the window was
         // minimized or covered must not stop the device for good
         let now = Instant::now();
+        if let Some(st) = &mut self.st {
+            if let Some((at, (w0, h0))) = st.snap {
+                if at.elapsed() > Duration::from_millis(220) {
+                    st.snap = None;
+                    let (w, h) = st.size;
+                    // keep the side the user pulled
+                    let by_w = (w as i64 - w0 as i64).abs() * 9 >= (h as i64 - h0 as i64).abs() * 16;
+                    let sz = if by_w { winit::dpi::PhysicalSize::new(w, w * 9 / 16) } else { winit::dpi::PhysicalSize::new(h * 16 / 9, h) };
+                    let _ = st.gfx.window.request_inner_size(sz);
+                }
+            }
+        }
         if now >= self.next_frame {
             if let Some(st) = &self.st {
                 st.gfx.window.request_redraw();
@@ -1887,7 +2223,20 @@ impl App {
         let Some(st) = self.st.as_mut() else { return };
         match ev {
             WindowEvent::CloseRequested => el.exit(),
-            WindowEvent::Resized(s) => st.gfx.resize(s.width, s.height),
+            WindowEvent::Resized(s) => {
+                st.gfx.resize(s.width, s.height);
+                if cfg!(not(windows)) && s.width > 0 && s.height > 0 {
+                    let free = st.gfx.window.is_maximized() || st.gfx.window.fullscreen().is_some();
+                    let off = (s.width as i64 * 9 - s.height as i64 * 16).abs() > 16 * 3;
+                    if !free && off {
+                        let before = st.snap.map(|x| x.1).unwrap_or(st.size);
+                        st.snap = Some((Instant::now(), before));
+                    } else {
+                        st.snap = None;
+                    }
+                }
+                st.size = (s.width, s.height);
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 st.cursor = st.gfx.to_stage(position.x, position.y);
                 let edge = st.edge_at(position.x, position.y);
