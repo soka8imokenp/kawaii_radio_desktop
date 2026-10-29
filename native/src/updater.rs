@@ -48,12 +48,19 @@ pub fn newer(a: &str, b: &str) -> bool {
     false
 }
 
-/// Which build this copy is: the Windows installer, the Linux AppImage, or the Linux .deb (each signed).
+/// Installed from an .rpm (Fedora, openSUSE): the rpm database owns this program.
+fn from_rpm() -> bool {
+    std::env::current_exe().ok().is_some_and(|me| std::process::Command::new("rpm").arg("-qf").arg(me).output().is_ok_and(|o| o.status.success()))
+}
+
+/// Which build this copy is: the Windows installer, the Linux AppImage, .deb or .rpm (each signed).
 fn platform_key() -> &'static str {
     if cfg!(windows) {
         "windows-x86_64"
     } else if std::env::var_os("APPIMAGE").is_some() {
         "linux-x86_64"
+    } else if from_rpm() {
+        "linux-x86_64-rpm"
     } else {
         "linux-x86_64-deb"
     }
@@ -156,10 +163,12 @@ pub fn install(u: &Update, progress: &dyn Fn(f32)) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
             std::process::exit(0);
         }
-        let path = std::env::temp_dir().join(format!("kawaii-radio_{}_amd64.deb", u.version));
+        // the system's installer asks for the password: dnf (Fedora) for an .rpm, apt (Debian / Ubuntu) for a .deb
+        let rpm = from_rpm();
+        let path = std::env::temp_dir().join(if rpm { format!("kawaii-radio-{}.x86_64.rpm", u.version) } else { format!("kawaii-radio_{}_amd64.deb", u.version) });
         std::fs::write(&path, &data).map_err(|e| e.to_string())?;
-        // Debian / Ubuntu (apt); elsewhere the AppImage is the build to use
-        let ok = std::process::Command::new("pkexec").args(["apt-get", "install", "-y"]).arg(&path).status().is_ok_and(|s| s.success());
+        let args: &[&str] = if rpm { &["dnf", "install", "-y"] } else { &["apt-get", "install", "-y"] };
+        let ok = std::process::Command::new("pkexec").args(args).arg(&path).status().is_ok_and(|s| s.success());
         if !ok {
             return Err("o'rnatib bo'lmadi".into());
         }

@@ -204,6 +204,12 @@ struct State {
     listeners: HashMap<String, Option<u64>>,
     /// the sleep timer: when the music fades out
     sleep_at: Option<Instant>,
+    /// the account came from the server in this run (not only from the copy on disk)
+    acc_live: bool,
+    /// static while a station is being found: the sound's stop flag, how much of it shows (0..1), since when
+    static_stop: Option<Arc<std::sync::atomic::AtomicBool>>,
+    static_amt: f32,
+    static_at: Instant,
     updating: bool,
     /// this frame's lights that bloom (LED filaments)
     bloom_q: Vec<Quad>,
@@ -542,6 +548,14 @@ impl State {
         v.sort_by(|a, b| b.1.cmp(&a.1));
         self.stats_view = v;
     }
+    /// A station is being found: static over the speaker, the old one quiet, the tuning drum turning.
+    fn begin_static(&mut self) {
+        self.static_at = Instant::now();
+        self.drum_kick += 25.0;
+        if let (Some(p), None) = (&self.player, &self.static_stop) {
+            self.static_stop = Some(p.static_noise(self.volume * self.volume));
+        }
+    }
     fn toast(&mut self, t: &str) {
         self.toast = Some((t.to_string(), Instant::now()));
     }
@@ -593,7 +607,12 @@ impl State {
         self.chat.goal = 0.0;
     }
 
+    /// Kawaii Pass as the server said it in this run (a copy of the account on disk could be edited; a saved song
+    /// still plays offline on that copy: `has_kp_cached`).
     fn has_kp(&self) -> bool {
+        self.chat_staff().is_some() || (self.acc_live && self.has_kp_cached())
+    }
+    fn has_kp_cached(&self) -> bool {
         if self.chat.you.as_ref().is_some_and(|y| ["admin", "owner"].iter().any(|k| y.get(*k).and_then(|v| v.as_bool()).unwrap_or(false))) {
             return true;
         }
@@ -883,7 +902,8 @@ impl State {
                 });
             }
             Act::Play(id) => {
-                if self.has_kp() {
+                // a song kept here plays offline too (the account then comes from the copy on disk)
+                if self.has_kp() || (vault::has(&id) && self.has_kp_cached()) {
                     let cx_list = self.panel_list_ids();
                     self.pick_list = cx_list;
                     self.play_pick(&id);
@@ -1185,6 +1205,7 @@ impl State {
                 if self.pick {
                     self.pick = false;
                     self.tuning = true;
+                    self.begin_static();
                     tune(proxy.clone(), self.station.clone(), self.tracks.clone());
                     self.toast("RADIO");
                 }
@@ -1224,6 +1245,7 @@ impl State {
                     self.station = st.clone();
                     self.playing = true;
                     self.tuning = true;
+                    self.begin_static();
                     tune(proxy.clone(), st, self.tracks.clone());
                 }
             }
@@ -1272,6 +1294,19 @@ impl State {
         let dt = self.last.elapsed().as_secs_f32().min(0.1);
         self.last = Instant::now();
         self.count_listening(dt);
+        // the static lasts while the station is being found (20 s at most), then fades as the music comes
+        let finding = self.tuning && !self.pick && self.static_stop.is_some() && self.static_at.elapsed() < Duration::from_secs(20);
+        if !finding {
+            if let Some(s) = self.static_stop.take() {
+                s.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        let want = if finding { 1.0 } else { 0.0 };
+        self.static_amt += (want - self.static_amt) * (1.0 - (-dt / if want > self.static_amt { 0.08 } else { 0.35 }).exp());
+        if self.static_amt > 0.01 {
+            // the drum hunts back and forth for the signal
+            self.drum += dt * 260.0 * self.static_amt * (self.started.elapsed().as_secs_f32() * 1.3).sin();
+        }
         let (l, r) = self.player.as_ref().map(|p| p.levels.get()).unwrap_or((0.0, 0.0));
         let (l, r) = if self.playing { (l, r) } else { (0.0, 0.0) };
 
@@ -1563,7 +1598,8 @@ impl State {
         }
         scene::tube_back(&mut cv);
         let m_ly = (marker(&mut cv), marker(&mut over));
-        if shown == panel::Screen::Home {
+        // while a station is being found the old song's words are gone (the static covers the tube)
+        if shown == panel::Screen::Home && self.static_amt < 0.05 {
             if self.lyrics.lines.is_empty() {
                 let samples = self.player.as_ref().map(|p| p.levels.samples()).unwrap_or_default();
                 self.spec.update(&samples, self.playing, self.started.elapsed().as_secs_f32());
@@ -1581,7 +1617,24 @@ impl State {
             None => None,
         }
         .map(|x| (x - 622.0) / 738.0);
-        scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur, ghost);
+        if self.static_amt > 0.3 {
+            // the display has nothing to show but noise
+            let mut sd = (self.started.elapsed().as_secs_f32() * 40.0) as u32 | 1;
+            let n = if self.wave.is_empty() { 180 } else { self.wave.len() };
+            let noise: Vec<f32> = (0..n)
+                .map(|_| {
+                    sd ^= sd << 13;
+                    sd ^= sd >> 17;
+                    sd ^= sd << 5;
+                    4.0 + (sd as f32 / u32::MAX as f32) * 52.0 * self.static_amt
+                })
+                .collect();
+            let l1 = format!("≈ {station} · SIGNAL QIDIRILMOQDA…");
+            // (a "position" under a second: every bar lit, the clock at 0:00)
+            scene::draw_lcd(&mut cv, &noise, &l1, &foot, 0.4, 0.4, None);
+        } else {
+            scene::draw_lcd(&mut cv, &self.wave, &line1, &foot, pos, dur, ghost);
+        }
         self.drum += self.drum_kick * 0.02 * 57.3 * (dt * 60.0);
         self.drum_kick *= 0.9f32.powf(dt * 60.0);
         scene::draw_drum(&mut cv, &mut over, self.drum, self.light);
@@ -1675,6 +1728,10 @@ impl State {
                         over.light(Quad::flat(x0, y0, w, h, scene::rgba(0xe6ff9a, 0.08 * k)));
                     }
                     over.mask = None;
+                }
+                if self.static_amt > 0.01 && panel.screen == panel::Screen::Home {
+                    let name = match self.station.as_str() { "ost" => "OST FM", "riot" => "RIOT FM", _ => "J-POP FM" };
+                    scene::snow(&mut over, self.static_amt, self.started.elapsed().as_secs_f32(), name);
                 }
                 scene::lens(&mut over, scene::LY, 37.0);
             }
@@ -1860,6 +1917,10 @@ impl ApplicationHandler<Msg> for App {
             plays_at: None,
             listeners: HashMap::new(),
             sleep_at: None,
+            acc_live: false,
+            static_stop: None,
+            static_amt: 0.0,
+            static_at: Instant::now(),
             updating: false,
             bloom_q: vec![],
             preload: None,
@@ -2095,6 +2156,7 @@ impl ApplicationHandler<Msg> for App {
             Msg::Account(acc) => {
                 match acc {
                     Some(a) => {
+                        st.acc_live = true;
                         let first = st.acc.is_none();
                         st.store.set("kidAcc", a.clone());
                         st.acc = Some(a.clone());

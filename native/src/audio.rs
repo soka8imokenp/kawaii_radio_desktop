@@ -210,6 +210,79 @@ pub fn prepare_bytes(mp3: Vec<u8>) -> Result<Prepared, String> {
     Ok(Prepared { pre: VecDeque::new(), inner: Box::new(dec) })
 }
 
+/// Radio static while a station is being found: band-limited hiss, crackle, and now and then the whistle of a
+/// carrier sliding past. It plays until `stop` is set, then fades out by itself.
+pub struct Static {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    gain: f32,
+    fade: f32,
+    seed: u32,
+    lp: f32,
+    lp2: f32,
+    n: u64,
+    ph: f32,
+}
+
+impl Static {
+    fn rnd(&mut self) -> f32 {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 17;
+        self.seed ^= self.seed << 5;
+        self.seed as f32 / u32::MAX as f32 * 2.0 - 1.0
+    }
+}
+
+impl Iterator for Static {
+    type Item = f32;
+    fn next(&mut self) -> Option<f32> {
+        const SR: f32 = 44100.0;
+        if self.stop.load(Ordering::Relaxed) {
+            self.fade -= 1.0 / (0.3 * SR);
+            if self.fade <= 0.0 {
+                return None;
+            }
+        } else {
+            self.fade = (self.fade + 1.0 / (0.04 * SR)).min(1.0);
+        }
+        self.n += 1;
+        let t = self.n as f32 / SR;
+        let w = self.rnd();
+        // hiss: white noise, a little low-passed, minus a slower copy (a band around 1–5 kHz)
+        self.lp += (w - self.lp) * 0.45;
+        self.lp2 += (w - self.lp2) * 0.04;
+        let mut out = (self.lp - self.lp2) * 0.55;
+        // the hiss breathes (the signal comes and goes)
+        out *= 0.75 + 0.25 * (t * 3.1).sin() * (t * 1.7 + 1.0).sin();
+        // crackle
+        if self.rnd() > 0.9993 {
+            out += self.rnd() * 0.9;
+        }
+        // a whistle sweeping down every ~0.9 s, for a quarter of a second
+        let k = (t % 0.9) / 0.25;
+        if k < 1.0 {
+            let f = 2600.0 * (0.25f32).powf(k);
+            self.ph += f / SR * std::f32::consts::TAU;
+            out += self.ph.sin() * 0.07 * (k * std::f32::consts::PI).sin();
+        }
+        Some(out * self.gain * self.fade)
+    }
+}
+
+impl Source for Static {
+    fn current_span_len(&self) -> Option<usize> {
+        None
+    }
+    fn channels(&self) -> rodio::ChannelCount {
+        std::num::NonZero::new(1u16).unwrap()
+    }
+    fn sample_rate(&self) -> rodio::SampleRate {
+        std::num::NonZero::new(44100u32).unwrap()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+}
+
 pub struct Player {
     _stream: rodio::MixerDeviceSink,
     sink: Arc<Sink>,
@@ -248,6 +321,14 @@ impl Player {
         std::thread::spawn(move || {
             let _ = s.try_seek(to);
         });
+    }
+    /// Static over the speaker until the returned flag is set (the old station goes quiet at once).
+    pub fn static_noise(&self, volume: f32) -> Arc<std::sync::atomic::AtomicBool> {
+        self.sink.stop();
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(7) | 1;
+        self._stream.mixer().add(Static { stop: stop.clone(), gain: 0.35 * volume, fade: 0.0, seed, lp: 0.0, lp2: 0.0, n: 0, ph: 0.0 });
+        stop
     }
     /// A key's click, on its own (not under the music's volume).
     pub fn sfx(&self, kind: Sfx) {

@@ -2,7 +2,7 @@
 # Linux release of the native app, run inside WSL Ubuntu after `python release.py` (it wrote dist/latest.json):
 #   wsl -d Ubuntu -- bash /mnt/d/kawaii_radio_exe/native/release_linux.sh
 # Builds in the WSL home (fast disk), makes the .deb (apt installs its few system libraries by itself) and the
-# AppImage (one file, the in-app updater replaces it in place), signs both with the updater key and adds them to
+# AppImage (one file, the in-app updater replaces it in place), the .rpm (Fedora), signs both with the updater key and adds them to
 # dist/latest.json (linux-x86_64 = AppImage, linux-x86_64-deb = .deb).
 set -euo pipefail
 ROOT=/mnt/d/kawaii_radio_exe
@@ -62,6 +62,46 @@ Description: Kawaii Radio — live J-Pop / OST / Riot radio
 EOF
 dpkg-deb --root-owner-group --build "$P" "$DIST/KawaiiRadio-${V}_amd64.deb"
 
+# ── the .rpm (Fedora, openSUSE): rpmbuild from Ubuntu's own packages, unpacked next to the build (no root);
+# only our files are listed (never /usr/bin itself: that one belongs to the system's filesystem package)
+R="$B/rpmroot"
+if [ ! -x "$R/sys/usr/bin/rpmbuild" ]; then
+  mkdir -p "$R/debs" && cd "$R/debs"
+  for p in rpm rpm-common librpmbuild9 librpm9 librpmio9 librpmsign9 debugedit liblua5.3-0 libdw1 libelf1 libpopt0 libfsverity0 libarchive13 libsqlite3-0 libzstd1 liblzma5 libmagic1 libmagic-mgc libnss3 libnspr4; do
+    ls ${p}_*.deb >/dev/null 2>&1 || apt-get download $p
+  done
+  for d in *.deb; do dpkg-deb -x "$d" "$R/sys"; done
+fi
+RV="$V"
+mkdir -p "$R/top/SPECS" "$R/top/RPMS"
+cat > "$R/top/SPECS/kawaii-radio.spec" <<EOF
+Name: kawaii-radio
+Version: $RV
+Release: 1
+%define _arch x86_64
+Summary: Kawaii Radio - live J-Pop / OST / Riot radio
+License: Proprietary
+URL: https://radio.kawaii.uz
+BuildArch: x86_64
+AutoReqProv: no
+Requires: alsa-lib, openssl-libs, dbus-libs, libxkbcommon, (vulkan-loader or mesa-libGL)
+%define debug_package %{nil}
+%define __os_install_post %{nil}
+%define _build_id_links none
+%description
+The KR-01 desk radio: live stations, lyrics, chat, Kawaii ID.
+%install
+mkdir -p %{buildroot}
+cp -a $P/usr %{buildroot}/
+%files
+/usr/bin/kawaii-radio
+/usr/share/applications/kawaii-radio.desktop
+/usr/share/icons/hicolor/128x128/apps/kawaii-radio.png
+EOF
+LD_LIBRARY_PATH="$R/sys/usr/lib/x86_64-linux-gnu:$R/sys/lib/x86_64-linux-gnu" "$R/sys/usr/bin/rpmbuild" -bb   --rcfile "$R/sys/usr/lib/rpm/rpmrc" --macros "$R/sys/usr/lib/rpm/macros"   --define "_rpmconfigdir $R/sys/usr/lib/rpm" --define "_topdir $R/top" --define "_dbpath $R/db"   "$R/top/SPECS/kawaii-radio.spec"
+cp "$R/top/RPMS/x86_64/kawaii-radio-$RV-1.x86_64.rpm" "$DIST/KawaiiRadio-${V}.x86_64.rpm"
+cd "$B/native"
+
 # ── the AppImage (linuxdeploy from tauri's cache)
 LD=$(ls ~/.cache/tauri/linuxdeploy-*-x86_64.AppImage | head -1)
 APD="$B/AppDir" && rm -rf "$APD"
@@ -76,7 +116,7 @@ chmod +x "$DIST/KawaiiRadio-${V}_amd64.AppImage"
 
 # ── signatures and the manifest
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-for f in "KawaiiRadio-${V}_amd64.AppImage" "KawaiiRadio-${V}_amd64.deb"; do
+for f in "KawaiiRadio-${V}_amd64.AppImage" "KawaiiRadio-${V}_amd64.deb" "KawaiiRadio-${V}.x86_64.rpm"; do
   cargo tauri signer sign "$DIST/$f" >/dev/null
 done
 python3 - "$V" <<'PY'
@@ -87,7 +127,7 @@ raw = 'https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/
 p = os.path.join(d, 'latest.json')
 j = json.load(open(p, encoding='utf-8'))
 assert j['version'] == v, 'run release.py for this version first'
-for key, f in [('linux-x86_64', f'KawaiiRadio-{v}_amd64.AppImage'), ('linux-x86_64-deb', f'KawaiiRadio-{v}_amd64.deb')]:
+for key, f in [('linux-x86_64', f'KawaiiRadio-{v}_amd64.AppImage'), ('linux-x86_64-deb', f'KawaiiRadio-{v}_amd64.deb'), ('linux-x86_64-rpm', f'KawaiiRadio-{v}.x86_64.rpm')]:
     sig = open(os.path.join(d, f + '.sig')).read().strip()
     os.remove(os.path.join(d, f + '.sig'))
     j['platforms'][key] = {'signature': sig, 'url': raw + f}

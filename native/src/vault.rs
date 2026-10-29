@@ -43,21 +43,61 @@ fn crypt(key: &[u8], id: &str, data: &mut [u8]) {
     }
 }
 
+/// This computer's own id (Windows: MachineGuid, Linux: /etc/machine-id): the files are scrambled with it too, so a
+/// copy of the folder (and of the settings with the install key) does not play on another computer.
+fn machine() -> Vec<u8> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let o = std::process::Command::new("reg")
+            .args(["query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid"])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok();
+        o.map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().last().unwrap_or("").as_bytes().to_vec()).unwrap_or_default()
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::read("/etc/machine-id").or_else(|_| std::fs::read("/var/lib/dbus/machine-id")).unwrap_or_default()
+    }
+}
+
+/// Files made from 0.8.3 on start with this mark (install key + machine); older ones used the install key alone.
+const MARK: &[u8; 4] = b"KRS2";
+
+fn key2(key: &[u8]) -> Vec<u8> {
+    let mut k = key.to_vec();
+    k.extend(machine());
+    k
+}
+
 pub fn has(id: &str) -> bool {
     path(id).exists()
 }
 
 pub fn save(key: &[u8], id: &str, mut mp3: Vec<u8>) -> std::io::Result<()> {
-    crypt(key, id, &mut mp3);
+    crypt(&key2(key), id, &mut mp3);
     let tmp = path(id).with_extension("part");
-    std::fs::write(&tmp, &mp3)?;
+    let mut out = MARK.to_vec();
+    out.extend(mp3);
+    std::fs::write(&tmp, &out)?;
     std::fs::rename(tmp, path(id))
 }
 
 pub fn load(key: &[u8], id: &str) -> Option<Vec<u8>> {
-    let mut d = std::fs::read(path(id)).ok()?;
-    crypt(key, id, &mut d);
-    Some(d)
+    let d = std::fs::read(path(id)).ok()?;
+    match d.strip_prefix(MARK) {
+        Some(body) => {
+            let mut b = body.to_vec();
+            crypt(&key2(key), id, &mut b);
+            Some(b)
+        }
+        None => {
+            let mut b = d;
+            crypt(key, id, &mut b);
+            Some(b)
+        }
+    }
 }
 
 pub fn remove(id: &str) {
@@ -79,4 +119,25 @@ pub fn list() -> Vec<String> {
         .unwrap_or_default();
     v.sort();
     v.into_iter().rev().map(|x| x.1).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn roundtrip() {
+        let id = "zz-vault-test";
+        let mp3 = b"ID3 not really an mp3, but bytes all the same".to_vec();
+        super::save(b"install-key", id, mp3.clone()).unwrap();
+        let raw = std::fs::read(super::path(id)).unwrap();
+        assert!(raw.starts_with(super::MARK) && raw[4..] != mp3[..]);
+        assert_eq!(super::load(b"install-key", id).unwrap(), mp3);
+        assert_ne!(super::load(b"other-key", id).unwrap(), mp3);
+        // a file from before the machine binding still opens
+        let mut old = mp3.clone();
+        super::crypt(b"install-key", id, &mut old);
+        std::fs::write(super::path(id), &old).unwrap();
+        assert_eq!(super::load(b"install-key", id).unwrap(), mp3);
+        super::remove(id);
+        assert!(!super::machine().is_empty());
+    }
 }

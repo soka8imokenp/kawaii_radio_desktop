@@ -644,3 +644,37 @@ impl Trivision {
         cv.mask = None;
     }
 }
+
+/// Static over the lyrics tube while a station is being found: snow, a rolling bar, torn lines, the station's name
+/// flickering in it. `amt` 0..1 (it fades in and out), `t` = seconds.
+pub fn snow(over: &mut Canvas, amt: f32, t: f32, station: &str) {
+    let [x0, y0, x1, y1] = LY;
+    let (w, h) = (x1 - x0, y1 - y0);
+    over.mask = Some((LY, 37.0));
+    over.flat(Quad::flat(x0, y0, w, h, rgba(0x0a0f08, 0.6 * amt)));
+    let mut s: u32 = ((t * 30.0) as u32).wrapping_mul(2_654_435_761) | 1;
+    let mut r = move || {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        s as f32 / u32::MAX as f32
+    };
+    for _ in 0..900 {
+        let (x, y, l, a) = (x0 + r() * w, y0 + r() * h, 1.5 + r() * 6.0, r());
+        over.light(Quad::flat(x, y, l, 2.0, rgba(0xd8f0a8, a * a * 0.55 * amt)));
+    }
+    // the rolling bar of a picture that has not locked
+    let by = y0 - 90.0 + (t * 0.7).fract() * (h + 90.0);
+    over.light(Quad::grad(x0, by, w, 90.0, rgba(0xe6ff9a, 0.0), rgba(0xe6ff9a, 0.09 * amt), true));
+    for _ in 0..4 {
+        let y = y0 + r() * h;
+        over.light(Quad::flat(x0 + r() * w * 0.3, y, w * (0.4 + r() * 0.6), 1.0 + r() * 2.0, rgba(0xe6ff9a, 0.16 * amt)));
+    }
+    over.mask = None;
+    let fl = 0.88 + 0.12 * (t * 23.0).sin() * (t * 7.0).sin();
+    let a = (amt * fl * 255.0) as u8;
+    let (cx, cy) = (x0 + w / 2.0, y0 + h / 2.0);
+    over.text(Txt::new(station, text::VT, 46.0, cx, cy - 44.0, [230, 255, 154, a]).align(Align::Center).glow([230, 255, 154, a / 3], 3.0));
+    let dots = ".".repeat(1 + (t * 3.0) as usize % 3);
+    over.text(Txt::new(format!("SIGNAL QIDIRILMOQDA{dots:<3}"), text::VT, 26.0, cx, cy + 12.0, [196, 224, 120, (a as f32 * 0.85) as u8]).align(Align::Center));
+}
