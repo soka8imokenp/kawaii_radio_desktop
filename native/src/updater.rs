@@ -62,7 +62,9 @@ fn platform_key() -> &'static str {
 /// A newer version for this system, if there is one.
 pub fn check() -> Option<Update> {
     let m: Manifest = crate::net::agent().get(MANIFEST).call().ok()?.into_json().ok()?;
-    if !newer(&m.version, env!("CARGO_PKG_VERSION")) {
+    // KR_PRETEND_VERSION: test the update path from an older version
+    let me = std::env::var("KR_PRETEND_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
+    if !newer(&m.version, &me) {
         return None;
     }
     let p = m.platforms.get(platform_key())?;
@@ -95,9 +97,35 @@ fn verify(data: &[u8], sig_b64: &str) -> Result<(), String> {
     pk.verify(data, &sig, false).map_err(|e| format!("imzo noto'g'ri: {e}"))
 }
 
+/// The file, with how far along it is (0..1) every ~1%.
+fn download(url: &str, progress: &dyn Fn(f32)) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let r = crate::net::agent().get(url).call().map_err(|e| e.to_string())?;
+    let total: usize = r.header("Content-Length").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let mut rd = r.into_reader();
+    let mut data = Vec::with_capacity(total);
+    let mut chunk = vec![0u8; 64 * 1024];
+    let mut shown = 0usize;
+    loop {
+        let n = rd.read(&mut chunk).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        data.extend_from_slice(&chunk[..n]);
+        if total > 0 && data.len() * 100 / total > shown {
+            shown = data.len() * 100 / total;
+            progress(data.len() as f32 / total as f32);
+        }
+    }
+    if total > 0 && data.len() != total {
+        return Err("fayl to'liq yuklanmadi".into());
+    }
+    Ok(data)
+}
+
 /// Download, check, install; on success the app quits (the new version starts by itself).
-pub fn install(u: &Update) -> Result<(), String> {
-    let data = crate::net::bytes(&u.url)?;
+pub fn install(u: &Update, progress: &dyn Fn(f32)) -> Result<(), String> {
+    let data = download(&u.url, progress)?;
     verify(&data, &u.sig)?;
     #[cfg(windows)]
     {
@@ -116,17 +144,26 @@ pub fn install(u: &Update) -> Result<(), String> {
             std::fs::write(&tmp, &data).map_err(|e| e.to_string())?;
             let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
             std::fs::rename(&tmp, &app).map_err(|e| e.to_string())?;
-            let _ = std::process::Command::new(&app).spawn();
+            // the new copy waits until this one is gone (not handing itself over to it); the old mount's
+            // variables stay behind
+            std::process::Command::new(&app)
+                .env("KR_UPDATED", "1")
+                .env_remove("APPDIR")
+                .env_remove("ARGV0")
+                .env_remove("OWD")
+                .spawn()
+                .map_err(|e| e.to_string())?;
             std::process::exit(0);
         }
         let path = std::env::temp_dir().join(format!("kawaii-radio_{}_amd64.deb", u.version));
         std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+        // Debian / Ubuntu (apt); elsewhere the AppImage is the build to use
         let ok = std::process::Command::new("pkexec").args(["apt-get", "install", "-y"]).arg(&path).status().is_ok_and(|s| s.success());
         if !ok {
             return Err("o'rnatib bo'lmadi".into());
         }
         if let Ok(me) = std::env::current_exe() {
-            let _ = std::process::Command::new(me).spawn();
+            let _ = std::process::Command::new(me).env("KR_UPDATED", "1").spawn();
         }
         std::process::exit(0);
     }

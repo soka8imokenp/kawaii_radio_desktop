@@ -215,6 +215,9 @@ fn post(v: V) -> @location(0) vec4<f32> {
 
 pub struct Gfx {
     pub window: Arc<Window>,
+    /// the graphics card and its API ("… · Vulkan"); soft = drawn by the processor (llvmpipe): no glow there
+    pub gpu: String,
+    pub soft: bool,
     surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -408,6 +411,9 @@ impl Gfx {
             })
             .await
             .expect("no GPU adapter");
+        let info = adapter.get_info();
+        let gpu = format!("{} · {:?}", info.name, info.backend);
+        let soft = info.device_type == wgpu::DeviceType::Cpu;
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.expect("device");
         let size = window.inner_size();
         let caps = surface.get_capabilities(&adapter);
@@ -566,7 +572,7 @@ impl Gfx {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mut g = Gfx { window, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, sampler_tiled, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 3]); 2] };
+        let mut g = Gfx { window, gpu, soft, surface, device, queue, config, pipe_alpha, pipe_add, view_buf, view_bind, tex_layout, sampler, sampler_tiled, textures: vec![], white: 0, fit: (0.0, 0.0, 1.0), bloom: None, blur_pipe, comp_pipe, dirs, scene: None, post_pipe, lens_buf, lens_bind, lenses: [([0.0; 4], [0.0; 3]); 2] };
         g.white = g.texture_rgba(1, 1, &[255, 255, 255, 255]);
         g.update_view();
         g
@@ -733,7 +739,8 @@ impl Gfx {
             let half = ((self.config.width / 2).max(1), (self.config.height / 2).max(1));
             glow = tl.prepare(&self.device, &self.queue, (self.config.width, self.config.height), half, self.fit, txts);
         }
-        let glow = glow || bloom.iter().any(|b| !b.quads.is_empty());
+        // a processor-drawn picture skips the blurred glow (four extra full passes)
+        let glow = !self.soft && (glow || bloom.iter().any(|b| !b.quads.is_empty()));
         let bloom_bufs: Vec<_> = bloom
             .iter()
             .map(|b| (!b.quads.is_empty()).then(|| self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&b.quads), usage: wgpu::BufferUsages::VERTEX })))

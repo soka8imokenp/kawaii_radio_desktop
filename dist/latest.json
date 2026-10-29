@@ -1,19 +1,19 @@
 {
-  "version": "0.8.1",
-  "notes": "Qidiruv va O'Z TANLOVIM'ga o'tish endi qotmaydi (sahifa 300 baravar tezroq chiziladi); ijrochi sahifasi telefondagidek: oylik tinglovchilar, IJRO ETISH / ARALASH, sevimli ijrochi, eng ko'p tinglangan qo'shiqlar, diskografiya javonlari (Mashhur, Albomlar, Singl va EP) va barcha qo'shiqlari; PROFIL telefondagidek: LEVEL va sezon RANKI, sevimli ijrochi, admin paneli, statistika (barcha qurilmalaringiz bo'yicha), akkaunt va yangilanishni tekshirish; uyqu taymeri; Linux'da Kawaii ID bilan kirish tuzatildi, oyna 16:9 holatiga qaytadi",
-  "pub_date": "2026-10-29T16:39:58Z",
+  "version": "0.8.2",
+  "notes": "Yangilanish endi ko'rinib turadi: yuklab olish foizi, xato bo'lsa sababi SOZLAMALAR'da yoziladi, yangi versiya ochilganda 'YANGILANDI' deydi; Linux'da yangilangan ilova o'zi qayta ochiladi; SOZLAMALAR'da o'rnatilgan versiya, TEKSHIRISH tugmasi va grafika kartasi ko'rinadi (protsessorda chizilsa, nur effektlari o'chiriladi — tezroq ishlaydi)",
+  "pub_date": "2026-10-29T16:56:21Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtyci9UUGI1UTEzK2pVV0dMUHNnRWt0NXNIOVJnMWc1UTJROE5EU3NpOStDQ1dhNFZWMGpJWTlPanRESEdjTVVXZlVBTmxkWWZIMWlERUJaOHcrQktIRmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkxOTk4CWZpbGU6S2F3YWlpUmFkaW8tMC44LjEtc2V0dXAuZXhlCktSSDB2eTMydTE2TENjeDVWSUU1RG5GQVZGeTBKTExuYnF3b1dJTXA5dGYzOVZvTDJjN2tCYzd6cFRpbU9YeE9lWWg2OTZkTHc3VEdHcmdmbzM0WURnPT0K",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.1-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjBXSUZHZ21nbytZS1JhMlhKRDQvMkRHcGtxaTZYUnY2SWlqWXp2VGlYVENRQnhYRjVLalUzQW9TKzNBZmZCc1B2d01temtydysyOFR4SGtWZk1OUWd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkyOTgxCWZpbGU6S2F3YWlpUmFkaW8tMC44LjItc2V0dXAuZXhlCjFJSzlGSVBETEN4YXQxYVdhbit2YmZMZDdLU0JZSFVJVHV3TEhmRXZBdExhaXljcGlVVkxLRU4xZ2puQlowaHo3MGtSblk1cWt2ZkJlT2xxZGNnN0JnPT0K",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.2-setup.exe"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjlFSzZxR0tTaXI3MmorbEVxRytNTHNNK0IzQ0svQXNtM1h3MzJzVExpZXpUTFIwbjNPREVFM042S0E4Z1RBT0VLL29KMEROL1hoakVjVno3Y01jOXdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkyMDk1CWZpbGU6S2F3YWlpUmFkaW8tMC44LjFfYW1kNjQuQXBwSW1hZ2UKbUZnVjBwSDdmZU9lVHd0b0o2ZXR5Zzlremt4aU1aVWg3djZtbytRYkM2SUZ0anFnYk4vSGZIK2k1Vnk0T2wrR0s0cWJxWHZzQWJyWHlCajFxdzMxQnc9PQo=",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.1_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjFjbVFEOHhSSGY4QTBod3JOc1JmRTZrUkhJMUthSDU4b05VS2E4SENzZUlNVWJCdGw2ckRQSnpGQXBmM0hZUGxucnBuVGJ5RzJFNG5RMGFXZkxwV1FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkzMDgyCWZpbGU6S2F3YWlpUmFkaW8tMC44LjJfYW1kNjQuQXBwSW1hZ2UKc2QrcDZ2VzcwS3RjNWlzZEtzclkwM1Rlalh4TFEzZ1ZTWUdRdzVpcEpRb0lEcmp3eVNSdTE5VmVGZVVTTXREeVZJK204cW0vaFp5OUlFZDVXTlc1REE9PQo=",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.2_amd64.AppImage"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycjFWTy84SHFDd1NtUmRoblVXc3MyWjR6c1ZOaFdXT1dvOGdqYXFsNUZIVzlROS9XYkJzY2oyVFNnL25ERHZTUmI5V3IwZWlicVJaa3JHa2I4d0pOY2dzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkyMDk1CWZpbGU6S2F3YWlpUmFkaW8tMC44LjFfYW1kNjQuZGViCitteU1xL2lGK29VRGN4R2JLVzV1OCs1Si9DVHJZL0NhY1hKRkU0aHJIK0d4aGZuT3A1ZlBRYzdmd0hJcDNmZFhyNHBEVGRxek50UVFGbVlMYitBbkRBPT0K",
-      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.1_amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVDhEbDVSREtycnhzTGVIRXJwVUtCb3Rad2M5bFpPakFEcmFWODVGWXhKU2hXZ3dvbjhNY2R6aFBEMDZIeStIMkZtdXhTeTZhK0FwajhCTWg4cjFuQTF5MC9pdHlKTlE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMjkzMDgzCWZpbGU6S2F3YWlpUmFkaW8tMC44LjJfYW1kNjQuZGViCkIvU3dzUVBJRFJiOXR2VFl3Vnk2WmtJSHYzT3BpRVM1ZEVod3RETHV0RU9XOVcwRHJwL2Y5bWdhWkdZbjBVYlNGKy9GNGs5cjIxL2J1L1RQMUIraUF3PT0K",
+      "url": "https://raw.githubusercontent.com/soka8imokenp/kawaii_radio_desktop/main/dist/KawaiiRadio-0.8.2_amd64.deb"
     }
   }
 }

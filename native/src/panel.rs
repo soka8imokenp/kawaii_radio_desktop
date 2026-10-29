@@ -121,6 +121,8 @@ pub struct Ctx<'a> {
     pub stats: &'a [(String, u64, u64)],
     pub checking: Option<&'a str>,
     pub sleep: Option<u64>,
+    pub gpu: &'a str,
+    pub soft: bool,
 }
 
 impl Panel {
@@ -571,8 +573,8 @@ impl Panel {
                 }
                 cv.flat(Quad::flat(px, y + 58.0, cw, 1.0, rgba(0xc4e078, 0.14)));
                 let status = match (cx.update, cx.checking) {
-                    (Some(v), _) => format!("Yangi versiya bor: v{v}"),
-                    (None, Some(t)) => t.to_string(),
+                    (_, Some(t)) => t.to_string(),
+                    (Some(v), None) => format!("Yangi versiya bor: v{v}"),
                     (None, None) => "Yangilanishlar o'zi tekshiriladi".to_string(),
                 };
                 row(cv, y + 64.0, &format!("Kawaii Radio v{}", cx.version), &status);
@@ -620,11 +622,16 @@ impl Panel {
                 y += 66.0;
                 match cx.update {
                     Some(v) => {
-                        row(cv, y, &format!("Yangi versiya: v{v}"), "Yuklab olinadi, ilova o'zi qayta ishga tushadi");
+                        row(cv, y, &format!("O'rnatilgan: v{} → yangi: v{v}", cx.version), cx.checking.unwrap_or("Yuklab olinadi, ilova o'zi qayta ishga tushadi"));
                         button(cv, &mut hits, x1 - 230.0, y, "[ YANGILASH ]", Act::Update, body);
                     }
-                    None => row(cv, y, &format!("Versiya v{}", cx.version), "Eng so'nggi versiya o'rnatilgan"),
+                    None => {
+                        row(cv, y, &format!("O'rnatilgan versiya: v{}", cx.version), cx.checking.unwrap_or("Eng so'nggi versiya"));
+                        button(cv, &mut hits, x1 - 230.0, y, "[TEKSHIRISH]", Act::Check, body);
+                    }
                 }
+                y += 66.0;
+                row(cv, y, "Grafika", &format!("{}{}", cx.gpu, if cx.soft { " · protsessorda (sekin): nur effektlari o'chirilgan" } else { "" }));
                 y += 66.0;
             }
             Screen::Home => {}

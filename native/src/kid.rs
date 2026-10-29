@@ -66,6 +66,11 @@ pub fn hand_over(link: Option<&str>) -> bool {
     }
 }
 
+/// Is a copy running (its socket open)? Only looks, hands nothing over.
+pub fn running() -> bool {
+    TcpStream::connect_timeout(&([127, 0, 0, 1], PORT).into(), Duration::from_millis(200)).is_ok()
+}
+
 /// The first copy listens for links from later ones.
 pub fn listen(on_link: impl Fn(String) + Send + 'static) {
     let Ok(l) = TcpListener::bind(("127.0.0.1", PORT)) else { return };

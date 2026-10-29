@@ -123,6 +123,9 @@ enum Msg {
     Listeners(String, Option<u64>),
     /// TEKSHIRISH found nothing newer (or could not ask)
     Checked(bool),
+    /// the update downloading (0..1), or why it failed
+    Updating(f32),
+    UpdateFailed(String),
     Error(String),
 }
 
@@ -788,11 +791,15 @@ impl State {
             Act::Update => {
                 if let (Some(u), false) = (self.update.clone(), self.updating) {
                     self.updating = true;
-                    self.toast("YANGILANMOQDA… ILOVA O'ZI QAYTA OCHILADI");
+                    self.checking = Some("Yuklab olinmoqda… 0%".into());
+                    self.toast("YANGILANMOQDA… 0%");
                     let p = self.proxy.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = updater::install(&u) {
-                            let _ = p.send_event(Msg::Toast(format!("YANGILAB BO'LMADI · {}", e.to_uppercase())));
+                        let p2 = p.clone();
+                        if let Err(e) = updater::install(&u, &move |f| {
+                            let _ = p2.send_event(Msg::Updating(f));
+                        }) {
+                            let _ = p.send_event(Msg::UpdateFailed(e));
                         }
                     });
                 }
@@ -918,6 +925,8 @@ impl State {
             stats: &self.stats_view,
             checking: self.checking.as_deref(),
             sleep: self.sleep_at.map(|t| t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60)),
+            gpu: &self.gfx.gpu,
+            soft: self.gfx.soft,
         }
     }
 
@@ -1619,6 +1628,8 @@ impl State {
                     stats: &self.stats_view,
                     checking: self.checking.as_deref(),
                     sleep: self.sleep_at.map(|t| t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60)),
+                    gpu: &self.gfx.gpu,
+                    soft: self.gfx.soft,
                 };
                 let real = panel.screen;
                 panel.screen = shown;
@@ -1940,6 +1951,14 @@ impl ApplicationHandler<Msg> for App {
                     k.into_bytes()
                 }
             };
+            // the first start of a new version says so
+            let ver = env!("CARGO_PKG_VERSION");
+            if st.store.get("ver").and_then(|v| v.as_str()) != Some(ver) {
+                if st.store.get("ver").is_some() {
+                    st.toast(&format!("YANGILANDI · v{ver}"));
+                }
+                st.store.set("ver", ver.into());
+            }
             st.listen = st.store.get("listen").cloned().unwrap_or(serde_json::json!({}));
             st.rebuild_stats();
             // updates: at start and every 6 hours
@@ -2100,6 +2119,16 @@ impl ApplicationHandler<Msg> for App {
             Msg::Plays(m) => st.plays = m,
             Msg::Listeners(a, n) => {
                 st.listeners.insert(a, n);
+            }
+            Msg::Updating(f) => {
+                let t = if f >= 1.0 { "O'rnatilmoqda… ilova o'zi qayta ochiladi".to_string() } else { format!("Yuklab olinmoqda… {}%", (f * 100.0) as u32) };
+                st.toast(&t.to_uppercase());
+                st.checking = Some(t);
+            }
+            Msg::UpdateFailed(e) => {
+                st.updating = false;
+                st.checking = Some(format!("Yangilab bo'lmadi: {e}"));
+                st.toast(&format!("YANGILAB BO'LMADI · {}", e.to_uppercase()));
             }
             Msg::Checked(_) => st.checking = Some("Sizda eng so'nggi versiya".into()),
             Msg::Update(u) => {
@@ -2465,8 +2494,30 @@ impl App {
 }
 
 fn main() {
+    // `kawaii-radio --update`: install a newer version without the window (prints how it goes)
+    if std::env::args().any(|a| a == "--update") {
+        match updater::check() {
+            None => println!("eng so'nggi versiya"),
+            Some(u) => {
+                println!("yangi versiya v{}", u.version);
+                if let Err(e) = updater::install(&u, &|f| println!("{}%", (f * 100.0) as u32)) {
+                    println!("xato: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        return;
+    }
     let link = std::env::args().find(|a| a.starts_with("kawaii://"));
-    if kid::hand_over(link.as_deref()) {
+    if std::env::var_os("KR_UPDATED").is_some() {
+        // started by the updater: the old copy is quitting — wait for it instead of handing over to it
+        for _ in 0..50 {
+            if !kid::running() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    } else if kid::hand_over(link.as_deref()) {
         return;
     }
     let event_loop = EventLoop::<Msg>::with_user_event().build().expect("event loop");
