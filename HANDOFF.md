@@ -558,6 +558,15 @@ python -c "from PIL import Image; Image.open('/tmp/dark-up.png').convert('RGB').
   копия kidAcc на диске — только для офлайн-проигрывания уже сохранённых), SAQLASH-файлы `KRS2` = ключ установки +
   MachineGuid / machine-id. ОСТАЁТСЯ: аудио `/files/...` публичное — O'Z TANLOVIM и скачивание обходятся по прямой
   ссылке; настоящая защита только на сервере (подписанные ссылки по Pass), нужно решение владельца.
+- **v0.8.4 — выпуск теперь через radio.kawaii.uz, не GitHub.** `release.py` + `release_linux.sh` → потом пользователь
+  запускает `native/publish.ps1` (wrangler кладёт сборки + install-linux.sh + latest.json в R2 `desk/`). Приложение
+  читает `radio.kawaii.uz/files/desk/latest.json`; сайт ссылается на `/download/{windows,appimage,deb,rpm,info,
+  install.sh}` (worker, cloud/src/index.ts). Бинарники больше не коммитятся (`dist/KawaiiRadio-*` в .gitignore);
+  `dist/latest.json` в git только для старых копий ≤0.8.3 — пушить ПОСЛЕ publish.ps1. Пути сборки вырезаются
+  (`native/.cargo/config.toml`, RUSTFLAGS в release_linux.sh; последний совпавший prefix побеждает). Сайт:
+  kawaii_radio_app/site (+ zip для партнёра: его репо syntxme/kawaii-radio с git-sync на сервере).
+  Найдено: часть «.mp3» на сервере — MP4/AAC (sniff в audio.rs, rodio features mp4/flac/vorbis/wav); stream.rs
+  перезапускал загрузку на каждый блок (условие near).
 - Ещё не сделано (идеи пользователя): трей + мини-режим, Discord, будильник, эквалайзер, включение кинескопа, свет от обложки, кроссфейд в O'Z TANLOVIM, пользовательские
   пейлисты (создание/правка) как в мобилке, Wrapped.
 
