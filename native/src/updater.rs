@@ -131,7 +131,7 @@ pub fn install(u: &Update, progress: &dyn Fn(f32)) -> Result<(), String> {
     {
         let path = std::env::temp_dir().join(format!("KawaiiRadio-{}-setup.exe", u.version));
         std::fs::write(&path, &data).map_err(|e| e.to_string())?;
-        std::process::Command::new(&path).args(["/S", "/UPDATE"]).spawn().map_err(|e| e.to_string())?;
+        std::process::Command::new(&path).args(["/S", "/UPDATE"]).env_remove("KR_PRETEND_VERSION").spawn().map_err(|e| e.to_string())?;
         std::process::exit(0);
     }
     #[cfg(not(windows))]
@@ -148,6 +148,7 @@ pub fn install(u: &Update, progress: &dyn Fn(f32)) -> Result<(), String> {
             // variables stay behind
             std::process::Command::new(&app)
                 .env("KR_UPDATED", "1")
+                .env_remove("KR_PRETEND_VERSION")
                 .env_remove("APPDIR")
                 .env_remove("ARGV0")
                 .env_remove("OWD")
@@ -163,7 +164,7 @@ pub fn install(u: &Update, progress: &dyn Fn(f32)) -> Result<(), String> {
             return Err("o'rnatib bo'lmadi".into());
         }
         if let Ok(me) = std::env::current_exe() {
-            let _ = std::process::Command::new(me).env("KR_UPDATED", "1").spawn();
+            let _ = std::process::Command::new(me).env("KR_UPDATED", "1").env_remove("KR_PRETEND_VERSION").spawn();
         }
         std::process::exit(0);
     }
